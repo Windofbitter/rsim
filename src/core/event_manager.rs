@@ -9,12 +9,33 @@ pub struct EventManager {
 impl EventManager {
     /// Create a new EventManager
     pub fn new() -> Self {
-        todo!("Implementation pending")
+        Self {
+            components: HashMap::new(),
+            subscriptions: HashMap::new(),
+        }
     }
 
     /// Register a component and process its subscriptions
     pub fn register_component(&mut self, component: Box<dyn BaseComponent>) -> Result<(), String> {
-        todo!("Implementation pending")
+        let component_id = component.component_id().clone();
+        
+        // Check for duplicate registration
+        if self.components.contains_key(&component_id) {
+            return Err(format!("Component with ID '{}' is already registered", component_id));
+        }
+        
+        // Process component's subscriptions
+        for event_type in component.subscriptions() {
+            self.subscriptions
+                .entry(event_type.clone())
+                .or_insert_with(HashSet::new)
+                .insert(component_id.clone());
+        }
+        
+        // Store the component
+        self.components.insert(component_id, component);
+        
+        Ok(())
     }
 
     /// Remove component and its subscriptions
