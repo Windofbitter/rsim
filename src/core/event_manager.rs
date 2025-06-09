@@ -38,53 +38,25 @@ impl EventManager {
         Ok(())
     }
 
-    /// Remove component and its subscriptions
-    pub fn unregister_component(&mut self, component_id: &ComponentId) -> Result<(), String> {
-        todo!("Implementation pending")
-    }
-
-    /// Get immutable reference to a component
-    pub fn get_component(&self, component_id: &ComponentId) -> Option<&dyn BaseComponent> {
-        todo!("Implementation pending")
-    }
-
-    /// Get mutable reference to a component
-    pub fn get_component_mut(&mut self, component_id: &ComponentId) -> Option<&mut dyn BaseComponent> {
-        todo!("Implementation pending")
-    }
-
-    /// Return component IDs subscribed to event type
-    pub fn get_subscribers(&self, event_type: &EventType) -> Option<&HashSet<ComponentId>> {
-        todo!("Implementation pending")
-    }
-
-    /// Add subscription for component to event type
-    pub fn subscribe(&mut self, component_id: &ComponentId, event_type: &EventType) -> Result<(), String> {
-        todo!("Implementation pending")
-    }
-
-    /// Remove subscription for component from event type
-    pub fn unsubscribe(&mut self, component_id: &ComponentId, event_type: &EventType) -> Result<(), String> {
-        todo!("Implementation pending")
-    }
 
     /// Route event to appropriate subscribers, returning target component IDs
     pub fn route_event(&self, event: &Event) -> Vec<ComponentId> {
-        todo!("Implementation pending")
+        match &event.target_ids {
+            // If specific targets are provided, filter to only registered components
+            Some(targets) => {
+                targets.iter()
+                    .filter(|id| self.components.contains_key(*id))
+                    .cloned()
+                    .collect()
+            }
+            // If no specific targets, find all subscribers to this event type
+            None => {
+                self.subscriptions
+                    .get(&event.event_type)
+                    .map(|subscribers| subscribers.iter().cloned().collect())
+                    .unwrap_or_else(Vec::new)
+            }
+        }
     }
 
-    /// Check if any components subscribe to event type
-    pub fn has_subscribers(&self, event_type: &EventType) -> bool {
-        todo!("Implementation pending")
-    }
-
-    /// Get total number of registered components
-    pub fn component_count(&self) -> usize {
-        todo!("Implementation pending")
-    }
-
-    /// Get total number of active subscriptions
-    pub fn subscription_count(&self) -> usize {
-        todo!("Implementation pending")
-    }
 }

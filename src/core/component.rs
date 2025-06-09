@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 pub type ComponentId = String;
 pub type EventType = String;
 
@@ -39,3 +37,4 @@ pub trait BaseComponent {
     fn subscriptions(&self) -> &[EventType];
     fn react_atomic(&mut self, events: Vec<Event>) -> Vec<(Event, u64)>;
 }
+
