@@ -1,102 +1,97 @@
 # Event-Based Simulator Architecture
 
 ## Overview
+Event-based discrete time simulator where components subscribe to events, maintain state, and generate new events in response.
 
-A simple event-based simulator with reusable components that can subscribe to events, maintain internal state, and generate new events in response to received events.
-
-## Core Components
+## Core Classes
 
 ### BaseComponent
-The fundamental building block that all simulator components inherit from.
+**Responsibility**: Define interface for all simulation components
 
 **Properties:**
 - `component_id`: Unique identifier
 - `state`: Internal component state (dictionary)
-- `subscriptions`: List of event types this component subscribes to
+- `subscriptions`: List of event types this component listens to
 
 **Methods:**
-- `react_atomic(events)`: Process a list of events in parallel and return list of (event, cycles) tuples
+- `react_atomic(events)`: Process list of events, return list of (event, delay_cycles) tuples
 
 ### Event
-Simple event structure containing type, data, and metadata.
+**Responsibility**: Encapsulate event data and metadata
 
 **Properties:**
-- `type`: Event classification
+- `type`: Event classification (string/enum)
 - `data`: Event payload
-- `source_id`: Component that generated the event
-- `timestamp`: When the event occurs
+- `source_id`: Originating component ID
+- `target_ids`: Optional specific target components
+
+### EventManager
+**Responsibility**: Manage component registration and event subscriptions
+
+**Properties:**
+- `components`: Dict of component_id → component instance
+- `subscriptions`: Dict of event_type → set of component_ids
+
+**Methods:**
+- `register_component(component)`: Add component and process its subscriptions
+- `unregister_component(component_id)`: Remove component and its subscriptions
+- `get_subscribers(event_type)`: Return component IDs subscribed to event type
+- `subscribe(component_id, event_type)`: Add subscription
+- `unsubscribe(component_id, event_type)`: Remove subscription
 
 ### EventScheduler
-Manages the event queue and schedules future events.
+**Responsibility**: Maintain priority queue of future events based on execution time
 
 **Properties:**
-- `event_queue`: Priority queue ordered by time
-- `current_time`: Current simulation time
+- `event_queue`: Min-heap priority queue [(time, sequence_num, event, targets)]
+- `current_time`: Current simulation cycle
+- `sequence_counter`: Ensure FIFO for same-time events
 
 **Methods:**
-- `schedule_event(event, target_component, delay_cycles)`: Schedule future event
-- `get_next_event()`: Retrieve next event to process
+- `schedule_event(event, targets, delay_cycles)`: Add event to queue
+- `get_next_time_events()`: Return all events for next time step
+- `has_events()`: Check if queue is empty
+- `peek_next_time()`: Get next event time without removing
 
 ### SimulationEngine
-Main orchestrator that runs the simulation loop.
+**Responsibility**: Orchestrate simulation execution and coordinate between managers
 
 **Properties:**
-- `components`: Registry of all components
-- `scheduler`: Event scheduling system
-- `event_subscriptions`: Mapping of event types to subscribed components
+- `event_manager`: Handles subscriptions
+- `scheduler`: Handles event timing
+- `max_cycles`: Simulation limit
 
 **Methods:**
-- `add_component(component)`: Register component and subscriptions
-- `run_simulation(max_cycles)`: Execute main simulation loop
+- `initialize(components, initial_events)`: Set up simulation
+- `run()`: Main simulation loop
+- `step()`: Process one time step
+- `distribute_events(events)`: Route events to subscribers
 
-## Simulation Flow
+## Execution Flow
 
-1. **Initialization Phase**
-   - Components are created and registered
-   - Event subscriptions are established
-   - Initial events are scheduled
+1. **Initialization**
+   - Register components with EventManager
+   - Schedule initial events with EventScheduler
 
-2. **Main Execution Loop**
-   - Retrieve all events for current time step
-   - Group events by subscribed components
-   - Each component processes its event list via `react_atomic(events)`
-   - Schedule any generated events
-   - Advance simulation time
-   - Continue until termination condition
+2. **Main Loop** (in SimulationEngine)
+   ```
+   while scheduler.has_events() and time < max_cycles:
+       events = scheduler.get_next_time_events()
+       grouped_events = group_by_component(events)
+       for component_id, event_list in grouped_events:
+           new_events = component.react_atomic(event_list)
+           for event, delay in new_events:
+               scheduler.schedule_event(event, targets, delay)
+   ```
 
-3. **Event Processing**
-   - Component receives list of events for current time step
-   - Internal state is updated based on all events
-   - Zero or more new events are generated
-   - Events are scheduled with specified delays
+3. **Event Distribution**
+   - EventManager determines subscribers
+   - Components process events in parallel within time step
+   - Generated events are scheduled for future cycles
 
-## Key Design Principles
+## Key Design Decisions
 
-- **Modularity**: Components are self-contained and reusable
-- **Event-Driven**: All interactions happen through events
-- **Deterministic**: Events processed in time order for reproducible results
-- **Extensible**: Easy to add new component types and event types
-- **Parallel Processing**: Components can process multiple events simultaneously within a time step
-
-## Component Interaction Model
-
-Components interact exclusively through events:
-- No direct method calls between components
-- All communication is asynchronous
-- Components can generate multiple events in response to one input
-- Events can be scheduled for immediate or future execution
-
-## Timing Model
-
-- Discrete time steps (cycles)
-- Events scheduled with cycle delays
-- Components can introduce processing delays
-- Deterministic event ordering within same time step
-
-## Future Extensions
-
-- Event priorities within the same time step
-- Component hierarchies and communication patterns
-- State snapshots for debugging/rollback
-- Performance metrics and profiling
-- Parallel event processing for independent components
+- **Separation of Concerns**: Event routing (EventManager) vs timing (EventScheduler) vs execution (SimulationEngine)
+- **Deterministic Ordering**: Priority queue + sequence numbers ensure reproducible execution
+- **Batch Processing**: All events at same time processed together
+- **Static Subscriptions**: Declared at component creation (can extend to dynamic later)
