@@ -11,6 +11,7 @@ pub const REQUEST_ITEM_EVENT: &str = "request_item";
 pub struct ItemAddedEvent {
     pub id: EventId,
     pub source_id: ComponentId,
+    #[allow(dead_code)]
     pub timestamp: SimulationTime,
     pub current_count: u32,
     pub item_type: String,
@@ -53,6 +54,7 @@ pub struct BufferFullEvent {
     pub id: EventId,
     pub source_id: ComponentId,
     pub target_id: ComponentId,
+    #[allow(dead_code)]
     pub timestamp: SimulationTime,
     pub capacity: u32,
 }
@@ -91,6 +93,7 @@ pub struct BufferSpaceAvailableEvent {
     pub id: EventId,
     pub source_id: ComponentId,
     pub target_id: ComponentId,
+    #[allow(dead_code)]
     pub timestamp: SimulationTime,
     pub available_space: u32,
 }
@@ -129,6 +132,7 @@ pub struct RequestItemEvent {
     pub id: EventId,
     pub source_id: ComponentId,
     pub target_id: ComponentId,
+    #[allow(dead_code)]
     pub timestamp: SimulationTime,
     pub quantity: u32,
 }

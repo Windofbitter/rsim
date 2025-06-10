@@ -1,14 +1,12 @@
 use rsim::core::component::BaseComponent;
-use rsim::core::event::{Event, EventId};
+use rsim::core::event::Event;
 use rsim::core::types::{ComponentId, ComponentValue, SimulationTime};
-use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::events::{
-    StartAssemblyEvent, BurgerReadyEvent,
+    StartAssemblyEvent, BurgerReadyEvent, RequestItemEvent,
     START_ASSEMBLY_EVENT, BURGER_READY_EVENT,
-    ITEM_ADDED_EVENT, BUFFER_FULL_EVENT, BUFFER_SPACE_AVAILABLE_EVENT,
-    REQUEST_ITEM_EVENT, RequestItemEvent
+    ITEM_ADDED_EVENT, BUFFER_FULL_EVENT, BUFFER_SPACE_AVAILABLE_EVENT
 };
 
 /// Assembler component that combines fried meat and cooked bread to create complete burgers
@@ -125,7 +123,7 @@ impl Assembler {
     }
 
     /// Handles starting the assembly process
-    fn handle_start_assembly(&mut self, event: &Box<dyn Event>, current_time: SimulationTime) -> Vec<(Box<dyn Event>, u64)> {
+    fn handle_start_assembly(&mut self, event: &dyn Event, current_time: SimulationTime) -> Vec<(Box<dyn Event>, u64)> {
         let mut output_events = Vec::new();
 
         // Extract meat_id and bread_id from event data
@@ -156,7 +154,7 @@ impl Assembler {
     }
 
     /// Handles when items are added to input buffers
-    fn handle_item_added(&mut self, event: &Box<dyn Event>, current_time: SimulationTime) -> Vec<(Box<dyn Event>, u64)> {
+    fn handle_item_added(&mut self, event: &dyn Event, current_time: SimulationTime) -> Vec<(Box<dyn Event>, u64)> {
         let mut output_events = Vec::new();
         let data = event.data();
 
@@ -228,7 +226,7 @@ impl BaseComponent for Assembler {
         for event in events {
             match event.event_type() {
                 START_ASSEMBLY_EVENT => {
-                    let mut new_events = self.handle_start_assembly(&event, current_time);
+                    let mut new_events = self.handle_start_assembly(event.as_ref(), current_time);
                     output_events.append(&mut new_events);
                 }
                 BURGER_READY_EVENT => {
@@ -241,7 +239,7 @@ impl BaseComponent for Assembler {
                 ITEM_ADDED_EVENT => {
                     // Handle item added events from our input buffers
                     if event.source_id() == &self.meat_buffer_id || event.source_id() == &self.bread_buffer_id {
-                        let mut new_events = self.handle_item_added(&event, current_time);
+                        let mut new_events = self.handle_item_added(event.as_ref(), current_time);
                         output_events.append(&mut new_events);
                     }
                 }

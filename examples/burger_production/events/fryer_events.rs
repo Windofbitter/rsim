@@ -9,6 +9,7 @@ pub const MEAT_READY_EVENT: &str = "meat_ready";
 pub struct StartFryingEvent {
     pub id: EventId,
     pub source_id: ComponentId,
+    #[allow(dead_code)]
     pub timestamp: SimulationTime,
 }
 
@@ -44,6 +45,7 @@ pub struct MeatReadyEvent {
     pub id: EventId,
     pub source_id: ComponentId,
     pub target_id: ComponentId,
+    #[allow(dead_code)]
     pub timestamp: SimulationTime,
     pub meat_id: String,
 }

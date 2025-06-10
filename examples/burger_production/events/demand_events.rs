@@ -9,6 +9,7 @@ pub const PLACE_ORDER_EVENT: &str = "place_order";
 pub struct GenerateOrderEvent {
     pub id: EventId,
     pub source_id: ComponentId,
+    #[allow(dead_code)]
     pub timestamp: SimulationTime,
 }
 
@@ -44,6 +45,7 @@ pub struct PlaceOrderEvent {
     pub id: EventId,
     pub source_id: ComponentId,
     pub target_id: ComponentId,
+    #[allow(dead_code)]
     pub timestamp: SimulationTime,
     pub burger_count: u32,
     pub order_id: String,

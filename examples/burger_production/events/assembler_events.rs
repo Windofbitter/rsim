@@ -9,6 +9,7 @@ pub const BURGER_READY_EVENT: &str = "burger_ready";
 pub struct StartAssemblyEvent {
     pub id: EventId,
     pub source_id: ComponentId,
+    #[allow(dead_code)]
     pub timestamp: SimulationTime,
     pub meat_id: String,
     pub bread_id: String,
@@ -49,6 +50,7 @@ pub struct BurgerReadyEvent {
     pub id: EventId,
     pub source_id: ComponentId,
     pub target_id: ComponentId,
+    #[allow(dead_code)]
     pub timestamp: SimulationTime,
     pub burger_id: String,
 }

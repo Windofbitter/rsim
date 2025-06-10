@@ -1,14 +1,13 @@
 use rsim::core::component::BaseComponent;
-use rsim::core::event::{Event, EventId};
+use rsim::core::event::Event;
 use rsim::core::types::{ComponentId, ComponentValue, SimulationTime};
-use std::collections::HashMap;
 use uuid::Uuid;
 use rand::prelude::*;
 use rand_distr::Normal;
 
 use crate::events::{
     GenerateOrderEvent, PlaceOrderEvent,
-    GENERATE_ORDER_EVENT, PLACE_ORDER_EVENT,
+    GENERATE_ORDER_EVENT,
     ITEM_ADDED_EVENT
 };
 
@@ -103,7 +102,7 @@ impl Client {
     }
 
     /// Handles when an item (burger) is added to the assembly buffer
-    fn handle_item_added(&mut self, event: &Box<dyn Event>, _current_time: SimulationTime) -> Vec<(Box<dyn Event>, u64)> {
+    fn handle_item_added(&mut self, event: &dyn Event, _current_time: SimulationTime) -> Vec<(Box<dyn Event>, u64)> {
         // Check if this is a burger item from our target buffer
         if let Some(target_ids) = event.target_ids() {
             if target_ids.contains(&self.component_id) {
@@ -124,6 +123,7 @@ impl Client {
     }
 
     /// Get current order statistics
+    #[allow(dead_code)]
     pub fn get_statistics(&self) -> (u32, u32, u32) {
         (self.total_orders_generated, self.pending_orders, self.fulfilled_orders)
     }
@@ -155,7 +155,7 @@ impl BaseComponent for Client {
                     }
                 }
                 ITEM_ADDED_EVENT => {
-                    let mut new_events = self.handle_item_added(&event, current_time);
+                    let mut new_events = self.handle_item_added(event.as_ref(), current_time);
                     output_events.append(&mut new_events);
                 }
                 _ => {

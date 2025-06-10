@@ -5,7 +5,6 @@ pub mod assembler;
 pub mod client;
 
 pub use fifo_buffer::{
-    GenericFifoBuffer, BufferItem,
     FriedMeatBuffer, CookedBreadBuffer, AssemblyBuffer
 };
 pub use fryer::Fryer;

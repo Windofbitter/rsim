@@ -1,19 +1,19 @@
 use rsim::core::component::BaseComponent;
-use rsim::core::event::{Event, EventId};
+use rsim::core::event::Event;
 use rsim::core::types::{ComponentId, ComponentValue, SimulationTime};
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use uuid::Uuid;
 
 use crate::events::{
-    ItemAddedEvent, BufferFullEvent, BufferSpaceAvailableEvent, RequestItemEvent,
-    ITEM_ADDED_EVENT, BUFFER_FULL_EVENT, BUFFER_SPACE_AVAILABLE_EVENT, REQUEST_ITEM_EVENT,
-    MEAT_READY_EVENT, BREAD_READY_EVENT, BURGER_READY_EVENT, PLACE_ORDER_EVENT
+    ItemAddedEvent, BufferFullEvent, BufferSpaceAvailableEvent,
+    MEAT_READY_EVENT, BREAD_READY_EVENT, BURGER_READY_EVENT, PLACE_ORDER_EVENT, REQUEST_ITEM_EVENT
 };
 
 #[derive(Debug, Clone)]
 pub struct BufferItem {
     pub item_type: String,
     pub item_id: String,
+    #[allow(dead_code)]
     pub timestamp: SimulationTime,
 }
 
@@ -62,7 +62,7 @@ impl GenericFifoBuffer {
     }
 
     pub fn remove_item(&mut self) -> Option<BufferItem> {
-        let was_full = self.is_full;
+        let _was_full = self.is_full;
         let item = self.items.pop_front();
         
         if item.is_some() {

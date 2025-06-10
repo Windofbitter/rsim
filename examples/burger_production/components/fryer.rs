@@ -1,7 +1,6 @@
 use rsim::core::component::BaseComponent;
-use rsim::core::event::{Event, EventId};
-use rsim::core::types::{ComponentId, ComponentValue, SimulationTime};
-use std::collections::HashMap;
+use rsim::core::event::Event;
+use rsim::core::types::{ComponentId, SimulationTime};
 use uuid::Uuid;
 
 use crate::events::{

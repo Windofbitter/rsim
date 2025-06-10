@@ -9,6 +9,7 @@ pub const BREAD_READY_EVENT: &str = "bread_ready";
 pub struct StartBakingEvent {
     pub id: EventId,
     pub source_id: ComponentId,
+    #[allow(dead_code)]
     pub timestamp: SimulationTime,
 }
 
@@ -44,6 +45,7 @@ pub struct BreadReadyEvent {
     pub id: EventId,
     pub source_id: ComponentId,
     pub target_id: ComponentId,
+    #[allow(dead_code)]
     pub timestamp: SimulationTime,
     pub bread_id: String,
 }
