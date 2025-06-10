@@ -1,5 +1,5 @@
 use rsim::core::event::{Event, EventId};
-use rsim::core::types::{ComponentId, ComponentValue, SimulationTime};
+use rsim::core::types::{ComponentId, ComponentValue};
 use std::collections::HashMap;
 
 pub const START_BAKING_EVENT: &str = "start_baking";
@@ -9,8 +9,6 @@ pub const BREAD_READY_EVENT: &str = "bread_ready";
 pub struct StartBakingEvent {
     pub id: EventId,
     pub source_id: ComponentId,
-    #[allow(dead_code)]
-    pub timestamp: SimulationTime,
 }
 
 impl Event for StartBakingEvent {
@@ -45,8 +43,6 @@ pub struct BreadReadyEvent {
     pub id: EventId,
     pub source_id: ComponentId,
     pub target_id: ComponentId,
-    #[allow(dead_code)]
-    pub timestamp: SimulationTime,
     pub bread_id: String,
 }
 
