@@ -1,6 +1,7 @@
 pub mod fifo_buffer;
 pub mod fryer;
 pub mod baker;
+pub mod assembler;
 
 pub use fifo_buffer::{
     GenericFifoBuffer, BufferItem,
@@ -8,3 +9,4 @@ pub use fifo_buffer::{
 };
 pub use fryer::Fryer;
 pub use baker::Baker;
+pub use assembler::Assembler;
