@@ -60,7 +60,7 @@ impl Event for MeatReadyEvent {
     }
 
     fn target_ids(&self) -> Option<Vec<ComponentId>> {
-        Some(vec![self.target_id.clone()])
+        None // Broadcast to all subscribers of MEAT_READY_EVENT
     }
 
 

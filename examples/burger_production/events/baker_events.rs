@@ -60,7 +60,7 @@ impl Event for BreadReadyEvent {
     }
 
     fn target_ids(&self) -> Option<Vec<ComponentId>> {
-        Some(vec![self.target_id.clone()])
+        None // Broadcast to all subscribers of BREAD_READY_EVENT
     }
 
 

@@ -50,12 +50,13 @@ impl Fryer {
         })
     }
 
-    /// Creates a MeatReadyEvent to send to the buffer
+    /// Creates a MeatReadyEvent to send to the buffer and self for flow control
     fn create_meat_ready_event(&self, meat_id: String) -> Box<dyn Event> {
+        // Create an event with no target_ids so it broadcasts to all subscribers
         Box::new(MeatReadyEvent {
             id: Uuid::new_v4().to_string(),
             source_id: self.component_id.clone(),
-            target_id: self.target_buffer_id.clone(),
+            target_id: self.target_buffer_id.clone(), // Still target buffer primarily
             meat_id,
         })
     }
@@ -64,12 +65,11 @@ impl Fryer {
     fn handle_start_frying(&mut self) -> Vec<(Box<dyn Event>, u64)> {
         let mut output_events = Vec::new();
         
-        // First check if this is a continuation after completing a previous item
-        // If so, we need to decrement the items_in_process counter
-        // (This is a workaround since we don't receive our own meat_ready events)
+        // Check if we have capacity for new production
         if self.items_in_process >= self.max_concurrent_items {
-            self.items_in_process = 0; // Reset since we're at capacity and starting fresh
-            debug!("[Fryer:{}] Reset items in process counter for continuous production", self.component_id);
+            debug!("[Fryer:{}] Already at capacity ({}/{}), cannot start new item", 
+                   self.component_id, self.items_in_process, self.max_concurrent_items);
+            return output_events;
         }
 
         // Only start frying if production is not stopped and we have capacity

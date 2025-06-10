@@ -14,6 +14,12 @@ pub enum ProductionStrategy {
     OrderBased,
 }
 
+impl Default for ProductionStrategy {
+    fn default() -> Self {
+        ProductionStrategy::BufferBased
+    }
+}
+
 /// Configuration for the burger production simulation
 #[derive(Debug, Clone)]
 pub struct BurgerSimulationConfig {
@@ -65,7 +71,7 @@ impl Default for BurgerSimulationConfig {
             orders_per_generation_std_dev: 0.5,
             
             // Simulation parameters
-            max_simulation_cycles: 100,  // Reduced for clearer output
+            max_simulation_cycles: 200,  // Increased to see if production resumes
             random_seed: 42,
             
             // Production strategy (default to current behavior)

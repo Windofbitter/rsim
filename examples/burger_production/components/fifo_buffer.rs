@@ -7,10 +7,10 @@ use log::{info, debug, warn};
 
 use crate::events::{
     ItemAddedEvent, BufferFullEvent, BufferSpaceAvailableEvent,
-    OrderCompletedEvent,
+    buffer_events::OrderCompletedEvent,
     MEAT_READY_EVENT, BREAD_READY_EVENT, BURGER_READY_EVENT, PLACE_ORDER_EVENT, REQUEST_ITEM_EVENT,
     ProductionRequestEvent, PRODUCTION_REQUEST_EVENT, ITEM_ADDED_EVENT,
-    ORDER_COMPLETED_EVENT
+    buffer_events::ORDER_COMPLETED_EVENT
 };
 
 #[derive(Debug, Clone)]
@@ -451,7 +451,7 @@ impl OrderBuffer {
                       self.component_id, order.order_id);
                 
                 // Generate completion event
-                let order_completed_event = Box::new(OrderCompletedEvent {
+                let order_completed_event: Box<dyn Event> = Box::new(OrderCompletedEvent {
                     id: Uuid::new_v4().to_string(),
                     source_id: self.component_id.clone(),
                     target_id: order.client_id.clone(),

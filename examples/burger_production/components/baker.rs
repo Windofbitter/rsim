@@ -64,12 +64,11 @@ impl Baker {
     fn handle_start_baking(&mut self) -> Vec<(Box<dyn Event>, u64)> {
         let mut output_events = Vec::new();
         
-        // First check if this is a continuation after completing a previous item
-        // If so, we need to decrement the items_in_process counter
-        // (This is a workaround since we don't receive our own bread_ready events)
+        // Check if we have capacity for new production
         if self.items_in_process >= self.max_concurrent_items {
-            self.items_in_process = 0; // Reset since we're at capacity and starting fresh
-            debug!("[Baker:{}] Reset items in process counter for continuous production", self.component_id);
+            debug!("[Baker:{}] Already at capacity ({}/{}), cannot start new item", 
+                   self.component_id, self.items_in_process, self.max_concurrent_items);
+            return output_events;
         }
 
         // Only start baking if production is not stopped and we have capacity
