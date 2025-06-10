@@ -66,15 +66,19 @@ Each event type implements the Event trait with its own strongly-typed fields:
 **Responsibility**: Orchestrate simulation execution and coordinate between managers
 
 **Properties:**
-- `event_manager`: Handles subscriptions
-- `scheduler`: Handles event timing
-- `max_cycles`: Simulation limit
+- `event_manager`: Handles component registration and event routing
+- `scheduler`: Handles event timing and priority queue
+- `current_cycle`: Tracks current simulation time
+- `max_cycles`: Optional simulation limit
 
 **Methods:**
-- `initialize(components, initial_events)`: Set up simulation
-- `run()`: Main simulation loop
-- `step()`: Process one time step
-- `distribute_events(events)`: Route events to subscribers
+- `new(max_cycles)`: Create new engine with optional cycle limit
+- `register_component(component)`: Register component with EventManager
+- `schedule_initial_event(event, targets, delay)`: Schedule initial events
+- `run()`: Main simulation loop, returns final cycle count
+- `step()`: Process one time step, returns true if events remain
+- `current_cycle()`: Get current simulation time
+- `has_pending_events()`: Check if simulation can continue
 
 ## Execution Flow
 
@@ -84,24 +88,44 @@ Each event type implements the Event trait with its own strongly-typed fields:
 
 2. **Main Loop** (in SimulationEngine)
    ```
-   while scheduler.has_events() and time < max_cycles:
+   while scheduler.has_events() and current_cycle < max_cycles:
+       // Get next event delay and advance simulation time
+       next_delay = scheduler.peek_next_delay()
+       current_cycle += next_delay
+       scheduler.advance_time(next_delay)
+       
+       // Extract all events for current time
        events = scheduler.get_next_time_events()
+       
+       // Group events by target component for batch processing
        grouped_events = group_by_component(events)
+       
+       // Process events and handle component reactions
        for component_id, event_list in grouped_events:
-           new_events = component.react_atomic(event_list)
-           for event, delay in new_events:
-               scheduler.schedule_event(event, targets, delay)
+           new_events = component.react_atomic(event_list)  // Returns Vec<(Event, u64)>
+           
+           // Route and schedule each emitted event
+           for (event, delay_cycles) in new_events:
+               targets = event_manager.route_event(&event)
+               scheduler.schedule_event(event, targets, delay_cycles)
    ```
 
-3. **Event Distribution**
-   - EventManager determines subscribers
-   - Components process events in parallel within time step
-   - Generated events are scheduled for future cycles
+3. **Event Processing Flow**
+   - **Time Advancement**: SimulationEngine advances current_cycle by next event delay
+   - **Event Extraction**: All events at current time are pulled from scheduler
+   - **Event Grouping**: Events grouped by target component for efficient batch processing
+   - **Component Reactions**: Components process their events via `react_atomic()` 
+   - **Event Emission**: Components return new events with delay cycles: `Vec<(Event, u64)>`
+   - **Event Routing**: EventManager determines targets for each emitted event
+   - **Event Scheduling**: New events scheduled in EventScheduler with their delays
 
 ## Key Design Decisions
 
 - **Separation of Concerns**: Event routing (EventManager) vs timing (EventScheduler) vs execution (SimulationEngine)
 - **Deterministic Ordering**: Priority queue + sequence numbers ensure reproducible execution
-- **Batch Processing**: All events at same delay processed together
+- **Batch Processing**: All events at same delay processed together for efficiency
+- **Component Event Emission**: Components return `Vec<(Event, u64)>` tuples for delayed event generation
+- **Centralized Orchestration**: SimulationEngine coordinates time advancement, event routing, and scheduling
 - **Static Subscriptions**: Declared at component creation (can extend to dynamic later)
 - **Delay-Based Scheduling**: Events use relative delays instead of absolute times for simpler time management
+- **Time Tracking**: SimulationEngine maintains current_cycle and advances by minimum event delays
