@@ -9,6 +9,7 @@ use crate::events::{
     START_ASSEMBLY_EVENT, BURGER_READY_EVENT,
     ITEM_ADDED_EVENT, BUFFER_FULL_EVENT, BUFFER_SPACE_AVAILABLE_EVENT
 };
+use crate::ProductionStrategy;
 
 /// Assembler component that combines fried meat and cooked bread to create complete burgers
 #[derive(Debug)]
@@ -25,6 +26,7 @@ pub struct Assembler {
     pub pending_bread_requests: u32,
     pub available_meat_count: u32,
     pub available_bread_count: u32,
+    pub production_strategy: ProductionStrategy,
 }
 
 impl Assembler {
@@ -34,7 +36,8 @@ impl Assembler {
         bread_buffer_id: ComponentId,
         target_buffer_id: ComponentId,
         assembly_delay: u64,
-        max_concurrent_items: u32
+        max_concurrent_items: u32,
+        production_strategy: ProductionStrategy
     ) -> Self {
         Self {
             component_id,
@@ -49,6 +52,7 @@ impl Assembler {
             pending_bread_requests: 0,
             available_meat_count: 0,
             available_bread_count: 0,
+            production_strategy,
         }
     }
 

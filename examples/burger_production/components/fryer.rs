@@ -9,6 +9,7 @@ use crate::events::{
     START_FRYING_EVENT, MEAT_READY_EVENT,
     BUFFER_FULL_EVENT, BUFFER_SPACE_AVAILABLE_EVENT
 };
+use crate::ProductionStrategy;
 
 /// Fryer component that processes raw meat into fried meat patties
 #[derive(Debug)]
@@ -19,6 +20,7 @@ pub struct Fryer {
     pub is_production_stopped: bool,
     pub items_in_process: u32,
     pub max_concurrent_items: u32,
+    pub production_strategy: ProductionStrategy,
 }
 
 impl Fryer {
@@ -26,7 +28,8 @@ impl Fryer {
         component_id: ComponentId, 
         target_buffer_id: ComponentId, 
         frying_delay: u64,
-        max_concurrent_items: u32
+        max_concurrent_items: u32,
+        production_strategy: ProductionStrategy
     ) -> Self {
         Self {
             component_id,
@@ -35,6 +38,7 @@ impl Fryer {
             is_production_stopped: false,
             items_in_process: 0,
             max_concurrent_items,
+            production_strategy,
         }
     }
 

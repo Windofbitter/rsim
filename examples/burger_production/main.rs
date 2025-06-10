@@ -7,6 +7,9 @@ mod components;
 use events::*;
 use components::*;
 
+// Import ProductionStrategy from lib  
+use burger_production::ProductionStrategy;
+
 /// Configuration for the burger production simulation
 #[derive(Debug, Clone)]
 pub struct BurgerSimulationConfig {
@@ -31,6 +34,9 @@ pub struct BurgerSimulationConfig {
     // Simulation parameters
     pub max_simulation_cycles: u64,
     pub random_seed: u64,
+    
+    // Production strategy
+    pub production_strategy: ProductionStrategy,
 }
 
 impl Default for BurgerSimulationConfig {
@@ -57,6 +63,9 @@ impl Default for BurgerSimulationConfig {
             // Simulation parameters
             max_simulation_cycles: 100,  // Reduced for clearer output
             random_seed: 42,
+            
+            // Production strategy (default to current behavior)
+            production_strategy: ProductionStrategy::default(),
         }
     }
 }
@@ -122,6 +131,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         meat_buffer_id.clone(),
         config.frying_delay,
         config.max_concurrent_items,
+        config.production_strategy.clone(),
     );
     
     let baker = Baker::new(
@@ -129,6 +139,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         bread_buffer_id.clone(),
         config.baking_delay,
         config.max_concurrent_items,
+        config.production_strategy.clone(),
     );
     
     let assembler = Assembler::new(
@@ -138,6 +149,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         assembly_buffer_id.clone(),
         config.assembly_delay,
         config.max_concurrent_items,
+        config.production_strategy.clone(),
     );
 
     // Create client component
