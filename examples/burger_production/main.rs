@@ -7,8 +7,12 @@ mod components;
 use events::*;
 use components::*;
 
-// Import ProductionStrategy from lib  
-use burger_production::ProductionStrategy;
+// Define ProductionStrategy here for now
+#[derive(Debug, Clone)]
+pub enum ProductionStrategy {
+    BufferBased,
+    OrderBased,
+}
 
 /// Configuration for the burger production simulation
 #[derive(Debug, Clone)]
@@ -131,6 +135,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         order_buffer_id.clone(),
         10, // Order queue capacity
         assembler_id.clone(), // Orders flow to assembler
+        vec![client_id.clone()], // Client subscribes to order buffer for backpressure
     );
 
     // Create production components

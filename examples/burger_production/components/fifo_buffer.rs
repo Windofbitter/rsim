@@ -338,6 +338,8 @@ pub struct OrderBuffer {
     pub capacity: u32,
     pub orders: VecDeque<OrderItem>,
     pub assembler_id: ComponentId,
+    pub subscribers: Vec<ComponentId>,
+    pub is_full: bool,
 }
 
 impl OrderBuffer {
@@ -345,12 +347,15 @@ impl OrderBuffer {
         component_id: ComponentId,
         capacity: u32,
         assembler_id: ComponentId,
+        subscribers: Vec<ComponentId>,
     ) -> Self {
         Self {
             component_id,
             capacity,
             orders: VecDeque::new(),
             assembler_id,
+            subscribers,
+            is_full: false,
         }
     }
 
@@ -383,6 +388,24 @@ impl OrderBuffer {
         }
         order
     }
+    
+    fn create_buffer_full_event(&self, target_id: ComponentId) -> Box<dyn Event> {
+        Box::new(BufferFullEvent {
+            id: Uuid::new_v4().to_string(),
+            source_id: self.component_id.clone(),
+            target_id,
+            capacity: self.capacity,
+        })
+    }
+
+    fn create_buffer_space_available_event(&self, target_id: ComponentId) -> Box<dyn Event> {
+        Box::new(BufferSpaceAvailableEvent {
+            id: Uuid::new_v4().to_string(),
+            source_id: self.component_id.clone(),
+            target_id,
+            available_space: self.available_space(),
+        })
+    }
 
     fn handle_place_order_event(&mut self, event: &dyn Event) -> Vec<(Box<dyn Event>, u64)> {
         let mut output_events = Vec::new();
@@ -394,18 +417,46 @@ impl OrderBuffer {
                 client_id: event.source_id().clone(),
             };
             
+            let was_full_before = self.is_full;
+            
             if self.add_order(order_item.clone()) {
-                // Forward the order to assembler for processing
-                let production_request = Box::new(ProductionRequestEvent {
-                    id: Uuid::new_v4().to_string(),
-                    source_id: self.component_id.clone(),
-                    target_id: self.assembler_id.clone(),
-                    item_type: "burger".to_string(),
-                    quantity: order_item.burger_count,
-                    order_id: order_item.order_id,
-                });
+                // Process the oldest order immediately by forwarding to assembler
+                if let Some(oldest_order) = self.get_next_order() {
+                    let production_request: Box<dyn Event> = Box::new(ProductionRequestEvent {
+                        id: Uuid::new_v4().to_string(),
+                        source_id: self.component_id.clone(),
+                        target_id: self.assembler_id.clone(),
+                        item_type: "burger".to_string(),
+                        quantity: oldest_order.burger_count,
+                        order_id: oldest_order.order_id,
+                    });
+                    
+                    output_events.push((production_request, 0));
+                    
+                    // Update full status after removing an order
+                    self.is_full = self.current_count() >= self.capacity;
+                    
+                    // If we were full and now have space, notify subscribers
+                    if was_full_before && !self.is_full {
+                        info!("[OrderBuffer:{}] Buffer no longer full - notifying {} subscribers of available space", 
+                              self.component_id, self.subscribers.len());
+                        for subscriber in &self.subscribers {
+                            let space_available_event = self.create_buffer_space_available_event(subscriber.clone());
+                            output_events.push((space_available_event, 0));
+                        }
+                    }
+                }
                 
-                output_events.push((production_request, 0));
+                // Check if buffer became full after processing
+                self.is_full = self.current_count() >= self.capacity;
+                if self.is_full && !was_full_before {
+                    warn!("[OrderBuffer:{}] Buffer is now full - notifying {} subscribers", 
+                          self.component_id, self.subscribers.len());
+                    for subscriber in &self.subscribers {
+                        let buffer_full_event = self.create_buffer_full_event(subscriber.clone());
+                        output_events.push((buffer_full_event, 0));
+                    }
+                }
             }
         }
         
@@ -441,6 +492,7 @@ impl BaseComponent for OrderBuffer {
     fn subscriptions(&self) -> &[&'static str] {
         &[
             PLACE_ORDER_EVENT,
+            PRODUCTION_REQUEST_EVENT,  // Listen for when assembler processes orders
         ]
     }
 

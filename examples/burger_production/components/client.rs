@@ -4,12 +4,13 @@ use rsim::core::types::{ComponentId, ComponentValue};
 use uuid::Uuid;
 use rand::prelude::*;
 use rand_distr::Normal;
-use log::{info, debug};
+use log::{info, debug, warn};
 
 use crate::events::{
     GenerateOrderEvent, PlaceOrderEvent,
     GENERATE_ORDER_EVENT,
-    ITEM_ADDED_EVENT
+    ITEM_ADDED_EVENT,
+    BUFFER_FULL_EVENT, BUFFER_SPACE_AVAILABLE_EVENT
 };
 
 /// Client component that generates burger orders with normal distribution
@@ -24,6 +25,7 @@ pub struct Client {
     pub fulfilled_orders: u32,
     pub total_orders_generated: u32,
     pub rng: StdRng,
+    pub is_order_generation_stopped: bool,
 }
 
 impl Client {
@@ -45,6 +47,7 @@ impl Client {
             fulfilled_orders: 0,
             total_orders_generated: 0,
             rng: StdRng::seed_from_u64(seed),
+            is_order_generation_stopped: false,
         }
     }
 
@@ -81,28 +84,33 @@ impl Client {
     fn handle_generate_order(&mut self) -> Vec<(Box<dyn Event>, u64)> {
         let mut output_events = Vec::new();
 
-        // Generate order size with normal distribution
-        let burger_count = self.generate_order_size();
-        let order_id = format!("order_{}", self.total_orders_generated + 1);
+        // Only generate orders if not stopped
+        if !self.is_order_generation_stopped {
+            // Generate order size with normal distribution
+            let burger_count = self.generate_order_size();
+            let order_id = format!("order_{}", self.total_orders_generated + 1);
 
-        // Update statistics
-        self.total_orders_generated += 1;
-        self.pending_orders += burger_count;
-        
-        info!("[Client:{}] Generated {} requesting {} burgers (total orders: {}, pending: {})", 
-              self.component_id, order_id, burger_count, self.total_orders_generated, self.pending_orders);
+            // Update statistics
+            self.total_orders_generated += 1;
+            self.pending_orders += burger_count;
+            
+            info!("[Client:{}] Generated {} requesting {} burgers (total orders: {}, pending: {})", 
+                  self.component_id, order_id, burger_count, self.total_orders_generated, self.pending_orders);
 
-        // Place the order with the assembly buffer
-        let place_order_event = self.create_place_order_event(burger_count, order_id.clone());
-        output_events.push((place_order_event, 0)); // Place order immediately
-        
-        debug!("[Client:{}] Placed {} immediately", self.component_id, order_id);
+            // Place the order with the assembly buffer
+            let place_order_event = self.create_place_order_event(burger_count, order_id.clone());
+            output_events.push((place_order_event, 0)); // Place order immediately
+            
+            debug!("[Client:{}] Placed {} immediately", self.component_id, order_id);
+        } else {
+            debug!("[Client:{}] Skipping order generation - order buffer is full", self.component_id);
+        }
 
-        // Schedule next order generation
+        // Always schedule next order generation check
         let next_generate_event = self.create_generate_order_event();
         output_events.push((next_generate_event, self.order_generation_interval));
         
-        debug!("[Client:{}] Scheduled next order generation in {} cycles", 
+        debug!("[Client:{}] Scheduled next order generation check in {} cycles", 
                self.component_id, self.order_generation_interval);
 
         output_events
@@ -132,6 +140,24 @@ impl Client {
         Vec::new() // No events to generate
     }
 
+    /// Handles when the order buffer becomes full
+    fn handle_buffer_full(&mut self) -> Vec<(Box<dyn Event>, u64)> {
+        // Stop order generation when order buffer is full (backpressure)
+        warn!("[Client:{}] Order buffer full - stopping order generation", self.component_id);
+        self.is_order_generation_stopped = true;
+        Vec::new()
+    }
+
+    /// Handles when the order buffer has space available
+    fn handle_buffer_space_available(&mut self) -> Vec<(Box<dyn Event>, u64)> {
+        // Resume order generation when space becomes available
+        if self.is_order_generation_stopped {
+            info!("[Client:{}] Order buffer has space - resuming order generation", self.component_id);
+            self.is_order_generation_stopped = false;
+        }
+        Vec::new()
+    }
+
     /// Get current order statistics
     #[allow(dead_code)]
     pub fn get_statistics(&self) -> (u32, u32, u32) {
@@ -148,6 +174,8 @@ impl BaseComponent for Client {
         &[
             GENERATE_ORDER_EVENT,
             ITEM_ADDED_EVENT,
+            BUFFER_FULL_EVENT,
+            BUFFER_SPACE_AVAILABLE_EVENT,
         ]
     }
 
@@ -166,6 +194,24 @@ impl BaseComponent for Client {
                 ITEM_ADDED_EVENT => {
                     let mut new_events = self.handle_item_added(event.as_ref());
                     output_events.append(&mut new_events);
+                }
+                BUFFER_FULL_EVENT => {
+                    // Only handle if this event is targeted at us (from order buffer)
+                    if let Some(target_ids) = event.target_ids() {
+                        if target_ids.contains(&self.component_id) {
+                            let mut new_events = self.handle_buffer_full();
+                            output_events.append(&mut new_events);
+                        }
+                    }
+                }
+                BUFFER_SPACE_AVAILABLE_EVENT => {
+                    // Only handle if this event is targeted at us (from order buffer)
+                    if let Some(target_ids) = event.target_ids() {
+                        if target_ids.contains(&self.component_id) {
+                            let mut new_events = self.handle_buffer_space_available();
+                            output_events.append(&mut new_events);
+                        }
+                    }
                 }
                 _ => {
                     // Ignore unknown events

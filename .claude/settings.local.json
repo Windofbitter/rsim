@@ -8,7 +8,19 @@
       "Bash(find:*)",
       "Bash(rg:*)",
       "Bash(ls:*)",
-      "Bash(rm:*)"
+      "Bash(rm:*)",
+      "Bash(/usr/local/bin/cargo check)",
+      "Bash(~/.cargo/bin/cargo check)",
+      "Bash(~/.cargo/bin/cargo check --manifest-path /mnt/c/project/rsim/examples/burger_production/Cargo.toml)",
+      "Bash(~/.cargo/bin/cargo run)",
+      "Bash(~/.cargo/bin/cargo clippy --manifest-path /mnt/c/project/rsim/examples/burger_production/Cargo.toml)",
+      "Bash(grep:*)",
+      "Bash(~/.cargo/bin/cargo run --manifest-path /mnt/c/project/rsim/examples/burger_production/Cargo.toml)",
+      "Bash(cargo run:*)",
+      "Bash(export:*)",
+      "Bash(~/.cargo/bin/cargo clippy)",
+      "Bash(git restore:*)",
+      "Bash(~/.cargo/bin/cargo run --example burger_production)"
     ],
     "deny": []
   }
