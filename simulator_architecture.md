@@ -26,7 +26,7 @@ Event-based discrete time simulator where components subscribe to events, mainta
 - `target_ids`: Optional specific target components
 
 ### EventManager
-**Responsibility**: Manage component registration and event subscriptions
+**Responsibility**: Manage component registration and event routing
 
 **Properties:**
 - `components`: Dict of component_id → component instance
@@ -34,24 +34,21 @@ Event-based discrete time simulator where components subscribe to events, mainta
 
 **Methods:**
 - `register_component(component)`: Add component and process its subscriptions
-- `unregister_component(component_id)`: Remove component and its subscriptions
-- `get_subscribers(event_type)`: Return component IDs subscribed to event type
-- `subscribe(component_id, event_type)`: Add subscription
-- `unsubscribe(component_id, event_type)`: Remove subscription
+- `route_event(event)`: Determine target components based on event.target_ids or subscriptions
 
 ### EventScheduler
-**Responsibility**: Maintain priority queue of future events based on execution time
+**Responsibility**: Maintain priority queue of future events based on relative delays
 
 **Properties:**
-- `event_queue`: Min-heap priority queue [(time, sequence_num, event, targets)]
-- `current_time`: Current simulation cycle
-- `sequence_counter`: Ensure FIFO for same-time events
+- `event_queue`: Min-heap priority queue [(delay_cycles, sequence_num, event, targets)]
+- `sequence_counter`: Ensure FIFO for same-delay events
 
 **Methods:**
-- `schedule_event(event, targets, delay_cycles)`: Add event to queue
-- `get_next_time_events()`: Return all events for next time step
+- `schedule_event(event, targets, delay_cycles)`: Add event to queue with delay
+- `get_next_time_events()`: Return all events with minimum delay
 - `has_events()`: Check if queue is empty
-- `peek_next_time()`: Get next event time without removing
+- `peek_next_delay()`: Get minimum delay without removing events
+- `advance_time(cycles)`: Reduce all event delays by specified cycles
 
 ### SimulationEngine
 **Responsibility**: Orchestrate simulation execution and coordinate between managers
@@ -93,5 +90,6 @@ Event-based discrete time simulator where components subscribe to events, mainta
 
 - **Separation of Concerns**: Event routing (EventManager) vs timing (EventScheduler) vs execution (SimulationEngine)
 - **Deterministic Ordering**: Priority queue + sequence numbers ensure reproducible execution
-- **Batch Processing**: All events at same time processed together
+- **Batch Processing**: All events at same delay processed together
 - **Static Subscriptions**: Declared at component creation (can extend to dynamic later)
+- **Delay-Based Scheduling**: Events use relative delays instead of absolute times for simpler time management
