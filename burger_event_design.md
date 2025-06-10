@@ -40,7 +40,13 @@ This document defines the trait-based event architecture for the burger producti
 - **Client** (`ComponentId: "client"`)
   - Generates burger orders periodically
   - Order quantity: normal distribution
-  - Consumes from assembly buffer
+  - Submits orders to OrderQueue
+
+- **OrderQueue** (`ComponentId: "order_queue"`)
+  - FIFO queue storing complete orders
+  - Processes orders sequentially with partial fulfillment
+  - Requests burgers from assembly buffer in batches
+  - Max capacity: configurable
 
 ## Event Types
 
@@ -156,11 +162,41 @@ pub struct GenerateOrderEvent {
 }
 
 #[derive(Debug, Clone)]
-pub struct PlaceOrderEvent {
+pub struct SubmitOrderEvent {
     pub id: EventId,
     pub source_id: ComponentId,
     pub target_ids: Option<Vec<ComponentId>>,
+    pub order_id: String,
     pub burger_count: u32,
+    pub customer_id: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct OrderProcessingStartEvent {
+    pub id: EventId,
+    pub source_id: ComponentId,
+    pub target_ids: Option<Vec<ComponentId>>,
+    pub order_id: String,
+    pub total_burgers: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct OrderFulfilledEvent {
+    pub id: EventId,
+    pub source_id: ComponentId,
+    pub target_ids: Option<Vec<ComponentId>>,
+    pub order_id: String,
+    pub burgers_received: u32,
+    pub burgers_remaining: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct OrderCompletedEvent {
+    pub id: EventId,
+    pub source_id: ComponentId,
+    pub target_ids: Option<Vec<ComponentId>>,
+    pub order_id: String,
+    pub completion_time: u64,
 }
 ```
 
@@ -185,9 +221,12 @@ pub struct PlaceOrderEvent {
 
 ### Demand Processing
 1. Client generates `generate_order` periodically
-2. Client sends `place_order` to AssemblyBuffer
-3. AssemblyBuffer fulfills orders if inventory available
-4. Unfulfilled orders remain as pending demand
+2. Client sends `submit_order` to OrderQueue
+3. OrderQueue processes orders FIFO, sends `order_processing_start`
+4. OrderQueue requests burgers from AssemblyBuffer in batches
+5. AssemblyBuffer sends available burgers via `order_fulfilled`
+6. OrderQueue tracks partial fulfillment until order complete
+7. When complete, OrderQueue sends `order_completed`
 
 ## Component Subscriptions
 
@@ -204,10 +243,13 @@ Components subscribe to event types by their static string identifiers:
 ["start_assembly", "item_added", "buffer_full", "buffer_space_available"]
 
 // FIFO Buffer subscriptions
-["meat_ready", "bread_ready", "burger_ready", "request_item", "place_order"]
+["meat_ready", "bread_ready", "burger_ready", "request_item"]
+
+// OrderQueue subscriptions
+["submit_order", "order_fulfilled", "buffer_space_available"]
 
 // Client subscriptions
-["generate_order", "item_added"]
+["generate_order", "order_completed"]
 ```
 
 ## Event Type Constants
@@ -224,7 +266,10 @@ pub const BUFFER_FULL: &str = "buffer_full";
 pub const BUFFER_SPACE_AVAILABLE: &str = "buffer_space_available";
 pub const REQUEST_ITEM: &str = "request_item";
 pub const GENERATE_ORDER: &str = "generate_order";
-pub const PLACE_ORDER: &str = "place_order";
+pub const SUBMIT_ORDER: &str = "submit_order";
+pub const ORDER_PROCESSING_START: &str = "order_processing_start";
+pub const ORDER_FULFILLED: &str = "order_fulfilled";
+pub const ORDER_COMPLETED: &str = "order_completed";
 ```
 
 This trait-based event design ensures type safety, deterministic execution, proper backpressure handling, and realistic simulation of the burger production process.
