@@ -32,8 +32,8 @@ pub struct BurgerSimulationConfig {
     
     // Client behavior
     pub order_generation_interval: u64,
-    pub order_size_mean: f64,
-    pub order_size_std_dev: f64,
+    pub orders_per_generation_mean: f64,
+    pub orders_per_generation_std_dev: f64,
     
     // Simulation parameters
     pub max_simulation_cycles: u64,
@@ -61,8 +61,8 @@ impl Default for BurgerSimulationConfig {
             
             // Client behavior
             order_generation_interval: 15,
-            order_size_mean: 2.0,
-            order_size_std_dev: 0.5,
+            orders_per_generation_mean: 2.0,
+            orders_per_generation_std_dev: 0.5,
             
             // Simulation parameters
             max_simulation_cycles: 100,  // Reduced for clearer output
@@ -92,8 +92,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  Buffer capacities: meat={}, bread={}, assembly={}", 
              config.meat_buffer_capacity, config.bread_buffer_capacity, config.assembly_buffer_capacity);
     println!("  Max concurrent items: {}", config.max_concurrent_items);
-    println!("  Order generation: interval={}, mean={:.1}, std_dev={:.1}", 
-             config.order_generation_interval, config.order_size_mean, config.order_size_std_dev);
+    println!("  Order generation: interval={}, orders_per_gen_mean={:.1}, orders_per_gen_std_dev={:.1}", 
+             config.order_generation_interval, config.orders_per_generation_mean, config.orders_per_generation_std_dev);
     println!("  Max simulation cycles: {}", config.max_simulation_cycles);
     println!();
 
@@ -135,6 +135,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         order_buffer_id.clone(),
         10, // Order queue capacity
         assembler_id.clone(), // Orders flow to assembler
+        assembly_buffer_id.clone(), // Assembly buffer ID for tracking burgers
         vec![client_id.clone()], // Client subscribes to order buffer for backpressure
     );
 
@@ -170,8 +171,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         client_id.clone(),
         order_buffer_id.clone(), // Client now sends orders to OrderBuffer
         config.order_generation_interval,
-        config.order_size_mean,
-        config.order_size_std_dev,
+        config.orders_per_generation_mean,
+        config.orders_per_generation_std_dev,
         config.random_seed,
     );
 

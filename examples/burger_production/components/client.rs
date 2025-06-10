@@ -19,8 +19,8 @@ pub struct Client {
     pub component_id: ComponentId,
     pub assembly_buffer_id: ComponentId,
     pub order_generation_interval: u64,
-    pub order_size_mean: f64,
-    pub order_size_std_dev: f64,
+    pub orders_per_generation_mean: f64,
+    pub orders_per_generation_std_dev: f64,
     pub pending_orders: u32,
     pub fulfilled_orders: u32,
     pub total_orders_generated: u32,
@@ -33,16 +33,16 @@ impl Client {
         component_id: ComponentId,
         assembly_buffer_id: ComponentId,
         order_generation_interval: u64,
-        order_size_mean: f64,
-        order_size_std_dev: f64,
+        orders_per_generation_mean: f64,
+        orders_per_generation_std_dev: f64,
         seed: u64,
     ) -> Self {
         Self {
             component_id,
             assembly_buffer_id,
             order_generation_interval,
-            order_size_mean,
-            order_size_std_dev,
+            orders_per_generation_mean,
+            orders_per_generation_std_dev,
             pending_orders: 0,
             fulfilled_orders: 0,
             total_orders_generated: 0,
@@ -70,14 +70,14 @@ impl Client {
         })
     }
 
-    /// Generates a random order size using normal distribution
-    fn generate_order_size(&mut self) -> u32 {
-        let normal = Normal::new(self.order_size_mean, self.order_size_std_dev)
-            .unwrap_or_else(|_| Normal::new(1.0, 0.5).unwrap());
+    /// Generates a random number of orders using normal distribution
+    fn generate_order_count(&mut self) -> u32 {
+        let normal = Normal::new(self.orders_per_generation_mean, self.orders_per_generation_std_dev)
+            .unwrap_or_else(|_| Normal::new(2.0, 1.0).unwrap());
         
-        let size = normal.sample(&mut self.rng);
-        // Ensure order size is at least 1
-        (size.round() as u32).max(1)
+        let count = normal.sample(&mut self.rng);
+        // Ensure at least 1 order is generated
+        (count.round() as u32).max(1)
     }
 
     /// Handles generating a new order
@@ -86,22 +86,34 @@ impl Client {
 
         // Only generate orders if not stopped
         if !self.is_order_generation_stopped {
-            // Generate order size with normal distribution
-            let burger_count = self.generate_order_size();
-            let order_id = format!("order_{}", self.total_orders_generated + 1);
-
-            // Update statistics
-            self.total_orders_generated += 1;
-            self.pending_orders += burger_count;
+            // Generate number of orders to create (each order is 1 burger)
+            let order_count = self.generate_order_count();
             
-            info!("[Client:{}] Generated {} requesting {} burgers (total orders: {}, pending: {})", 
-                  self.component_id, order_id, burger_count, self.total_orders_generated, self.pending_orders);
+            info!("[Client:{}] Generating {} individual orders (each for 1 burger)", 
+                  self.component_id, order_count);
 
-            // Place the order with the assembly buffer
-            let place_order_event = self.create_place_order_event(burger_count, order_id.clone());
-            output_events.push((place_order_event, 0)); // Place order immediately
-            
-            debug!("[Client:{}] Placed {} immediately", self.component_id, order_id);
+            // Create multiple individual orders, each for 1 burger
+            for i in 0..order_count {
+                // Check if we should stop due to buffer becoming full
+                if self.is_order_generation_stopped {
+                    warn!("[Client:{}] Disposed {} remaining orders due to full buffer", 
+                          self.component_id, order_count - i);
+                    break;
+                }
+                
+                let order_id = format!("order_{}_{}", self.total_orders_generated + 1, i + 1);
+                
+                // Update statistics (each order is 1 burger)
+                self.total_orders_generated += 1;
+                self.pending_orders += 1;
+                
+                // Place the order with the assembly buffer (always 1 burger)
+                let place_order_event = self.create_place_order_event(1, order_id.clone());
+                output_events.push((place_order_event, 0)); // Place order immediately
+                
+                debug!("[Client:{}] Placed {} for 1 burger (total orders: {}, pending: {})", 
+                       self.component_id, order_id, self.total_orders_generated, self.pending_orders);
+            }
         } else {
             debug!("[Client:{}] Skipping order generation - order buffer is full", self.component_id);
         }
@@ -124,12 +136,12 @@ impl Client {
                 let data = event.data();
                 if let Some(ComponentValue::String(item_type)) = data.get("item_type") {
                     if item_type == "burger" {
-                        // A burger was fulfilled
+                        // A burger was fulfilled (1 burger = 1 order)
                         if self.pending_orders > 0 {
                             self.pending_orders -= 1;
                             self.fulfilled_orders += 1;
                             
-                            info!("[Client:{}] Burger fulfilled! (pending: {}, fulfilled: {}, total orders: {})", 
+                            info!("[Client:{}] Order fulfilled! (pending orders: {}, fulfilled orders: {}, total orders: {})", 
                                   self.component_id, self.pending_orders, self.fulfilled_orders, self.total_orders_generated);
                         }
                     }

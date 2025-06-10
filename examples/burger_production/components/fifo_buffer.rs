@@ -7,10 +7,10 @@ use log::{info, debug, warn};
 
 use crate::events::{
     ItemAddedEvent, BufferFullEvent, BufferSpaceAvailableEvent,
-    PartialOrderFulfillmentEvent, OrderCompletedEvent,
+    OrderCompletedEvent,
     MEAT_READY_EVENT, BREAD_READY_EVENT, BURGER_READY_EVENT, PLACE_ORDER_EVENT, REQUEST_ITEM_EVENT,
     ProductionRequestEvent, PRODUCTION_REQUEST_EVENT, ITEM_ADDED_EVENT,
-    PARTIAL_ORDER_FULFILLMENT_EVENT, ORDER_COMPLETED_EVENT
+    ORDER_COMPLETED_EVENT
 };
 
 #[derive(Debug, Clone)]
@@ -329,19 +329,7 @@ impl BaseComponent for AssemblyBuffer {
 #[derive(Debug, Clone)]
 pub struct OrderItem {
     pub order_id: String,
-    pub burger_count: u32,
-    pub burgers_fulfilled: u32,
     pub client_id: ComponentId,
-}
-
-impl OrderItem {
-    pub fn remaining_burgers(&self) -> u32 {
-        self.burger_count - self.burgers_fulfilled
-    }
-    
-    pub fn is_complete(&self) -> bool {
-        self.burgers_fulfilled >= self.burger_count
-    }
 }
 
 /// OrderBuffer - FIFO queue for pending orders between Client and production system
@@ -392,8 +380,8 @@ impl OrderBuffer {
             return false;
         }
         
-        info!("OrderBuffer {} queued order {} for {} burgers", 
-              self.component_id, order.order_id, order.burger_count);
+        info!("OrderBuffer {} queued order {} for 1 burger", 
+              self.component_id, order.order_id);
         self.orders.push_back(order);
         true
     }
@@ -401,8 +389,8 @@ impl OrderBuffer {
     pub fn get_next_order(&mut self) -> Option<OrderItem> {
         let order = self.orders.pop_front();
         if let Some(ref order) = order {
-            info!("OrderBuffer {} processing order {} for {} burgers", 
-                  self.component_id, order.order_id, order.burger_count);
+            info!("OrderBuffer {} processing order {} for 1 burger", 
+                  self.component_id, order.order_id);
         }
         order
     }
@@ -449,75 +437,39 @@ impl OrderBuffer {
         let mut output_events = Vec::new();
         
         let available_burgers = self.query_assembly_buffer_count();
-        let mut remaining_burgers = available_burgers;
-        let mut completed_orders = Vec::new();
-        let mut updated_orders = VecDeque::new();
+        let mut burgers_consumed = 0;
         
         info!("[OrderBuffer:{}] Trying to fulfill orders with {} available burgers", 
               self.component_id, available_burgers);
         
-        // Process orders in FIFO order with partial fulfillment
-        while let Some(mut order) = self.orders.pop_front() {
-            let needed = order.remaining_burgers();
-            
-            if remaining_burgers >= needed {
-                // Can complete this order
-                order.burgers_fulfilled = order.burger_count;
-                remaining_burgers -= needed;
-                completed_orders.push(order.clone());
+        // Simple FIFO: 1 burger fulfills exactly 1 order
+        while burgers_consumed < available_burgers && !self.orders.is_empty() {
+            if let Some(order) = self.orders.pop_front() {
+                burgers_consumed += 1;
                 
-                info!("[OrderBuffer:{}] Order {} completed ({}/{} burgers)", 
-                      self.component_id, order.order_id, order.burger_count, order.burger_count);
-            } else if remaining_burgers > 0 {
-                // Partial fulfillment
-                order.burgers_fulfilled += remaining_burgers;
-                remaining_burgers = 0;
-                updated_orders.push_back(order.clone());
+                info!("[OrderBuffer:{}] Order {} completed (1 burger)", 
+                      self.component_id, order.order_id);
                 
-                info!("[OrderBuffer:{}] Order {} partially fulfilled ({}/{} burgers)", 
-                      self.component_id, order.order_id, order.burgers_fulfilled, order.burger_count);
+                // Generate completion event
+                let order_completed_event = Box::new(OrderCompletedEvent {
+                    id: Uuid::new_v4().to_string(),
+                    source_id: self.component_id.clone(),
+                    target_id: order.client_id.clone(),
+                    order_id: order.order_id.clone(),
+                });
+                output_events.push((order_completed_event, 0));
                 
-                // Put remaining orders back without processing
-                while let Some(remaining_order) = self.orders.pop_front() {
-                    updated_orders.push_back(remaining_order);
-                }
-                break;
-            } else {
-                // No burgers left, put order back
-                updated_orders.push_back(order);
-                
-                // Put remaining orders back
-                while let Some(remaining_order) = self.orders.pop_front() {
-                    updated_orders.push_back(remaining_order);
-                }
-                break;
+                debug!("[OrderBuffer:{}] Generated completion event for order {}", 
+                       self.component_id, order.order_id);
             }
         }
         
-        self.orders = updated_orders;
-        
         // Update cached count to reflect consumed burgers
-        let burgers_consumed = available_burgers - remaining_burgers;
-        self.cached_assembly_buffer_count = remaining_burgers;
+        self.cached_assembly_buffer_count = available_burgers - burgers_consumed;
         
         if burgers_consumed > 0 {
             info!("[OrderBuffer:{}] Consumed {} burgers for order fulfillment (remaining: {})", 
                   self.component_id, burgers_consumed, self.cached_assembly_buffer_count);
-        }
-        
-        // Generate fulfillment events for completed orders
-        for completed_order in completed_orders {
-            let order_completed_event = Box::new(OrderCompletedEvent {
-                id: Uuid::new_v4().to_string(),
-                source_id: self.component_id.clone(),
-                target_id: completed_order.client_id.clone(),
-                order_id: completed_order.order_id.clone(),
-                total_burgers: completed_order.burger_count,
-            });
-            output_events.push((order_completed_event, 0));
-            
-            debug!("[OrderBuffer:{}] Generated completion event for order {}", 
-                   self.component_id, completed_order.order_id);
         }
         
         output_events
@@ -534,16 +486,14 @@ impl OrderBuffer {
         if let Some(order_data) = self.extract_order_from_event(event) {
             let order_item = OrderItem {
                 order_id: order_data.order_id,
-                burger_count: order_data.burger_count,
-                burgers_fulfilled: 0,
                 client_id: event.source_id().clone(),
             };
             
             let was_full_before = self.is_full;
             
             if self.add_order(order_item.clone()) {
-                info!("[OrderBuffer:{}] Added order {} for {} burgers to queue", 
-                      self.component_id, order_item.order_id, order_item.burger_count);
+                info!("[OrderBuffer:{}] Added order {} for 1 burger to queue", 
+                      self.component_id, order_item.order_id);
                 
                 // Try to fulfill orders immediately if burgers are available
                 let mut fulfillment_events = self.try_fulfill_orders();
@@ -568,10 +518,8 @@ impl OrderBuffer {
     fn extract_order_from_event(&self, event: &dyn Event) -> Option<PlaceOrderEventData> {
         if event.event_type() == PLACE_ORDER_EVENT {
             let data = event.data();
-            if let (Some(ComponentValue::Int(burger_count)), Some(ComponentValue::String(order_id))) = 
-                (data.get("burger_count"), data.get("order_id")) {
+            if let Some(ComponentValue::String(order_id)) = data.get("order_id") {
                 return Some(PlaceOrderEventData {
-                    burger_count: *burger_count as u32,
                     order_id: order_id.clone(),
                 });
             }
@@ -582,7 +530,6 @@ impl OrderBuffer {
 
 #[derive(Debug)]
 struct PlaceOrderEventData {
-    burger_count: u32,
     order_id: String,
 }
 
