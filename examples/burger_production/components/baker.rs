@@ -1,6 +1,6 @@
 use rsim::core::component::BaseComponent;
 use rsim::core::event::Event;
-use rsim::core::types::{ComponentId, SimulationTime};
+use rsim::core::types::ComponentId;
 use uuid::Uuid;
 
 use crate::events::{

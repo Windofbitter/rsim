@@ -1,6 +1,6 @@
 use rsim::core::component::BaseComponent;
 use rsim::core::event::Event;
-use rsim::core::types::{ComponentId, ComponentValue, SimulationTime};
+use rsim::core::types::{ComponentId, ComponentValue};
 use uuid::Uuid;
 use rand::prelude::*;
 use rand_distr::Normal;

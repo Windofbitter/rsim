@@ -1,6 +1,6 @@
 use rsim::core::component::BaseComponent;
 use rsim::core::event::Event;
-use rsim::core::types::{ComponentId, ComponentValue, SimulationTime};
+use rsim::core::types::{ComponentId, ComponentValue};
 use std::collections::VecDeque;
 use uuid::Uuid;
 
@@ -13,8 +13,6 @@ use crate::events::{
 pub struct BufferItem {
     pub item_type: String,
     pub item_id: String,
-    #[allow(dead_code)]
-    pub timestamp: SimulationTime,
 }
 
 /// Generic FIFO buffer with common functionality
@@ -73,11 +71,10 @@ impl GenericFifoBuffer {
         item
     }
 
-    pub fn create_item_added_event(&self, item: &BufferItem, timestamp: SimulationTime) -> Box<dyn Event> {
+    pub fn create_item_added_event(&self, item: &BufferItem) -> Box<dyn Event> {
         Box::new(ItemAddedEvent {
             id: Uuid::new_v4().to_string(),
             source_id: self.component_id.clone(),
-            timestamp,
             current_count: self.current_count(),
             item_type: item.item_type.clone(),
             item_id: item.item_id.clone(),
@@ -114,7 +111,6 @@ impl GenericFifoBuffer {
         let item = BufferItem {
             item_type: self.expected_item_type.clone(),
             item_id,
-            timestamp: 0,
         };
 
         if self.add_item(item.clone()) {

@@ -160,7 +160,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let start_frying_event = Box::new(StartFryingEvent {
         id: Uuid::new_v4().to_string(),
         source_id: fryer_id.clone(),
-        timestamp: 0,
     });
     engine.schedule_initial_event(start_frying_event, 1);
 
@@ -168,7 +167,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let start_baking_event = Box::new(StartBakingEvent {
         id: Uuid::new_v4().to_string(),
         source_id: baker_id.clone(),
-        timestamp: 0,
     });
     engine.schedule_initial_event(start_baking_event, 1);
 
@@ -176,7 +174,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let start_assembly_event = Box::new(StartAssemblyEvent {
         id: Uuid::new_v4().to_string(),
         source_id: assembler_id.clone(),
-        timestamp: 0,
         meat_id: "initial".to_string(),
         bread_id: "initial".to_string(),
     });
@@ -186,7 +183,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let generate_order_event = Box::new(GenerateOrderEvent {
         id: Uuid::new_v4().to_string(),
         source_id: client_id.clone(),
-        timestamp: 0,
     });
     engine.schedule_initial_event(generate_order_event, 20); // Start orders after production begins
     
