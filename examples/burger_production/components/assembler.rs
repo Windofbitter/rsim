@@ -2,6 +2,7 @@ use rsim::core::component::BaseComponent;
 use rsim::core::event::Event;
 use rsim::core::types::{ComponentId, ComponentValue};
 use uuid::Uuid;
+use log::{info, debug, warn};
 
 use crate::events::{
     StartAssemblyEvent, BurgerReadyEvent, RequestItemEvent,
@@ -94,6 +95,10 @@ impl Assembler {
                 self.available_bread_count -= 1;
                 self.items_in_process += 1;
 
+                info!("[Assembler:{}] Started assembly with meat and bread (items in process: {}/{}, remaining: meat={}, bread={})", 
+                      self.component_id, self.items_in_process, self.max_concurrent_items, 
+                      self.available_meat_count, self.available_bread_count);
+
                 // Generate IDs for the ingredients being used
                 let meat_id = Uuid::new_v4().to_string();
                 let bread_id = Uuid::new_v4().to_string();
@@ -104,16 +109,21 @@ impl Assembler {
             } else {
                 // Request missing ingredients if we don't have pending requests
                 if self.available_meat_count == 0 && self.pending_meat_requests == 0 {
+                    debug!("[Assembler:{}] Requesting meat from buffer", self.component_id);
                     let request_meat_event = self.create_request_item_event(self.meat_buffer_id.clone());
                     output_events.push((request_meat_event, 1));
                     self.pending_meat_requests += 1;
                 }
                 if self.available_bread_count == 0 && self.pending_bread_requests == 0 {
+                    debug!("[Assembler:{}] Requesting bread from buffer", self.component_id);
                     let request_bread_event = self.create_request_item_event(self.bread_buffer_id.clone());
                     output_events.push((request_bread_event, 1));
                     self.pending_bread_requests += 1;
                 }
             }
+        } else {
+            debug!("[Assembler:{}] Cannot start assembly - stopped: {}, capacity: {}/{}", 
+                   self.component_id, self.is_production_stopped, self.items_in_process, self.max_concurrent_items);
         }
 
         output_events
@@ -130,10 +140,16 @@ impl Assembler {
             
             // Generate burger ID combining meat and bread IDs
             let burger_id = format!("burger_{}_{}", meat_id, bread_id);
+            
+            info!("[Assembler:{}] Assembling burger {} from meat {} and bread {}", 
+                  self.component_id, burger_id, meat_id, bread_id);
 
             // Schedule the burger to be ready after assembly delay
-            let burger_ready_event = self.create_burger_ready_event(burger_id);
+            let burger_ready_event = self.create_burger_ready_event(burger_id.clone());
             output_events.push((burger_ready_event, self.assembly_delay));
+            
+            debug!("[Assembler:{}] Scheduled burger {} to be ready in {} cycles", 
+                   self.component_id, burger_id, self.assembly_delay);
         }
 
         output_events
@@ -144,6 +160,8 @@ impl Assembler {
         // Decrement items in process when burger is ready and sent to buffer
         if self.items_in_process > 0 {
             self.items_in_process -= 1;
+            info!("[Assembler:{}] Burger completed and sent to buffer (items in process: {}/{})", 
+                  self.component_id, self.items_in_process, self.max_concurrent_items);
         }
 
         // Try to start next assembly if we have capacity and ingredients
@@ -162,11 +180,15 @@ impl Assembler {
                 if self.pending_meat_requests > 0 {
                     self.pending_meat_requests -= 1;
                 }
+                debug!("[Assembler:{}] Received meat from buffer (available: {}, pending requests: {})", 
+                       self.component_id, self.available_meat_count, self.pending_meat_requests);
             } else if event.source_id() == &self.bread_buffer_id && item_type == "bread" {
                 self.available_bread_count += 1;
                 if self.pending_bread_requests > 0 {
                     self.pending_bread_requests -= 1;
                 }
+                debug!("[Assembler:{}] Received bread from buffer (available: {}, pending requests: {})", 
+                       self.component_id, self.available_bread_count, self.pending_bread_requests);
             }
 
             // Try to start assembly now that we have more ingredients
@@ -180,6 +202,7 @@ impl Assembler {
     /// Handles when the downstream buffer becomes full
     fn handle_buffer_full(&mut self) -> Vec<(Box<dyn Event>, u64)> {
         // Stop production when downstream buffer is full (backpressure)
+        warn!("[Assembler:{}] Downstream buffer full - stopping production", self.component_id);
         self.is_production_stopped = true;
         Vec::new()
     }
@@ -190,6 +213,7 @@ impl Assembler {
 
         // Resume production when space becomes available
         if self.is_production_stopped {
+            info!("[Assembler:{}] Downstream buffer has space - resuming production", self.component_id);
             self.is_production_stopped = false;
             
             // Try to start assembly if we have capacity and ingredients

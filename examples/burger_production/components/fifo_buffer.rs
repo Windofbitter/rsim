@@ -3,6 +3,7 @@ use rsim::core::event::Event;
 use rsim::core::types::{ComponentId, ComponentValue};
 use std::collections::VecDeque;
 use uuid::Uuid;
+use log::{info, debug, warn};
 
 use crate::events::{
     ItemAddedEvent, BufferFullEvent, BufferSpaceAvailableEvent,
@@ -110,19 +111,29 @@ impl GenericFifoBuffer {
 
         let item = BufferItem {
             item_type: self.expected_item_type.clone(),
-            item_id,
+            item_id: item_id.clone(),
         };
 
         if self.add_item(item.clone()) {
+            info!("[Buffer:{}] Added {} {} (count: {}/{})", 
+                  self.component_id, self.expected_item_type, item_id, 
+                  self.current_count(), self.capacity);
+                  
             let item_added_event = self.create_item_added_event(&item);
             output_events.push((item_added_event, 0));
 
             if self.is_full && !self.was_empty {
+                warn!("[Buffer:{}] Buffer is now full - notifying {} subscribers", 
+                      self.component_id, self.subscribers.len());
                 for subscriber in &self.subscribers {
                     let buffer_full_event = self.create_buffer_full_event(subscriber.clone());
                     output_events.push((buffer_full_event, 0));
                 }
             }
+        } else {
+            warn!("[Buffer:{}] Failed to add {} {} - buffer full ({}/{})", 
+                  self.component_id, self.expected_item_type, item_id, 
+                  self.current_count(), self.capacity);
         }
 
         output_events
@@ -136,19 +147,34 @@ impl GenericFifoBuffer {
             Some(ComponentValue::Int(q)) => *q as u32,
             _ => 1,
         };
+        
+        debug!("[Buffer:{}] Received request for {} {} items from {}", 
+               self.component_id, requested_quantity, self.expected_item_type, event.source_id());
 
         let was_full_before = self.is_full;
         let mut fulfilled_count = 0;
 
         for _ in 0..requested_quantity {
-            if self.remove_item().is_some() {
+            if let Some(item) = self.remove_item() {
                 fulfilled_count += 1;
+                debug!("[Buffer:{}] Fulfilled request for {} {} (remaining: {}/{})", 
+                       self.component_id, self.expected_item_type, item.item_id, 
+                       self.current_count(), self.capacity);
             } else {
                 break;
             }
         }
+        
+        if fulfilled_count > 0 {
+            info!("[Buffer:{}] Fulfilled {}/{} requested {} items", 
+                  self.component_id, fulfilled_count, requested_quantity, self.expected_item_type);
+        } else {
+            debug!("[Buffer:{}] Could not fulfill any requests - buffer empty", self.component_id);
+        }
 
         if fulfilled_count > 0 && was_full_before {
+            info!("[Buffer:{}] Buffer no longer full - notifying {} subscribers of available space", 
+                  self.component_id, self.subscribers.len());
             for subscriber in &self.subscribers {
                 let space_available_event = self.create_buffer_space_available_event(subscriber.clone());
                 output_events.push((space_available_event, 0));

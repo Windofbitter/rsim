@@ -2,6 +2,7 @@ use rsim::core::component::BaseComponent;
 use rsim::core::event::Event;
 use rsim::core::types::ComponentId;
 use uuid::Uuid;
+use log::{info, debug, warn};
 
 use crate::events::{
     StartBakingEvent, BreadReadyEvent,
@@ -58,22 +59,40 @@ impl Baker {
     /// Handles starting the baking process
     fn handle_start_baking(&mut self) -> Vec<(Box<dyn Event>, u64)> {
         let mut output_events = Vec::new();
+        
+        // First check if this is a continuation after completing a previous item
+        // If so, we need to decrement the items_in_process counter
+        // (This is a workaround since we don't receive our own bread_ready events)
+        if self.items_in_process >= self.max_concurrent_items {
+            self.items_in_process = 0; // Reset since we're at capacity and starting fresh
+            debug!("[Baker:{}] Reset items in process counter for continuous production", self.component_id);
+        }
 
         // Only start baking if production is not stopped and we have capacity
         if !self.is_production_stopped && self.items_in_process < self.max_concurrent_items {
             // Start baking a new bread bun
             self.items_in_process += 1;
             let bread_id = Uuid::new_v4().to_string();
+            
+            info!("[Baker:{}] Started baking bread {} (items in process: {}/{})", 
+                  self.component_id, bread_id, self.items_in_process, self.max_concurrent_items);
 
             // Schedule the bread to be ready after baking delay
-            let bread_ready_event = self.create_bread_ready_event(bread_id);
+            let bread_ready_event = self.create_bread_ready_event(bread_id.clone());
             output_events.push((bread_ready_event, self.baking_delay));
-
-            // Schedule next baking cycle if not stopped and still have capacity
-            if !self.is_production_stopped && self.items_in_process < self.max_concurrent_items {
-                let next_baking_event = self.create_start_baking_event();
-                output_events.push((next_baking_event, 1)); // Start next item quickly
-            }
+            
+            debug!("[Baker:{}] Scheduled bread {} to be ready in {} cycles", 
+                   self.component_id, bread_id, self.baking_delay);
+            
+            // Also schedule when to start the next bread (after this one completes)
+            // This accounts for the fact that we won't receive our own bread_ready event
+            let next_start_event = self.create_start_baking_event();
+            output_events.push((next_start_event, self.baking_delay + 1));
+            debug!("[Baker:{}] Scheduled next baking to start in {} cycles", 
+                   self.component_id, self.baking_delay + 1);
+        } else {
+            debug!("[Baker:{}] Cannot start baking - stopped: {}, capacity: {}/{}", 
+                   self.component_id, self.is_production_stopped, self.items_in_process, self.max_concurrent_items);
         }
 
         output_events
@@ -82,6 +101,7 @@ impl Baker {
     /// Handles when the downstream buffer becomes full
     fn handle_buffer_full(&mut self) -> Vec<(Box<dyn Event>, u64)> {
         // Stop production when downstream buffer is full (backpressure)
+        warn!("[Baker:{}] Downstream buffer full - stopping production", self.component_id);
         self.is_production_stopped = true;
         Vec::new()
     }
@@ -92,12 +112,14 @@ impl Baker {
 
         // Resume production when space becomes available
         if self.is_production_stopped {
+            info!("[Baker:{}] Downstream buffer has space - resuming production", self.component_id);
             self.is_production_stopped = false;
             
             // Resume baking if we have capacity
             if self.items_in_process < self.max_concurrent_items {
                 let start_baking_event = self.create_start_baking_event();
                 output_events.push((start_baking_event, 1)); // Resume quickly
+                debug!("[Baker:{}] Scheduled resumption baking cycle in 1 cycle", self.component_id);
             }
         }
 
@@ -109,6 +131,8 @@ impl Baker {
         // Decrement items in process when bread is ready and sent to buffer
         if self.items_in_process > 0 {
             self.items_in_process -= 1;
+            info!("[Baker:{}] Bread completed and sent to buffer (items in process: {}/{})", 
+                  self.component_id, self.items_in_process, self.max_concurrent_items);
         }
 
         // If production is not stopped and we now have capacity, start next item
@@ -116,6 +140,7 @@ impl Baker {
         if !self.is_production_stopped && self.items_in_process < self.max_concurrent_items {
             let start_baking_event = self.create_start_baking_event();
             output_events.push((start_baking_event, 1));
+            debug!("[Baker:{}] Capacity available - scheduled next baking cycle", self.component_id);
         }
 
         output_events
@@ -166,6 +191,7 @@ impl BaseComponent for Baker {
                 BREAD_READY_EVENT => {
                     // Handle our own bread ready events for flow control
                     if event.source_id() == &self.component_id {
+                        debug!("[Baker:{}] Received own bread ready event", self.component_id);
                         let mut new_events = self.handle_bread_ready();
                         output_events.append(&mut new_events);
                     }

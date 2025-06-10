@@ -55,13 +55,19 @@ impl Default for BurgerSimulationConfig {
             order_size_std_dev: 0.5,
             
             // Simulation parameters
-            max_simulation_cycles: 1000,
+            max_simulation_cycles: 100,  // Reduced for clearer output
             random_seed: 42,
         }
     }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Initialize logger with timestamps
+    env_logger::Builder::from_default_env()
+        .filter_level(log::LevelFilter::Info)
+        .format_timestamp(None)  // Remove timestamps for cleaner output
+        .init();
+    
     println!("🍔 Starting Burger Production Simulation");
     
     let config = BurgerSimulationConfig::default();

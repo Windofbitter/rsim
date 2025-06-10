@@ -3,6 +3,7 @@ use super::event_manager::EventManager;
 use super::event_scheduler::EventScheduler;
 use super::component::BaseComponent;
 use super::event::Event;
+use log::debug;
 pub struct SimulationEngine {
     event_manager: EventManager,
     scheduler: EventScheduler,
@@ -56,6 +57,8 @@ impl SimulationEngine {
         let next_delay = self.scheduler.peek_next_delay().unwrap_or(0);
         self.scheduler.advance_time(next_delay);
         self.current_cycle += next_delay;
+        
+        debug!("=== Simulation Cycle {} ===", self.current_cycle);
 
         let events = self.scheduler.get_next_time_events();
         

@@ -4,6 +4,7 @@ use rsim::core::types::{ComponentId, ComponentValue};
 use uuid::Uuid;
 use rand::prelude::*;
 use rand_distr::Normal;
+use log::{info, debug};
 
 use crate::events::{
     GenerateOrderEvent, PlaceOrderEvent,
@@ -87,14 +88,22 @@ impl Client {
         // Update statistics
         self.total_orders_generated += 1;
         self.pending_orders += burger_count;
+        
+        info!("[Client:{}] Generated {} requesting {} burgers (total orders: {}, pending: {})", 
+              self.component_id, order_id, burger_count, self.total_orders_generated, self.pending_orders);
 
         // Place the order with the assembly buffer
-        let place_order_event = self.create_place_order_event(burger_count, order_id);
+        let place_order_event = self.create_place_order_event(burger_count, order_id.clone());
         output_events.push((place_order_event, 0)); // Place order immediately
+        
+        debug!("[Client:{}] Placed {} immediately", self.component_id, order_id);
 
         // Schedule next order generation
         let next_generate_event = self.create_generate_order_event();
         output_events.push((next_generate_event, self.order_generation_interval));
+        
+        debug!("[Client:{}] Scheduled next order generation in {} cycles", 
+               self.component_id, self.order_generation_interval);
 
         output_events
     }
@@ -111,6 +120,9 @@ impl Client {
                         if self.pending_orders > 0 {
                             self.pending_orders -= 1;
                             self.fulfilled_orders += 1;
+                            
+                            info!("[Client:{}] Burger fulfilled! (pending: {}, fulfilled: {}, total orders: {})", 
+                                  self.component_id, self.pending_orders, self.fulfilled_orders, self.total_orders_generated);
                         }
                     }
                 }

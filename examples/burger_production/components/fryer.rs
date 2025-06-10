@@ -2,6 +2,7 @@ use rsim::core::component::BaseComponent;
 use rsim::core::event::Event;
 use rsim::core::types::ComponentId;
 use uuid::Uuid;
+use log::{info, debug, warn};
 
 use crate::events::{
     StartFryingEvent, MeatReadyEvent,
@@ -58,22 +59,40 @@ impl Fryer {
     /// Handles starting the frying process
     fn handle_start_frying(&mut self) -> Vec<(Box<dyn Event>, u64)> {
         let mut output_events = Vec::new();
+        
+        // First check if this is a continuation after completing a previous item
+        // If so, we need to decrement the items_in_process counter
+        // (This is a workaround since we don't receive our own meat_ready events)
+        if self.items_in_process >= self.max_concurrent_items {
+            self.items_in_process = 0; // Reset since we're at capacity and starting fresh
+            debug!("[Fryer:{}] Reset items in process counter for continuous production", self.component_id);
+        }
 
         // Only start frying if production is not stopped and we have capacity
         if !self.is_production_stopped && self.items_in_process < self.max_concurrent_items {
             // Start frying a new meat patty
             self.items_in_process += 1;
             let meat_id = Uuid::new_v4().to_string();
+            
+            info!("[Fryer:{}] Started frying meat {} (items in process: {}/{})", 
+                  self.component_id, meat_id, self.items_in_process, self.max_concurrent_items);
 
             // Schedule the meat to be ready after frying delay
-            let meat_ready_event = self.create_meat_ready_event(meat_id);
+            let meat_ready_event = self.create_meat_ready_event(meat_id.clone());
             output_events.push((meat_ready_event, self.frying_delay));
-
-            // Schedule next frying cycle if not stopped and still have capacity
-            if !self.is_production_stopped && self.items_in_process < self.max_concurrent_items {
-                let next_frying_event = self.create_start_frying_event();
-                output_events.push((next_frying_event, 1)); // Start next item quickly
-            }
+            
+            debug!("[Fryer:{}] Scheduled meat {} to be ready in {} cycles", 
+                   self.component_id, meat_id, self.frying_delay);
+            
+            // Also schedule when to start the next meat (after this one completes)
+            // This accounts for the fact that we won't receive our own meat_ready event
+            let next_start_event = self.create_start_frying_event();
+            output_events.push((next_start_event, self.frying_delay + 1));
+            debug!("[Fryer:{}] Scheduled next frying to start in {} cycles", 
+                   self.component_id, self.frying_delay + 1);
+        } else {
+            debug!("[Fryer:{}] Cannot start frying - stopped: {}, capacity: {}/{}", 
+                   self.component_id, self.is_production_stopped, self.items_in_process, self.max_concurrent_items);
         }
 
         output_events
@@ -82,6 +101,7 @@ impl Fryer {
     /// Handles when the downstream buffer becomes full
     fn handle_buffer_full(&mut self) -> Vec<(Box<dyn Event>, u64)> {
         // Stop production when downstream buffer is full (backpressure)
+        warn!("[Fryer:{}] Downstream buffer full - stopping production", self.component_id);
         self.is_production_stopped = true;
         Vec::new()
     }
@@ -92,12 +112,14 @@ impl Fryer {
 
         // Resume production when space becomes available
         if self.is_production_stopped {
+            info!("[Fryer:{}] Downstream buffer has space - resuming production", self.component_id);
             self.is_production_stopped = false;
             
             // Resume frying if we have capacity
             if self.items_in_process < self.max_concurrent_items {
                 let start_frying_event = self.create_start_frying_event();
                 output_events.push((start_frying_event, 1)); // Resume quickly
+                debug!("[Fryer:{}] Scheduled resumption frying cycle in 1 cycle", self.component_id);
             }
         }
 
@@ -109,6 +131,8 @@ impl Fryer {
         // Decrement items in process when meat is ready and sent to buffer
         if self.items_in_process > 0 {
             self.items_in_process -= 1;
+            info!("[Fryer:{}] Meat completed and sent to buffer (items in process: {}/{})", 
+                  self.component_id, self.items_in_process, self.max_concurrent_items);
         }
 
         // If production is not stopped and we now have capacity, start next item
@@ -116,6 +140,7 @@ impl Fryer {
         if !self.is_production_stopped && self.items_in_process < self.max_concurrent_items {
             let start_frying_event = self.create_start_frying_event();
             output_events.push((start_frying_event, 1));
+            debug!("[Fryer:{}] Capacity available - scheduled next frying cycle", self.component_id);
         }
 
         output_events
