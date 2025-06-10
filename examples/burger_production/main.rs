@@ -92,6 +92,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bread_buffer_id = "cooked_bread_buffer".to_string();
     let assembly_buffer_id = "assembly_buffer".to_string();
     let client_id = "client".to_string();
+    let metrics_collector_id = "metrics_collector".to_string();
 
     // Create simulation engine
     let mut engine = SimulationEngine::new(Some(config.max_simulation_cycles));
@@ -149,6 +150,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.random_seed,
     );
 
+    // Create metrics collector component
+    let metrics_collector = MetricsCollector::new(
+        metrics_collector_id.clone(),
+        25, // Window size: 25 cycles
+        25, // Report interval: every 25 cycles
+    );
+
     // Register all components with simulation engine
     println!("Registering components...");
     engine.register_component(Box::new(fryer))?;
@@ -158,6 +166,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     engine.register_component(Box::new(bread_buffer))?;
     engine.register_component(Box::new(assembly_buffer))?;
     engine.register_component(Box::new(client))?;
+    engine.register_component(Box::new(metrics_collector))?;
 
     // Create initial events to kickstart the simulation
     println!("Scheduling initial events...");
@@ -191,6 +200,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         source_id: client_id.clone(),
     });
     engine.schedule_initial_event(generate_order_event, 20); // Start orders after production begins
+
+    // Start metrics reporting
+    let initial_metrics_event = Box::new(MetricsReportEvent {
+        id: Uuid::new_v4().to_string(),
+        source_id: metrics_collector_id.clone(),
+        report_time: 25,
+    });
+    engine.schedule_initial_event(initial_metrics_event, 25); // First report at cycle 25
     
     println!("Starting simulation for {} cycles...\n", config.max_simulation_cycles);
     
