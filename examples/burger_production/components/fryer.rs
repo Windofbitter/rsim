@@ -88,12 +88,6 @@ impl Fryer {
             debug!("[Fryer:{}] Scheduled meat {} to be ready in {} cycles", 
                    self.component_id, meat_id, self.frying_delay);
             
-            // Also schedule when to start the next meat (after this one completes)
-            // This accounts for the fact that we won't receive our own meat_ready event
-            let next_start_event = self.create_start_frying_event();
-            output_events.push((next_start_event, self.frying_delay + 1));
-            debug!("[Fryer:{}] Scheduled next frying to start in {} cycles", 
-                   self.component_id, self.frying_delay + 1);
         } else {
             debug!("[Fryer:{}] Cannot start frying - stopped: {}, capacity: {}/{}", 
                    self.component_id, self.is_production_stopped, self.items_in_process, self.max_concurrent_items);
@@ -139,12 +133,16 @@ impl Fryer {
                   self.component_id, self.items_in_process, self.max_concurrent_items);
         }
 
-        // If production is not stopped and we now have capacity, start next item
+        // Only schedule next item for BufferBased strategy (continuous production)
         let mut output_events = Vec::new();
-        if !self.is_production_stopped && self.items_in_process < self.max_concurrent_items {
+        if matches!(self.production_strategy, ProductionStrategy::BufferBased) 
+           && !self.is_production_stopped 
+           && self.items_in_process < self.max_concurrent_items {
             let start_frying_event = self.create_start_frying_event();
             output_events.push((start_frying_event, 1));
-            debug!("[Fryer:{}] Capacity available - scheduled next frying cycle", self.component_id);
+            debug!("[Fryer:{}] BufferBased strategy - scheduled next frying cycle", self.component_id);
+        } else if matches!(self.production_strategy, ProductionStrategy::OrderBased) {
+            debug!("[Fryer:{}] OrderBased strategy - waiting for production request", self.component_id);
         }
 
         output_events

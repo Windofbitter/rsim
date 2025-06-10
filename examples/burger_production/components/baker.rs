@@ -88,12 +88,6 @@ impl Baker {
             debug!("[Baker:{}] Scheduled bread {} to be ready in {} cycles", 
                    self.component_id, bread_id, self.baking_delay);
             
-            // Also schedule when to start the next bread (after this one completes)
-            // This accounts for the fact that we won't receive our own bread_ready event
-            let next_start_event = self.create_start_baking_event();
-            output_events.push((next_start_event, self.baking_delay + 1));
-            debug!("[Baker:{}] Scheduled next baking to start in {} cycles", 
-                   self.component_id, self.baking_delay + 1);
         } else {
             debug!("[Baker:{}] Cannot start baking - stopped: {}, capacity: {}/{}", 
                    self.component_id, self.is_production_stopped, self.items_in_process, self.max_concurrent_items);
@@ -139,12 +133,16 @@ impl Baker {
                   self.component_id, self.items_in_process, self.max_concurrent_items);
         }
 
-        // If production is not stopped and we now have capacity, start next item
+        // Only schedule next item for BufferBased strategy (continuous production)
         let mut output_events = Vec::new();
-        if !self.is_production_stopped && self.items_in_process < self.max_concurrent_items {
+        if matches!(self.production_strategy, ProductionStrategy::BufferBased) 
+           && !self.is_production_stopped 
+           && self.items_in_process < self.max_concurrent_items {
             let start_baking_event = self.create_start_baking_event();
             output_events.push((start_baking_event, 1));
-            debug!("[Baker:{}] Capacity available - scheduled next baking cycle", self.component_id);
+            debug!("[Baker:{}] BufferBased strategy - scheduled next baking cycle", self.component_id);
+        } else if matches!(self.production_strategy, ProductionStrategy::OrderBased) {
+            debug!("[Baker:{}] OrderBased strategy - waiting for production request", self.component_id);
         }
 
         output_events
