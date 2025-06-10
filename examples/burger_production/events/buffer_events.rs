@@ -34,9 +34,6 @@ impl Event for ItemAddedEvent {
         None
     }
 
-    fn timestamp(&self) -> SimulationTime {
-        self.timestamp
-    }
 
     fn data(&self) -> HashMap<String, ComponentValue> {
         let mut data = HashMap::new();
@@ -44,6 +41,10 @@ impl Event for ItemAddedEvent {
         data.insert("item_type".to_string(), ComponentValue::String(self.item_type.clone()));
         data.insert("item_id".to_string(), ComponentValue::String(self.item_id.clone()));
         data
+    }
+
+    fn clone_event(&self) -> Box<dyn Event> {
+        Box::new(self.clone())
     }
 }
 
@@ -73,14 +74,15 @@ impl Event for BufferFullEvent {
         Some(vec![self.target_id.clone()])
     }
 
-    fn timestamp(&self) -> SimulationTime {
-        self.timestamp
-    }
 
     fn data(&self) -> HashMap<String, ComponentValue> {
         let mut data = HashMap::new();
         data.insert("capacity".to_string(), ComponentValue::Int(self.capacity as i64));
         data
+    }
+
+    fn clone_event(&self) -> Box<dyn Event> {
+        Box::new(self.clone())
     }
 }
 
@@ -110,14 +112,15 @@ impl Event for BufferSpaceAvailableEvent {
         Some(vec![self.target_id.clone()])
     }
 
-    fn timestamp(&self) -> SimulationTime {
-        self.timestamp
-    }
 
     fn data(&self) -> HashMap<String, ComponentValue> {
         let mut data = HashMap::new();
         data.insert("available_space".to_string(), ComponentValue::Int(self.available_space as i64));
         data
+    }
+
+    fn clone_event(&self) -> Box<dyn Event> {
+        Box::new(self.clone())
     }
 }
 
@@ -147,13 +150,14 @@ impl Event for RequestItemEvent {
         Some(vec![self.target_id.clone()])
     }
 
-    fn timestamp(&self) -> SimulationTime {
-        self.timestamp
-    }
 
     fn data(&self) -> HashMap<String, ComponentValue> {
         let mut data = HashMap::new();
         data.insert("quantity".to_string(), ComponentValue::Int(self.quantity as i64));
         data
+    }
+
+    fn clone_event(&self) -> Box<dyn Event> {
+        Box::new(self.clone())
     }
 }

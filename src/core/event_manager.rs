@@ -29,7 +29,7 @@ impl EventManager {
         // Process component's subscriptions
         for event_type in component.subscriptions() {
             self.subscriptions
-                .entry(event_type.clone())
+                .entry(event_type.to_string())
                 .or_insert_with(HashSet::new)
                 .insert(component_id.clone());
         }
@@ -42,8 +42,8 @@ impl EventManager {
 
 
     /// Route event to appropriate subscribers, returning target component IDs
-    pub fn route_event(&self, event: &Event) -> Vec<ComponentId> {
-        match &event.target_ids {
+    pub fn route_event(&self, event: &dyn Event) -> Vec<ComponentId> {
+        match event.target_ids() {
             // If specific targets are provided, filter to only registered components
             Some(targets) => {
                 targets.iter()
@@ -54,7 +54,7 @@ impl EventManager {
             // If no specific targets, find all subscribers to this event type
             None => {
                 self.subscriptions
-                    .get(&event.event_type)
+                    .get(event.event_type())
                     .map(|subscribers| subscribers.iter().cloned().collect())
                     .unwrap_or_else(Vec::new)
             }

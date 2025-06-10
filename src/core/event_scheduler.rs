@@ -1,13 +1,12 @@
 use std::collections::BinaryHeap;
 use std::cmp::Ordering;
-use super::types::ComponentId;
 use super::event::Event;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ScheduledEvent {
     pub delay_cycles: u64,
     pub sequence_num: u64,
-    pub event: Event,
+    pub event: Box<dyn Event>,
 }
 
 impl PartialEq for ScheduledEvent {
@@ -47,7 +46,7 @@ impl EventScheduler {
     }
 
     /// Schedule an event to execute after the specified delay
-    pub fn schedule_event(&mut self, event: Event, delay_cycles: u64) {
+    pub fn schedule_event(&mut self, event: Box<dyn Event>, delay_cycles: u64) {
         let scheduled_event = ScheduledEvent {
             delay_cycles,
             sequence_num: self.sequence_counter,
@@ -59,7 +58,7 @@ impl EventScheduler {
     }
 
     /// Get all events scheduled for the next time step (minimum delay)
-    pub fn get_next_time_events(&mut self) -> Vec<Event> {
+    pub fn get_next_time_events(&mut self) -> Vec<Box<dyn Event>> {
         let mut events = Vec::new();
         
         if let Some(next_delay) = self.peek_next_delay() {

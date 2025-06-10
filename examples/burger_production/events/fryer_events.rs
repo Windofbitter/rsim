@@ -29,12 +29,13 @@ impl Event for StartFryingEvent {
         None
     }
 
-    fn timestamp(&self) -> SimulationTime {
-        self.timestamp
-    }
 
     fn data(&self) -> HashMap<String, ComponentValue> {
         HashMap::new()
+    }
+
+    fn clone_event(&self) -> Box<dyn Event> {
+        Box::new(self.clone())
     }
 }
 
@@ -64,14 +65,15 @@ impl Event for MeatReadyEvent {
         Some(vec![self.target_id.clone()])
     }
 
-    fn timestamp(&self) -> SimulationTime {
-        self.timestamp
-    }
 
     fn data(&self) -> HashMap<String, ComponentValue> {
         let mut data = HashMap::new();
         data.insert("meat_id".to_string(), ComponentValue::String(self.meat_id.clone()));
         data.insert("item_type".to_string(), ComponentValue::String("meat".to_string()));
         data
+    }
+
+    fn clone_event(&self) -> Box<dyn Event> {
+        Box::new(self.clone())
     }
 }

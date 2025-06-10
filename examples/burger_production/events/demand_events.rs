@@ -29,12 +29,13 @@ impl Event for GenerateOrderEvent {
         None
     }
 
-    fn timestamp(&self) -> SimulationTime {
-        self.timestamp
-    }
 
     fn data(&self) -> HashMap<String, ComponentValue> {
         HashMap::new()
+    }
+
+    fn clone_event(&self) -> Box<dyn Event> {
+        Box::new(self.clone())
     }
 }
 
@@ -65,14 +66,15 @@ impl Event for PlaceOrderEvent {
         Some(vec![self.target_id.clone()])
     }
 
-    fn timestamp(&self) -> SimulationTime {
-        self.timestamp
-    }
 
     fn data(&self) -> HashMap<String, ComponentValue> {
         let mut data = HashMap::new();
         data.insert("burger_count".to_string(), ComponentValue::Int(self.burger_count as i64));
         data.insert("order_id".to_string(), ComponentValue::String(self.order_id.clone()));
         data
+    }
+
+    fn clone_event(&self) -> Box<dyn Event> {
+        Box::new(self.clone())
     }
 }

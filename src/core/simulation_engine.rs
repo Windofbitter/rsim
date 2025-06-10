@@ -3,8 +3,6 @@ use super::event_manager::EventManager;
 use super::event_scheduler::EventScheduler;
 use super::component::BaseComponent;
 use super::event::Event;
-use super::types::ComponentId;
-
 pub struct SimulationEngine {
     event_manager: EventManager,
     scheduler: EventScheduler,
@@ -29,7 +27,7 @@ impl SimulationEngine {
     }
 
     /// Schedule an initial event to start the simulation
-    pub fn schedule_initial_event(&mut self, event: Event, delay_cycles: u64) {
+    pub fn schedule_initial_event(&mut self, event: Box<dyn Event>, delay_cycles: u64) {
         self.scheduler.schedule_event(event, delay_cycles);
     }
 
@@ -64,13 +62,13 @@ impl SimulationEngine {
         let mut events_by_component = HashMap::new();
         
         for event in events {
-            let target_ids = self.event_manager.route_event(&event);
-            
+            let target_ids = self.event_manager.route_event(event.as_ref());
+
             for target_id in target_ids {
                 events_by_component
                     .entry(target_id)
                     .or_insert_with(Vec::new)
-                    .push(event.clone());
+                    .push(event.clone_event());
             }
         }
 

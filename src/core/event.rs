@@ -1,11 +1,16 @@
-use super::types::ComponentId;
+use super::types::{ComponentId, ComponentValue};
+use std::collections::HashMap;
 use std::fmt::Debug;
 
 pub type EventId = String;
 
-pub trait Event: Debug + Clone {
-    fn event_type(&self) -> &'static str;
+pub type EventType = String;
+
+pub trait Event: Debug {
+    fn id(&self) -> &EventId;
+    fn event_type(&self) -> &str;
     fn source_id(&self) -> &ComponentId;
-    fn target_ids(&self) -> Option<&[ComponentId]>;
-    fn event_id(&self) -> &EventId;
+    fn target_ids(&self) -> Option<Vec<ComponentId>>;
+    fn data(&self) -> HashMap<String, ComponentValue>;
+    fn clone_event(&self) -> Box<dyn Event>;
 }

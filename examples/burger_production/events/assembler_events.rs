@@ -31,15 +31,16 @@ impl Event for StartAssemblyEvent {
         None
     }
 
-    fn timestamp(&self) -> SimulationTime {
-        self.timestamp
-    }
 
     fn data(&self) -> HashMap<String, ComponentValue> {
         let mut data = HashMap::new();
         data.insert("meat_id".to_string(), ComponentValue::String(self.meat_id.clone()));
         data.insert("bread_id".to_string(), ComponentValue::String(self.bread_id.clone()));
         data
+    }
+
+    fn clone_event(&self) -> Box<dyn Event> {
+        Box::new(self.clone())
     }
 }
 
@@ -69,14 +70,15 @@ impl Event for BurgerReadyEvent {
         Some(vec![self.target_id.clone()])
     }
 
-    fn timestamp(&self) -> SimulationTime {
-        self.timestamp
-    }
 
     fn data(&self) -> HashMap<String, ComponentValue> {
         let mut data = HashMap::new();
         data.insert("burger_id".to_string(), ComponentValue::String(self.burger_id.clone()));
         data.insert("item_type".to_string(), ComponentValue::String("burger".to_string()));
         data
+    }
+
+    fn clone_event(&self) -> Box<dyn Event> {
+        Box::new(self.clone())
     }
 }
