@@ -1,5 +1,7 @@
 use std::collections::{HashMap, HashSet};
-use super::component::{BaseComponent, ComponentId, Event, EventType};
+use super::component::BaseComponent;
+use super::types::ComponentId;
+use super::event::{Event, EventType};
 
 pub struct EventManager {
     components: HashMap<ComponentId, Box<dyn BaseComponent>>,

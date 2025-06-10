@@ -1,27 +1,5 @@
-pub type ComponentId = String;
-pub type EventType = String;
-
-
-#[derive(Debug, Clone)]
-pub struct Event {
-    pub event_type: EventType,
-    pub source_id: ComponentId,
-    pub target_ids: Option<Vec<ComponentId>>,
-}
-
-impl Event {
-    pub fn new(
-        event_type: EventType,
-        source_id: ComponentId,
-        target_ids: Option<Vec<ComponentId>>,
-    ) -> Self {
-        Self {
-            event_type,
-            source_id,
-            target_ids,
-        }
-    }
-}
+use super::types::ComponentId;
+use super::event::{Event, EventType};
 
 pub trait BaseComponent {
     fn component_id(&self) -> &ComponentId;

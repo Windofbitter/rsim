@@ -1,6 +1,7 @@
 use std::collections::BinaryHeap;
 use std::cmp::Ordering;
-use super::component::{Event, ComponentId};
+use super::types::ComponentId;
+use super::event::Event;
 
 #[derive(Debug, Clone)]
 pub struct ScheduledEvent {
@@ -40,12 +41,23 @@ pub struct EventScheduler {
 impl EventScheduler {
     /// Create a new EventScheduler
     pub fn new() -> Self {
-        unimplemented!()
+        Self {
+            event_queue: BinaryHeap::new(),
+            sequence_counter: 0,
+        }
     }
 
     /// Schedule an event to execute after the specified delay
     pub fn schedule_event(&mut self, event: Event, targets: Vec<ComponentId>, delay_cycles: u64) {
-        unimplemented!()
+        let scheduled_event = ScheduledEvent {
+            delay_cycles,
+            sequence_num: self.sequence_counter,
+            event,
+            targets,
+        };
+        
+        self.event_queue.push(scheduled_event);
+        self.sequence_counter += 1;
     }
 
     /// Get all events scheduled for the next time step (minimum delay)
