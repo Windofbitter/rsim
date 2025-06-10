@@ -7,8 +7,10 @@ use log::{info, debug, warn};
 
 use crate::events::{
     ItemAddedEvent, BufferFullEvent, BufferSpaceAvailableEvent,
+    PartialOrderFulfillmentEvent, OrderCompletedEvent,
     MEAT_READY_EVENT, BREAD_READY_EVENT, BURGER_READY_EVENT, PLACE_ORDER_EVENT, REQUEST_ITEM_EVENT,
-    ProductionRequestEvent, PRODUCTION_REQUEST_EVENT
+    ProductionRequestEvent, PRODUCTION_REQUEST_EVENT, ITEM_ADDED_EVENT,
+    PARTIAL_ORDER_FULFILLMENT_EVENT, ORDER_COMPLETED_EVENT
 };
 
 #[derive(Debug, Clone)]
@@ -328,7 +330,18 @@ impl BaseComponent for AssemblyBuffer {
 pub struct OrderItem {
     pub order_id: String,
     pub burger_count: u32,
+    pub burgers_fulfilled: u32,
     pub client_id: ComponentId,
+}
+
+impl OrderItem {
+    pub fn remaining_burgers(&self) -> u32 {
+        self.burger_count - self.burgers_fulfilled
+    }
+    
+    pub fn is_complete(&self) -> bool {
+        self.burgers_fulfilled >= self.burger_count
+    }
 }
 
 /// OrderBuffer - FIFO queue for pending orders between Client and production system
@@ -338,8 +351,10 @@ pub struct OrderBuffer {
     pub capacity: u32,
     pub orders: VecDeque<OrderItem>,
     pub assembler_id: ComponentId,
+    pub assembly_buffer_id: ComponentId,
     pub subscribers: Vec<ComponentId>,
     pub is_full: bool,
+    pub cached_assembly_buffer_count: u32,
 }
 
 impl OrderBuffer {
@@ -347,6 +362,7 @@ impl OrderBuffer {
         component_id: ComponentId,
         capacity: u32,
         assembler_id: ComponentId,
+        assembly_buffer_id: ComponentId,
         subscribers: Vec<ComponentId>,
     ) -> Self {
         Self {
@@ -354,8 +370,10 @@ impl OrderBuffer {
             capacity,
             orders: VecDeque::new(),
             assembler_id,
+            assembly_buffer_id,
             subscribers,
             is_full: false,
+            cached_assembly_buffer_count: 0,
         }
     }
 
@@ -407,6 +425,109 @@ impl OrderBuffer {
         })
     }
 
+    fn handle_item_added_event(&mut self, event: &dyn Event) -> Vec<(Box<dyn Event>, u64)> {
+        // Check if this is a burger from AssemblyBuffer
+        if event.source_id() == &self.assembly_buffer_id {
+            let data = event.data();
+            if let Some(ComponentValue::String(item_type)) = data.get("item_type") {
+                if item_type == "burger" {
+                    // Update cached count from the event
+                    if let Some(ComponentValue::Int(current_count)) = data.get("current_count") {
+                        self.cached_assembly_buffer_count = *current_count as u32;
+                    }
+                    
+                    debug!("[OrderBuffer:{}] Burger added to AssemblyBuffer (count: {}), trying to fulfill orders", 
+                           self.component_id, self.cached_assembly_buffer_count);
+                    return self.try_fulfill_orders();
+                }
+            }
+        }
+        Vec::new()
+    }
+
+    fn try_fulfill_orders(&mut self) -> Vec<(Box<dyn Event>, u64)> {
+        let mut output_events = Vec::new();
+        
+        let available_burgers = self.query_assembly_buffer_count();
+        let mut remaining_burgers = available_burgers;
+        let mut completed_orders = Vec::new();
+        let mut updated_orders = VecDeque::new();
+        
+        info!("[OrderBuffer:{}] Trying to fulfill orders with {} available burgers", 
+              self.component_id, available_burgers);
+        
+        // Process orders in FIFO order with partial fulfillment
+        while let Some(mut order) = self.orders.pop_front() {
+            let needed = order.remaining_burgers();
+            
+            if remaining_burgers >= needed {
+                // Can complete this order
+                order.burgers_fulfilled = order.burger_count;
+                remaining_burgers -= needed;
+                completed_orders.push(order.clone());
+                
+                info!("[OrderBuffer:{}] Order {} completed ({}/{} burgers)", 
+                      self.component_id, order.order_id, order.burger_count, order.burger_count);
+            } else if remaining_burgers > 0 {
+                // Partial fulfillment
+                order.burgers_fulfilled += remaining_burgers;
+                remaining_burgers = 0;
+                updated_orders.push_back(order.clone());
+                
+                info!("[OrderBuffer:{}] Order {} partially fulfilled ({}/{} burgers)", 
+                      self.component_id, order.order_id, order.burgers_fulfilled, order.burger_count);
+                
+                // Put remaining orders back without processing
+                while let Some(remaining_order) = self.orders.pop_front() {
+                    updated_orders.push_back(remaining_order);
+                }
+                break;
+            } else {
+                // No burgers left, put order back
+                updated_orders.push_back(order);
+                
+                // Put remaining orders back
+                while let Some(remaining_order) = self.orders.pop_front() {
+                    updated_orders.push_back(remaining_order);
+                }
+                break;
+            }
+        }
+        
+        self.orders = updated_orders;
+        
+        // Update cached count to reflect consumed burgers
+        let burgers_consumed = available_burgers - remaining_burgers;
+        self.cached_assembly_buffer_count = remaining_burgers;
+        
+        if burgers_consumed > 0 {
+            info!("[OrderBuffer:{}] Consumed {} burgers for order fulfillment (remaining: {})", 
+                  self.component_id, burgers_consumed, self.cached_assembly_buffer_count);
+        }
+        
+        // Generate fulfillment events for completed orders
+        for completed_order in completed_orders {
+            let order_completed_event = Box::new(OrderCompletedEvent {
+                id: Uuid::new_v4().to_string(),
+                source_id: self.component_id.clone(),
+                target_id: completed_order.client_id.clone(),
+                order_id: completed_order.order_id.clone(),
+                total_burgers: completed_order.burger_count,
+            });
+            output_events.push((order_completed_event, 0));
+            
+            debug!("[OrderBuffer:{}] Generated completion event for order {}", 
+                   self.component_id, completed_order.order_id);
+        }
+        
+        output_events
+    }
+
+    fn query_assembly_buffer_count(&self) -> u32 {
+        // Return cached count from last ITEM_ADDED_EVENT
+        self.cached_assembly_buffer_count
+    }
+
     fn handle_place_order_event(&mut self, event: &dyn Event) -> Vec<(Box<dyn Event>, u64)> {
         let mut output_events = Vec::new();
         
@@ -414,40 +535,21 @@ impl OrderBuffer {
             let order_item = OrderItem {
                 order_id: order_data.order_id,
                 burger_count: order_data.burger_count,
+                burgers_fulfilled: 0,
                 client_id: event.source_id().clone(),
             };
             
             let was_full_before = self.is_full;
             
             if self.add_order(order_item.clone()) {
-                // Process the oldest order immediately by forwarding to assembler
-                if let Some(oldest_order) = self.get_next_order() {
-                    let production_request: Box<dyn Event> = Box::new(ProductionRequestEvent {
-                        id: Uuid::new_v4().to_string(),
-                        source_id: self.component_id.clone(),
-                        target_id: self.assembler_id.clone(),
-                        item_type: "burger".to_string(),
-                        quantity: oldest_order.burger_count,
-                        order_id: oldest_order.order_id,
-                    });
-                    
-                    output_events.push((production_request, 0));
-                    
-                    // Update full status after removing an order
-                    self.is_full = self.current_count() >= self.capacity;
-                    
-                    // If we were full and now have space, notify subscribers
-                    if was_full_before && !self.is_full {
-                        info!("[OrderBuffer:{}] Buffer no longer full - notifying {} subscribers of available space", 
-                              self.component_id, self.subscribers.len());
-                        for subscriber in &self.subscribers {
-                            let space_available_event = self.create_buffer_space_available_event(subscriber.clone());
-                            output_events.push((space_available_event, 0));
-                        }
-                    }
-                }
+                info!("[OrderBuffer:{}] Added order {} for {} burgers to queue", 
+                      self.component_id, order_item.order_id, order_item.burger_count);
                 
-                // Check if buffer became full after processing
+                // Try to fulfill orders immediately if burgers are available
+                let mut fulfillment_events = self.try_fulfill_orders();
+                output_events.append(&mut fulfillment_events);
+                
+                // Check if buffer became full after adding order
                 self.is_full = self.current_count() >= self.capacity;
                 if self.is_full && !was_full_before {
                     warn!("[OrderBuffer:{}] Buffer is now full - notifying {} subscribers", 
@@ -493,6 +595,7 @@ impl BaseComponent for OrderBuffer {
         &[
             PLACE_ORDER_EVENT,
             PRODUCTION_REQUEST_EVENT,  // Listen for when assembler processes orders
+            ITEM_ADDED_EVENT,  // Listen for burgers added to AssemblyBuffer
         ]
     }
 
@@ -503,6 +606,10 @@ impl BaseComponent for OrderBuffer {
             match event.event_type() {
                 PLACE_ORDER_EVENT => {
                     let mut new_events = self.handle_place_order_event(event.as_ref());
+                    output_events.append(&mut new_events);
+                }
+                ITEM_ADDED_EVENT => {
+                    let mut new_events = self.handle_item_added_event(event.as_ref());
                     output_events.append(&mut new_events);
                 }
                 _ => {}

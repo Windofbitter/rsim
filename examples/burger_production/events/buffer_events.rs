@@ -6,6 +6,8 @@ pub const ITEM_ADDED_EVENT: &str = "item_added";
 pub const BUFFER_FULL_EVENT: &str = "buffer_full";
 pub const BUFFER_SPACE_AVAILABLE_EVENT: &str = "buffer_space_available";
 pub const REQUEST_ITEM_EVENT: &str = "request_item";
+pub const PARTIAL_ORDER_FULFILLMENT_EVENT: &str = "partial_order_fulfillment";
+pub const ORDER_COMPLETED_EVENT: &str = "order_completed";
 
 #[derive(Debug, Clone)]
 pub struct ItemAddedEvent {
@@ -150,6 +152,84 @@ impl Event for RequestItemEvent {
     fn data(&self) -> HashMap<String, ComponentValue> {
         let mut data = HashMap::new();
         data.insert("quantity".to_string(), ComponentValue::Int(self.quantity as i64));
+        data
+    }
+
+    fn clone_event(&self) -> Box<dyn Event> {
+        Box::new(self.clone())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PartialOrderFulfillmentEvent {
+    pub id: EventId,
+    pub source_id: ComponentId,
+    pub target_id: ComponentId,
+    pub order_id: String,
+    pub burgers_fulfilled: u32,
+    pub total_burgers: u32,
+}
+
+impl Event for PartialOrderFulfillmentEvent {
+    fn id(&self) -> &EventId {
+        &self.id
+    }
+
+    fn event_type(&self) -> &str {
+        PARTIAL_ORDER_FULFILLMENT_EVENT
+    }
+
+    fn source_id(&self) -> &ComponentId {
+        &self.source_id
+    }
+
+    fn target_ids(&self) -> Option<Vec<ComponentId>> {
+        Some(vec![self.target_id.clone()])
+    }
+
+    fn data(&self) -> HashMap<String, ComponentValue> {
+        let mut data = HashMap::new();
+        data.insert("order_id".to_string(), ComponentValue::String(self.order_id.clone()));
+        data.insert("burgers_fulfilled".to_string(), ComponentValue::Int(self.burgers_fulfilled as i64));
+        data.insert("total_burgers".to_string(), ComponentValue::Int(self.total_burgers as i64));
+        data
+    }
+
+    fn clone_event(&self) -> Box<dyn Event> {
+        Box::new(self.clone())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct OrderCompletedEvent {
+    pub id: EventId,
+    pub source_id: ComponentId,
+    pub target_id: ComponentId,
+    pub order_id: String,
+    pub total_burgers: u32,
+}
+
+impl Event for OrderCompletedEvent {
+    fn id(&self) -> &EventId {
+        &self.id
+    }
+
+    fn event_type(&self) -> &str {
+        ORDER_COMPLETED_EVENT
+    }
+
+    fn source_id(&self) -> &ComponentId {
+        &self.source_id
+    }
+
+    fn target_ids(&self) -> Option<Vec<ComponentId>> {
+        Some(vec![self.target_id.clone()])
+    }
+
+    fn data(&self) -> HashMap<String, ComponentValue> {
+        let mut data = HashMap::new();
+        data.insert("order_id".to_string(), ComponentValue::String(self.order_id.clone()));
+        data.insert("total_burgers".to_string(), ComponentValue::Int(self.total_burgers as i64));
         data
     }
 
