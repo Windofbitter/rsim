@@ -16,14 +16,26 @@ Event-based discrete time simulator where components subscribe to events, mainta
 **Methods:**
 - `react_atomic(events)`: Process list of events, return list of (event, delay_cycles) tuples
 
-### Event
-**Responsibility**: Encapsulate event data and metadata
+### Event (Trait-Based Design)
+**Responsibility**: Define interface for all event types with type-safe, strongly-typed implementations
 
-**Properties:**
-- `type`: Event classification (string/enum)
-- `data`: Event payload
-- `source_id`: Originating component ID
-- `target_ids`: Optional specific target components
+**Event Trait Interface:**
+- `event_id()`: Unique identifier for this event instance
+- `source_id()`: Originating component ID
+- `target_ids()`: Optional specific target components
+- `event_type()`: String classification for routing/subscriptions
+
+**Concrete Event Types:**
+Each event type implements the Event trait with its own strongly-typed fields:
+- `MemoryReadEvent`: address, size
+- `ClockTickEvent`: cycle
+- `ProcessorInstruction`: opcode, operands
+- Custom events as needed
+
+**Benefits:**
+- Type safety: Compiler enforces correct event structure
+- Extensibility: Easy to add new event types without touching core framework
+- Performance: No runtime type casting of generic data payloads
 
 ### EventManager
 **Responsibility**: Manage component registration and event routing
