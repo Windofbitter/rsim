@@ -38,27 +38,25 @@ impl Baker {
     }
 
     /// Creates a self-scheduled StartBakingEvent for continuous production
-    fn create_start_baking_event(&self, timestamp: SimulationTime) -> Box<dyn Event> {
+    fn create_start_baking_event(&self) -> Box<dyn Event> {
         Box::new(StartBakingEvent {
             id: Uuid::new_v4().to_string(),
             source_id: self.component_id.clone(),
-            timestamp,
         })
     }
 
     /// Creates a BreadReadyEvent to send to the buffer
-    fn create_bread_ready_event(&self, timestamp: SimulationTime, bread_id: String) -> Box<dyn Event> {
+    fn create_bread_ready_event(&self, bread_id: String) -> Box<dyn Event> {
         Box::new(BreadReadyEvent {
             id: Uuid::new_v4().to_string(),
             source_id: self.component_id.clone(),
             target_id: self.target_buffer_id.clone(),
-            timestamp,
             bread_id,
         })
     }
 
     /// Handles starting the baking process
-    fn handle_start_baking(&mut self, current_time: SimulationTime) -> Vec<(Box<dyn Event>, u64)> {
+    fn handle_start_baking(&mut self) -> Vec<(Box<dyn Event>, u64)> {
         let mut output_events = Vec::new();
 
         // Only start baking if production is not stopped and we have capacity
@@ -68,12 +66,12 @@ impl Baker {
             let bread_id = Uuid::new_v4().to_string();
 
             // Schedule the bread to be ready after baking delay
-            let bread_ready_event = self.create_bread_ready_event(current_time, bread_id);
+            let bread_ready_event = self.create_bread_ready_event(bread_id);
             output_events.push((bread_ready_event, self.baking_delay));
 
             // Schedule next baking cycle if not stopped and still have capacity
             if !self.is_production_stopped && self.items_in_process < self.max_concurrent_items {
-                let next_baking_event = self.create_start_baking_event(current_time);
+                let next_baking_event = self.create_start_baking_event();
                 output_events.push((next_baking_event, 1)); // Start next item quickly
             }
         }
@@ -82,14 +80,14 @@ impl Baker {
     }
 
     /// Handles when the downstream buffer becomes full
-    fn handle_buffer_full(&mut self, _current_time: SimulationTime) -> Vec<(Box<dyn Event>, u64)> {
+    fn handle_buffer_full(&mut self) -> Vec<(Box<dyn Event>, u64)> {
         // Stop production when downstream buffer is full (backpressure)
         self.is_production_stopped = true;
         Vec::new()
     }
 
     /// Handles when the downstream buffer has space available
-    fn handle_buffer_space_available(&mut self, current_time: SimulationTime) -> Vec<(Box<dyn Event>, u64)> {
+    fn handle_buffer_space_available(&mut self) -> Vec<(Box<dyn Event>, u64)> {
         let mut output_events = Vec::new();
 
         // Resume production when space becomes available
@@ -98,7 +96,7 @@ impl Baker {
             
             // Resume baking if we have capacity
             if self.items_in_process < self.max_concurrent_items {
-                let start_baking_event = self.create_start_baking_event(current_time);
+                let start_baking_event = self.create_start_baking_event();
                 output_events.push((start_baking_event, 1)); // Resume quickly
             }
         }
@@ -107,7 +105,7 @@ impl Baker {
     }
 
     /// Handles bread ready events (decrements items in process counter)
-    fn handle_bread_ready(&mut self, _current_time: SimulationTime) -> Vec<(Box<dyn Event>, u64)> {
+    fn handle_bread_ready(&mut self) -> Vec<(Box<dyn Event>, u64)> {
         // Decrement items in process when bread is ready and sent to buffer
         if self.items_in_process > 0 {
             self.items_in_process -= 1;
@@ -116,7 +114,7 @@ impl Baker {
         // If production is not stopped and we now have capacity, start next item
         let mut output_events = Vec::new();
         if !self.is_production_stopped && self.items_in_process < self.max_concurrent_items {
-            let start_baking_event = self.create_start_baking_event(0); // Use current time
+            let start_baking_event = self.create_start_baking_event();
             output_events.push((start_baking_event, 1));
         }
 
@@ -140,19 +138,18 @@ impl BaseComponent for Baker {
 
     fn react_atomic(&mut self, events: Vec<Box<dyn Event>>) -> Vec<(Box<dyn Event>, u64)> {
         let mut output_events = Vec::new();
-        let current_time = 0; // In a real simulation, this would come from the engine
 
         for event in events {
             match event.event_type() {
                 START_BAKING_EVENT => {
-                    let mut new_events = self.handle_start_baking(current_time);
+                    let mut new_events = self.handle_start_baking();
                     output_events.append(&mut new_events);
                 }
                 BUFFER_FULL_EVENT => {
                     // Only handle if this event is targeted at us
                     if let Some(target_ids) = event.target_ids() {
                         if target_ids.contains(&self.component_id) {
-                            let mut new_events = self.handle_buffer_full(current_time);
+                            let mut new_events = self.handle_buffer_full();
                             output_events.append(&mut new_events);
                         }
                     }
@@ -161,7 +158,7 @@ impl BaseComponent for Baker {
                     // Only handle if this event is targeted at us
                     if let Some(target_ids) = event.target_ids() {
                         if target_ids.contains(&self.component_id) {
-                            let mut new_events = self.handle_buffer_space_available(current_time);
+                            let mut new_events = self.handle_buffer_space_available();
                             output_events.append(&mut new_events);
                         }
                     }
@@ -169,7 +166,7 @@ impl BaseComponent for Baker {
                 BREAD_READY_EVENT => {
                     // Handle our own bread ready events for flow control
                     if event.source_id() == &self.component_id {
-                        let mut new_events = self.handle_bread_ready(current_time);
+                        let mut new_events = self.handle_bread_ready();
                         output_events.append(&mut new_events);
                     }
                 }

@@ -1,5 +1,5 @@
 use rsim::core::event::{Event, EventId};
-use rsim::core::types::{ComponentId, ComponentValue, SimulationTime};
+use rsim::core::types::{ComponentId, ComponentValue};
 use std::collections::HashMap;
 
 pub const GENERATE_ORDER_EVENT: &str = "generate_order";
@@ -9,8 +9,6 @@ pub const PLACE_ORDER_EVENT: &str = "place_order";
 pub struct GenerateOrderEvent {
     pub id: EventId,
     pub source_id: ComponentId,
-    #[allow(dead_code)]
-    pub timestamp: SimulationTime,
 }
 
 impl Event for GenerateOrderEvent {
@@ -45,8 +43,6 @@ pub struct PlaceOrderEvent {
     pub id: EventId,
     pub source_id: ComponentId,
     pub target_id: ComponentId,
-    #[allow(dead_code)]
-    pub timestamp: SimulationTime,
     pub burger_count: u32,
     pub order_id: String,
 }

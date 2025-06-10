@@ -38,27 +38,25 @@ impl Fryer {
     }
 
     /// Creates a self-scheduled StartFryingEvent for continuous production
-    fn create_start_frying_event(&self, timestamp: SimulationTime) -> Box<dyn Event> {
+    fn create_start_frying_event(&self) -> Box<dyn Event> {
         Box::new(StartFryingEvent {
             id: Uuid::new_v4().to_string(),
             source_id: self.component_id.clone(),
-            timestamp,
         })
     }
 
     /// Creates a MeatReadyEvent to send to the buffer
-    fn create_meat_ready_event(&self, timestamp: SimulationTime, meat_id: String) -> Box<dyn Event> {
+    fn create_meat_ready_event(&self, meat_id: String) -> Box<dyn Event> {
         Box::new(MeatReadyEvent {
             id: Uuid::new_v4().to_string(),
             source_id: self.component_id.clone(),
             target_id: self.target_buffer_id.clone(),
-            timestamp,
             meat_id,
         })
     }
 
     /// Handles starting the frying process
-    fn handle_start_frying(&mut self, current_time: SimulationTime) -> Vec<(Box<dyn Event>, u64)> {
+    fn handle_start_frying(&mut self) -> Vec<(Box<dyn Event>, u64)> {
         let mut output_events = Vec::new();
 
         // Only start frying if production is not stopped and we have capacity
@@ -68,12 +66,12 @@ impl Fryer {
             let meat_id = Uuid::new_v4().to_string();
 
             // Schedule the meat to be ready after frying delay
-            let meat_ready_event = self.create_meat_ready_event(current_time, meat_id);
+            let meat_ready_event = self.create_meat_ready_event(meat_id);
             output_events.push((meat_ready_event, self.frying_delay));
 
             // Schedule next frying cycle if not stopped and still have capacity
             if !self.is_production_stopped && self.items_in_process < self.max_concurrent_items {
-                let next_frying_event = self.create_start_frying_event(current_time);
+                let next_frying_event = self.create_start_frying_event();
                 output_events.push((next_frying_event, 1)); // Start next item quickly
             }
         }
@@ -82,14 +80,14 @@ impl Fryer {
     }
 
     /// Handles when the downstream buffer becomes full
-    fn handle_buffer_full(&mut self, _current_time: SimulationTime) -> Vec<(Box<dyn Event>, u64)> {
+    fn handle_buffer_full(&mut self) -> Vec<(Box<dyn Event>, u64)> {
         // Stop production when downstream buffer is full (backpressure)
         self.is_production_stopped = true;
         Vec::new()
     }
 
     /// Handles when the downstream buffer has space available
-    fn handle_buffer_space_available(&mut self, current_time: SimulationTime) -> Vec<(Box<dyn Event>, u64)> {
+    fn handle_buffer_space_available(&mut self) -> Vec<(Box<dyn Event>, u64)> {
         let mut output_events = Vec::new();
 
         // Resume production when space becomes available
@@ -98,7 +96,7 @@ impl Fryer {
             
             // Resume frying if we have capacity
             if self.items_in_process < self.max_concurrent_items {
-                let start_frying_event = self.create_start_frying_event(current_time);
+                let start_frying_event = self.create_start_frying_event();
                 output_events.push((start_frying_event, 1)); // Resume quickly
             }
         }
@@ -107,7 +105,7 @@ impl Fryer {
     }
 
     /// Handles meat ready events (decrements items in process counter)
-    fn handle_meat_ready(&mut self, _current_time: SimulationTime) -> Vec<(Box<dyn Event>, u64)> {
+    fn handle_meat_ready(&mut self) -> Vec<(Box<dyn Event>, u64)> {
         // Decrement items in process when meat is ready and sent to buffer
         if self.items_in_process > 0 {
             self.items_in_process -= 1;
@@ -116,7 +114,7 @@ impl Fryer {
         // If production is not stopped and we now have capacity, start next item
         let mut output_events = Vec::new();
         if !self.is_production_stopped && self.items_in_process < self.max_concurrent_items {
-            let start_frying_event = self.create_start_frying_event(0); // Use current time
+            let start_frying_event = self.create_start_frying_event();
             output_events.push((start_frying_event, 1));
         }
 
@@ -140,19 +138,18 @@ impl BaseComponent for Fryer {
 
     fn react_atomic(&mut self, events: Vec<Box<dyn Event>>) -> Vec<(Box<dyn Event>, u64)> {
         let mut output_events = Vec::new();
-        let current_time = 0; // In a real simulation, this would come from the engine
 
         for event in events {
             match event.event_type() {
                 START_FRYING_EVENT => {
-                    let mut new_events = self.handle_start_frying(current_time);
+                    let mut new_events = self.handle_start_frying();
                     output_events.append(&mut new_events);
                 }
                 BUFFER_FULL_EVENT => {
                     // Only handle if this event is targeted at us
                     if let Some(target_ids) = event.target_ids() {
                         if target_ids.contains(&self.component_id) {
-                            let mut new_events = self.handle_buffer_full(current_time);
+                            let mut new_events = self.handle_buffer_full();
                             output_events.append(&mut new_events);
                         }
                     }
@@ -161,7 +158,7 @@ impl BaseComponent for Fryer {
                     // Only handle if this event is targeted at us
                     if let Some(target_ids) = event.target_ids() {
                         if target_ids.contains(&self.component_id) {
-                            let mut new_events = self.handle_buffer_space_available(current_time);
+                            let mut new_events = self.handle_buffer_space_available();
                             output_events.append(&mut new_events);
                         }
                     }
@@ -169,7 +166,7 @@ impl BaseComponent for Fryer {
                 MEAT_READY_EVENT => {
                     // Handle our own meat ready events for flow control
                     if event.source_id() == &self.component_id {
-                        let mut new_events = self.handle_meat_ready(current_time);
+                        let mut new_events = self.handle_meat_ready();
                         output_events.append(&mut new_events);
                     }
                 }

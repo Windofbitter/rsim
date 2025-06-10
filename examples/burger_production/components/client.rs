@@ -48,21 +48,19 @@ impl Client {
     }
 
     /// Creates a self-scheduled GenerateOrderEvent for continuous order generation
-    fn create_generate_order_event(&self, timestamp: SimulationTime) -> Box<dyn Event> {
+    fn create_generate_order_event(&self) -> Box<dyn Event> {
         Box::new(GenerateOrderEvent {
             id: Uuid::new_v4().to_string(),
             source_id: self.component_id.clone(),
-            timestamp,
         })
     }
 
     /// Creates a PlaceOrderEvent to send to the assembly buffer
-    fn create_place_order_event(&self, timestamp: SimulationTime, burger_count: u32, order_id: String) -> Box<dyn Event> {
+    fn create_place_order_event(&self, burger_count: u32, order_id: String) -> Box<dyn Event> {
         Box::new(PlaceOrderEvent {
             id: Uuid::new_v4().to_string(),
             source_id: self.component_id.clone(),
             target_id: self.assembly_buffer_id.clone(),
-            timestamp,
             burger_count,
             order_id,
         })
@@ -79,7 +77,7 @@ impl Client {
     }
 
     /// Handles generating a new order
-    fn handle_generate_order(&mut self, current_time: SimulationTime) -> Vec<(Box<dyn Event>, u64)> {
+    fn handle_generate_order(&mut self) -> Vec<(Box<dyn Event>, u64)> {
         let mut output_events = Vec::new();
 
         // Generate order size with normal distribution
@@ -91,18 +89,18 @@ impl Client {
         self.pending_orders += burger_count;
 
         // Place the order with the assembly buffer
-        let place_order_event = self.create_place_order_event(current_time, burger_count, order_id);
+        let place_order_event = self.create_place_order_event(burger_count, order_id);
         output_events.push((place_order_event, 0)); // Place order immediately
 
         // Schedule next order generation
-        let next_generate_event = self.create_generate_order_event(current_time);
+        let next_generate_event = self.create_generate_order_event();
         output_events.push((next_generate_event, self.order_generation_interval));
 
         output_events
     }
 
     /// Handles when an item (burger) is added to the assembly buffer
-    fn handle_item_added(&mut self, event: &dyn Event, _current_time: SimulationTime) -> Vec<(Box<dyn Event>, u64)> {
+    fn handle_item_added(&mut self, event: &dyn Event) -> Vec<(Box<dyn Event>, u64)> {
         // Check if this is a burger item from our target buffer
         if let Some(target_ids) = event.target_ids() {
             if target_ids.contains(&self.component_id) {
@@ -143,19 +141,18 @@ impl BaseComponent for Client {
 
     fn react_atomic(&mut self, events: Vec<Box<dyn Event>>) -> Vec<(Box<dyn Event>, u64)> {
         let mut output_events = Vec::new();
-        let current_time = 0; // In a real simulation, this would come from the engine
 
         for event in events {
             match event.event_type() {
                 GENERATE_ORDER_EVENT => {
                     // Only handle our own generate order events
                     if event.source_id() == &self.component_id {
-                        let mut new_events = self.handle_generate_order(current_time);
+                        let mut new_events = self.handle_generate_order();
                         output_events.append(&mut new_events);
                     }
                 }
                 ITEM_ADDED_EVENT => {
-                    let mut new_events = self.handle_item_added(event.as_ref(), current_time);
+                    let mut new_events = self.handle_item_added(event.as_ref());
                     output_events.append(&mut new_events);
                 }
                 _ => {

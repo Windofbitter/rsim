@@ -1,5 +1,5 @@
 use rsim::core::event::{Event, EventId};
-use rsim::core::types::{ComponentId, ComponentValue, SimulationTime};
+use rsim::core::types::{ComponentId, ComponentValue};
 use std::collections::HashMap;
 
 pub const START_FRYING_EVENT: &str = "start_frying";
@@ -9,8 +9,6 @@ pub const MEAT_READY_EVENT: &str = "meat_ready";
 pub struct StartFryingEvent {
     pub id: EventId,
     pub source_id: ComponentId,
-    #[allow(dead_code)]
-    pub timestamp: SimulationTime,
 }
 
 impl Event for StartFryingEvent {
@@ -45,8 +43,6 @@ pub struct MeatReadyEvent {
     pub id: EventId,
     pub source_id: ComponentId,
     pub target_id: ComponentId,
-    #[allow(dead_code)]
-    pub timestamp: SimulationTime,
     pub meat_id: String,
 }
 

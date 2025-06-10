@@ -84,27 +84,25 @@ impl GenericFifoBuffer {
         })
     }
 
-    pub fn create_buffer_full_event(&self, target_id: ComponentId, timestamp: SimulationTime) -> Box<dyn Event> {
+    pub fn create_buffer_full_event(&self, target_id: ComponentId) -> Box<dyn Event> {
         Box::new(BufferFullEvent {
             id: Uuid::new_v4().to_string(),
             source_id: self.component_id.clone(),
             target_id,
-            timestamp,
             capacity: self.capacity,
         })
     }
 
-    pub fn create_buffer_space_available_event(&self, target_id: ComponentId, timestamp: SimulationTime) -> Box<dyn Event> {
+    pub fn create_buffer_space_available_event(&self, target_id: ComponentId) -> Box<dyn Event> {
         Box::new(BufferSpaceAvailableEvent {
             id: Uuid::new_v4().to_string(),
             source_id: self.component_id.clone(),
             target_id,
-            timestamp,
             available_space: self.available_space(),
         })
     }
 
-    pub fn handle_item_ready_event(&mut self, event: &dyn Event, current_time: SimulationTime) -> Vec<(Box<dyn Event>, u64)> {
+    pub fn handle_item_ready_event(&mut self, event: &dyn Event) -> Vec<(Box<dyn Event>, u64)> {
         let mut output_events = Vec::new();
         let data = event.data();
         
@@ -116,16 +114,16 @@ impl GenericFifoBuffer {
         let item = BufferItem {
             item_type: self.expected_item_type.clone(),
             item_id,
-            timestamp: current_time,
+            timestamp: 0,
         };
 
         if self.add_item(item.clone()) {
-            let item_added_event = self.create_item_added_event(&item, current_time);
+            let item_added_event = self.create_item_added_event(&item);
             output_events.push((item_added_event, 0));
 
             if self.is_full && !self.was_empty {
                 for subscriber in &self.subscribers {
-                    let buffer_full_event = self.create_buffer_full_event(subscriber.clone(), current_time);
+                    let buffer_full_event = self.create_buffer_full_event(subscriber.clone());
                     output_events.push((buffer_full_event, 0));
                 }
             }
@@ -134,7 +132,7 @@ impl GenericFifoBuffer {
         output_events
     }
 
-    pub fn handle_request_event(&mut self, event: &dyn Event, current_time: SimulationTime) -> Vec<(Box<dyn Event>, u64)> {
+    pub fn handle_request_event(&mut self, event: &dyn Event) -> Vec<(Box<dyn Event>, u64)> {
         let mut output_events = Vec::new();
         let data = event.data();
         
@@ -156,7 +154,7 @@ impl GenericFifoBuffer {
 
         if fulfilled_count > 0 && was_full_before {
             for subscriber in &self.subscribers {
-                let space_available_event = self.create_buffer_space_available_event(subscriber.clone(), current_time);
+                let space_available_event = self.create_buffer_space_available_event(subscriber.clone());
                 output_events.push((space_available_event, 0));
             }
         }
@@ -192,16 +190,15 @@ impl BaseComponent for FriedMeatBuffer {
 
     fn react_atomic(&mut self, events: Vec<Box<dyn Event>>) -> Vec<(Box<dyn Event>, u64)> {
         let mut output_events = Vec::new();
-        let current_time = 0;
 
         for event in events {
             match event.event_type() {
                 MEAT_READY_EVENT => {
-                    let mut new_events = self.buffer.handle_item_ready_event(event.as_ref(), current_time);
+                    let mut new_events = self.buffer.handle_item_ready_event(event.as_ref());
                     output_events.append(&mut new_events);
                 }
                 REQUEST_ITEM_EVENT => {
-                    let mut new_events = self.buffer.handle_request_event(event.as_ref(), current_time);
+                    let mut new_events = self.buffer.handle_request_event(event.as_ref());
                     output_events.append(&mut new_events);
                 }
                 _ => {}
@@ -239,16 +236,15 @@ impl BaseComponent for CookedBreadBuffer {
 
     fn react_atomic(&mut self, events: Vec<Box<dyn Event>>) -> Vec<(Box<dyn Event>, u64)> {
         let mut output_events = Vec::new();
-        let current_time = 0;
 
         for event in events {
             match event.event_type() {
                 BREAD_READY_EVENT => {
-                    let mut new_events = self.buffer.handle_item_ready_event(event.as_ref(), current_time);
+                    let mut new_events = self.buffer.handle_item_ready_event(event.as_ref());
                     output_events.append(&mut new_events);
                 }
                 REQUEST_ITEM_EVENT => {
-                    let mut new_events = self.buffer.handle_request_event(event.as_ref(), current_time);
+                    let mut new_events = self.buffer.handle_request_event(event.as_ref());
                     output_events.append(&mut new_events);
                 }
                 _ => {}
@@ -286,16 +282,15 @@ impl BaseComponent for AssemblyBuffer {
 
     fn react_atomic(&mut self, events: Vec<Box<dyn Event>>) -> Vec<(Box<dyn Event>, u64)> {
         let mut output_events = Vec::new();
-        let current_time = 0;
 
         for event in events {
             match event.event_type() {
                 BURGER_READY_EVENT => {
-                    let mut new_events = self.buffer.handle_item_ready_event(event.as_ref(), current_time);
+                    let mut new_events = self.buffer.handle_item_ready_event(event.as_ref());
                     output_events.append(&mut new_events);
                 }
                 PLACE_ORDER_EVENT => {
-                    let mut new_events = self.buffer.handle_request_event(event.as_ref(), current_time);
+                    let mut new_events = self.buffer.handle_request_event(event.as_ref());
                     output_events.append(&mut new_events);
                 }
                 _ => {}

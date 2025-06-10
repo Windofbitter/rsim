@@ -1,5 +1,5 @@
 use rsim::core::event::{Event, EventId};
-use rsim::core::types::{ComponentId, ComponentValue, SimulationTime};
+use rsim::core::types::{ComponentId, ComponentValue};
 use std::collections::HashMap;
 
 pub const ITEM_ADDED_EVENT: &str = "item_added";
@@ -11,8 +11,6 @@ pub const REQUEST_ITEM_EVENT: &str = "request_item";
 pub struct ItemAddedEvent {
     pub id: EventId,
     pub source_id: ComponentId,
-    #[allow(dead_code)]
-    pub timestamp: SimulationTime,
     pub current_count: u32,
     pub item_type: String,
     pub item_id: String,
@@ -54,8 +52,6 @@ pub struct BufferFullEvent {
     pub id: EventId,
     pub source_id: ComponentId,
     pub target_id: ComponentId,
-    #[allow(dead_code)]
-    pub timestamp: SimulationTime,
     pub capacity: u32,
 }
 
@@ -93,8 +89,6 @@ pub struct BufferSpaceAvailableEvent {
     pub id: EventId,
     pub source_id: ComponentId,
     pub target_id: ComponentId,
-    #[allow(dead_code)]
-    pub timestamp: SimulationTime,
     pub available_space: u32,
 }
 
@@ -132,8 +126,6 @@ pub struct RequestItemEvent {
     pub id: EventId,
     pub source_id: ComponentId,
     pub target_id: ComponentId,
-    #[allow(dead_code)]
-    pub timestamp: SimulationTime,
     pub quantity: u32,
 }
 

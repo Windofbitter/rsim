@@ -52,40 +52,37 @@ impl Assembler {
     }
 
     /// Creates a StartAssemblyEvent when both ingredients are available
-    fn create_start_assembly_event(&self, timestamp: SimulationTime, meat_id: String, bread_id: String) -> Box<dyn Event> {
+    fn create_start_assembly_event(&self, meat_id: String, bread_id: String) -> Box<dyn Event> {
         Box::new(StartAssemblyEvent {
             id: Uuid::new_v4().to_string(),
             source_id: self.component_id.clone(),
-            timestamp,
             meat_id,
             bread_id,
         })
     }
 
     /// Creates a BurgerReadyEvent to send to the output buffer
-    fn create_burger_ready_event(&self, timestamp: SimulationTime, burger_id: String) -> Box<dyn Event> {
+    fn create_burger_ready_event(&self, burger_id: String) -> Box<dyn Event> {
         Box::new(BurgerReadyEvent {
             id: Uuid::new_v4().to_string(),
             source_id: self.component_id.clone(),
             target_id: self.target_buffer_id.clone(),
-            timestamp,
             burger_id,
         })
     }
 
     /// Creates a RequestItemEvent to request ingredients from buffers
-    fn create_request_item_event(&self, target_buffer_id: ComponentId, timestamp: SimulationTime) -> Box<dyn Event> {
+    fn create_request_item_event(&self, target_buffer_id: ComponentId) -> Box<dyn Event> {
         Box::new(RequestItemEvent {
             id: Uuid::new_v4().to_string(),
             source_id: self.component_id.clone(),
             target_id: target_buffer_id,
-            timestamp,
             quantity: 1,
         })
     }
 
     /// Attempts to start assembly if both ingredients are available and we have capacity
-    fn try_start_assembly(&mut self, current_time: SimulationTime) -> Vec<(Box<dyn Event>, u64)> {
+    fn try_start_assembly(&mut self) -> Vec<(Box<dyn Event>, u64)> {
         let mut output_events = Vec::new();
 
         // Only attempt assembly if production is not stopped and we have capacity
@@ -102,17 +99,17 @@ impl Assembler {
                 let bread_id = Uuid::new_v4().to_string();
 
                 // Create assembly event
-                let start_assembly_event = self.create_start_assembly_event(current_time, meat_id, bread_id);
+                let start_assembly_event = self.create_start_assembly_event(meat_id, bread_id);
                 output_events.push((start_assembly_event, 1)); // Start assembly immediately
             } else {
                 // Request missing ingredients if we don't have pending requests
                 if self.available_meat_count == 0 && self.pending_meat_requests == 0 {
-                    let request_meat_event = self.create_request_item_event(self.meat_buffer_id.clone(), current_time);
+                    let request_meat_event = self.create_request_item_event(self.meat_buffer_id.clone());
                     output_events.push((request_meat_event, 1));
                     self.pending_meat_requests += 1;
                 }
                 if self.available_bread_count == 0 && self.pending_bread_requests == 0 {
-                    let request_bread_event = self.create_request_item_event(self.bread_buffer_id.clone(), current_time);
+                    let request_bread_event = self.create_request_item_event(self.bread_buffer_id.clone());
                     output_events.push((request_bread_event, 1));
                     self.pending_bread_requests += 1;
                 }
@@ -123,7 +120,7 @@ impl Assembler {
     }
 
     /// Handles starting the assembly process
-    fn handle_start_assembly(&mut self, event: &dyn Event, current_time: SimulationTime) -> Vec<(Box<dyn Event>, u64)> {
+    fn handle_start_assembly(&mut self, event: &dyn Event) -> Vec<(Box<dyn Event>, u64)> {
         let mut output_events = Vec::new();
 
         // Extract meat_id and bread_id from event data
@@ -135,7 +132,7 @@ impl Assembler {
             let burger_id = format!("burger_{}_{}", meat_id, bread_id);
 
             // Schedule the burger to be ready after assembly delay
-            let burger_ready_event = self.create_burger_ready_event(current_time, burger_id);
+            let burger_ready_event = self.create_burger_ready_event(burger_id);
             output_events.push((burger_ready_event, self.assembly_delay));
         }
 
@@ -143,18 +140,18 @@ impl Assembler {
     }
 
     /// Handles when a burger is ready (decrements items in process)
-    fn handle_burger_ready(&mut self, current_time: SimulationTime) -> Vec<(Box<dyn Event>, u64)> {
+    fn handle_burger_ready(&mut self) -> Vec<(Box<dyn Event>, u64)> {
         // Decrement items in process when burger is ready and sent to buffer
         if self.items_in_process > 0 {
             self.items_in_process -= 1;
         }
 
         // Try to start next assembly if we have capacity and ingredients
-        self.try_start_assembly(current_time)
+        self.try_start_assembly()
     }
 
     /// Handles when items are added to input buffers
-    fn handle_item_added(&mut self, event: &dyn Event, current_time: SimulationTime) -> Vec<(Box<dyn Event>, u64)> {
+    fn handle_item_added(&mut self, event: &dyn Event) -> Vec<(Box<dyn Event>, u64)> {
         let mut output_events = Vec::new();
         let data = event.data();
 
@@ -173,7 +170,7 @@ impl Assembler {
             }
 
             // Try to start assembly now that we have more ingredients
-            let mut new_events = self.try_start_assembly(current_time);
+            let mut new_events = self.try_start_assembly();
             output_events.append(&mut new_events);
         }
 
@@ -181,14 +178,14 @@ impl Assembler {
     }
 
     /// Handles when the downstream buffer becomes full
-    fn handle_buffer_full(&mut self, _current_time: SimulationTime) -> Vec<(Box<dyn Event>, u64)> {
+    fn handle_buffer_full(&mut self) -> Vec<(Box<dyn Event>, u64)> {
         // Stop production when downstream buffer is full (backpressure)
         self.is_production_stopped = true;
         Vec::new()
     }
 
     /// Handles when the downstream buffer has space available
-    fn handle_buffer_space_available(&mut self, current_time: SimulationTime) -> Vec<(Box<dyn Event>, u64)> {
+    fn handle_buffer_space_available(&mut self) -> Vec<(Box<dyn Event>, u64)> {
         let mut output_events = Vec::new();
 
         // Resume production when space becomes available
@@ -196,7 +193,7 @@ impl Assembler {
             self.is_production_stopped = false;
             
             // Try to start assembly if we have capacity and ingredients
-            let mut new_events = self.try_start_assembly(current_time);
+            let mut new_events = self.try_start_assembly();
             output_events.append(&mut new_events);
         }
 
@@ -221,25 +218,24 @@ impl BaseComponent for Assembler {
 
     fn react_atomic(&mut self, events: Vec<Box<dyn Event>>) -> Vec<(Box<dyn Event>, u64)> {
         let mut output_events = Vec::new();
-        let current_time = 0; // In a real simulation, this would come from the engine
 
         for event in events {
             match event.event_type() {
                 START_ASSEMBLY_EVENT => {
-                    let mut new_events = self.handle_start_assembly(event.as_ref(), current_time);
+                    let mut new_events = self.handle_start_assembly(event.as_ref());
                     output_events.append(&mut new_events);
                 }
                 BURGER_READY_EVENT => {
                     // Handle our own burger ready events for flow control
                     if event.source_id() == &self.component_id {
-                        let mut new_events = self.handle_burger_ready(current_time);
+                        let mut new_events = self.handle_burger_ready();
                         output_events.append(&mut new_events);
                     }
                 }
                 ITEM_ADDED_EVENT => {
                     // Handle item added events from our input buffers
                     if event.source_id() == &self.meat_buffer_id || event.source_id() == &self.bread_buffer_id {
-                        let mut new_events = self.handle_item_added(event.as_ref(), current_time);
+                        let mut new_events = self.handle_item_added(event.as_ref());
                         output_events.append(&mut new_events);
                     }
                 }
@@ -247,7 +243,7 @@ impl BaseComponent for Assembler {
                     // Only handle if this event is targeted at us (from downstream buffer)
                     if let Some(target_ids) = event.target_ids() {
                         if target_ids.contains(&self.component_id) {
-                            let mut new_events = self.handle_buffer_full(current_time);
+                            let mut new_events = self.handle_buffer_full();
                             output_events.append(&mut new_events);
                         }
                     }
@@ -256,7 +252,7 @@ impl BaseComponent for Assembler {
                     // Only handle if this event is targeted at us (from downstream buffer)
                     if let Some(target_ids) = event.target_ids() {
                         if target_ids.contains(&self.component_id) {
-                            let mut new_events = self.handle_buffer_space_available(current_time);
+                            let mut new_events = self.handle_buffer_space_available();
                             output_events.append(&mut new_events);
                         }
                     }
