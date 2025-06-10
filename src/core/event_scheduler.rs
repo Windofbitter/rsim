@@ -62,21 +62,43 @@ impl EventScheduler {
 
     /// Get all events scheduled for the next time step (minimum delay)
     pub fn get_next_time_events(&mut self) -> Vec<(Event, Vec<ComponentId>)> {
-        unimplemented!()
+        let mut events = Vec::new();
+        
+        if let Some(next_delay) = self.peek_next_delay() {
+            while let Some(scheduled_event) = self.event_queue.peek() {
+                if scheduled_event.delay_cycles == next_delay {
+                    let scheduled_event = self.event_queue.pop().unwrap();
+                    events.push((scheduled_event.event, scheduled_event.targets));
+                } else {
+                    break;
+                }
+            }
+        }
+        
+        events
     }
 
     /// Check if there are any events remaining in the queue
     pub fn has_events(&self) -> bool {
-        unimplemented!()
+        !self.event_queue.is_empty()
     }
 
     /// Get the next event delay without removing events
     pub fn peek_next_delay(&self) -> Option<u64> {
-        unimplemented!()
+        self.event_queue.peek().map(|event| event.delay_cycles)
     }
 
     /// Advance time by reducing all event delays by the specified amount
     pub fn advance_time(&mut self, cycles: u64) {
-        unimplemented!()
+        let mut temp_events = Vec::new();
+        
+        while let Some(mut scheduled_event) = self.event_queue.pop() {
+            scheduled_event.delay_cycles = scheduled_event.delay_cycles.saturating_sub(cycles);
+            temp_events.push(scheduled_event);
+        }
+        
+        for event in temp_events {
+            self.event_queue.push(event);
+        }
     }
 }
