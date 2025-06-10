@@ -61,4 +61,9 @@ impl EventManager {
         }
     }
 
+    /// Get mutable reference to a component by ID
+    pub fn get_component_mut(&mut self, component_id: &ComponentId) -> Option<&mut Box<dyn BaseComponent>> {
+        self.components.get_mut(component_id)
+    }
+
 }
