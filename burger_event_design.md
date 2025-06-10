@@ -1,6 +1,6 @@
-# Burger Production Event-Based Design
+# Burger Production Trait-Based Event Design
 
-This document defines the event-based architecture for the burger production simulation, mapping the physical process to our event-driven framework.
+This document defines the trait-based event architecture for the burger production simulation, mapping the physical process to our event-driven framework with type-safe events.
 
 ## Components
 
@@ -42,82 +42,127 @@ This document defines the event-based architecture for the burger production sim
   - Order quantity: normal distribution
   - Consumes from assembly buffer
 
-## Events
+## Event Types
 
-### Production Events
-- **`start_frying`**
-  - Source: Fryer
-  - Target: Fryer (self-scheduled)
-  - Data: `ComponentValue::Int(1)` (quantity)
-  - Triggers meat processing cycle
+All events implement the `Event` trait with type-safe data fields:
 
-- **`meat_ready`**
-  - Source: Fryer
-  - Target: FriedMeatBuffer
-  - Data: `ComponentValue::Int(1)` (fried patty)
-  - Signals completion of meat frying
+```rust
+pub trait Event: Debug + Clone {
+    fn event_type(&self) -> &'static str;
+    fn source_id(&self) -> &ComponentId;
+    fn target_ids(&self) -> Option<&[ComponentId]>;
+    fn event_id(&self) -> &EventId;
+}
+```
 
-- **`start_baking`**
-  - Source: Baker
-  - Target: Baker (self-scheduled)
-  - Data: `ComponentValue::Int(1)` (quantity)
-  - Triggers bread processing cycle
+### Production Event Structs
 
-- **`bread_ready`**
-  - Source: Baker
-  - Target: CookedBreadBuffer
-  - Data: `ComponentValue::Int(1)` (cooked bun)
-  - Signals completion of bread baking
+```rust
+#[derive(Debug, Clone)]
+pub struct StartFryingEvent {
+    pub id: EventId,
+    pub source_id: ComponentId,
+    pub target_ids: Option<Vec<ComponentId>>,
+    pub quantity: u32,
+}
 
-- **`start_assembly`**
-  - Source: Assembler
-  - Target: Assembler (self-scheduled)
-  - Data: `ComponentValue::Int(1)` (quantity)
-  - Triggers burger assembly cycle
+#[derive(Debug, Clone)]
+pub struct MeatReadyEvent {
+    pub id: EventId,
+    pub source_id: ComponentId,
+    pub target_ids: Option<Vec<ComponentId>>,
+    pub quantity: u32,
+}
 
-- **`burger_ready`**
-  - Source: Assembler
-  - Target: AssemblyBuffer
-  - Data: `ComponentValue::Int(1)` (complete burger)
-  - Signals completion of burger assembly
+#[derive(Debug, Clone)]
+pub struct StartBakingEvent {
+    pub id: EventId,
+    pub source_id: ComponentId,
+    pub target_ids: Option<Vec<ComponentId>>,
+    pub quantity: u32,
+}
 
-### Buffer Events
-- **`item_added`**
-  - Source: FIFO Buffer
-  - Target: Downstream consumers
-  - Data: `ComponentValue::Int(current_count)`
-  - Notifies when item becomes available
+#[derive(Debug, Clone)]
+pub struct BreadReadyEvent {
+    pub id: EventId,
+    pub source_id: ComponentId,
+    pub target_ids: Option<Vec<ComponentId>>,
+    pub quantity: u32,
+}
 
-- **`buffer_full`**
-  - Source: FIFO Buffer
-  - Target: Upstream producers
-  - Data: `ComponentValue::Bool(true)`
-  - Signals backpressure - stop production
+#[derive(Debug, Clone)]
+pub struct StartAssemblyEvent {
+    pub id: EventId,
+    pub source_id: ComponentId,
+    pub target_ids: Option<Vec<ComponentId>>,
+    pub quantity: u32,
+}
 
-- **`buffer_space_available`**
-  - Source: FIFO Buffer
-  - Target: Upstream producers
-  - Data: `ComponentValue::Bool(false)`
-  - Signals production can resume
+#[derive(Debug, Clone)]
+pub struct BurgerReadyEvent {
+    pub id: EventId,
+    pub source_id: ComponentId,
+    pub target_ids: Option<Vec<ComponentId>>,
+    pub quantity: u32,
+}
+```
 
-- **`request_item`**
-  - Source: Consumer
-  - Target: FIFO Buffer
-  - Data: `ComponentValue::Int(quantity)`
-  - Requests items from buffer
+### Buffer Event Structs
 
-### Demand Events
-- **`generate_order`**
-  - Source: Client
-  - Target: Client (self-scheduled)
-  - Data: `ComponentValue::Int(order_size)`
-  - Periodic order generation
+```rust
+#[derive(Debug, Clone)]
+pub struct ItemAddedEvent {
+    pub id: EventId,
+    pub source_id: ComponentId,
+    pub target_ids: Option<Vec<ComponentId>>,
+    pub current_count: u32,
+    pub item_type: String,
+}
 
-- **`place_order`**
-  - Source: Client
-  - Target: AssemblyBuffer
-  - Data: `ComponentValue::Int(burger_count)`
-  - Requests burgers from final buffer
+#[derive(Debug, Clone)]
+pub struct BufferFullEvent {
+    pub id: EventId,
+    pub source_id: ComponentId,
+    pub target_ids: Option<Vec<ComponentId>>,
+    pub capacity: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct BufferSpaceAvailableEvent {
+    pub id: EventId,
+    pub source_id: ComponentId,
+    pub target_ids: Option<Vec<ComponentId>>,
+    pub available_space: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct RequestItemEvent {
+    pub id: EventId,
+    pub source_id: ComponentId,
+    pub target_ids: Option<Vec<ComponentId>>,
+    pub quantity: u32,
+}
+```
+
+### Demand Event Structs
+
+```rust
+#[derive(Debug, Clone)]
+pub struct GenerateOrderEvent {
+    pub id: EventId,
+    pub source_id: ComponentId,
+    pub target_ids: Option<Vec<ComponentId>>,
+    pub order_size: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct PlaceOrderEvent {
+    pub id: EventId,
+    pub source_id: ComponentId,
+    pub target_ids: Option<Vec<ComponentId>>,
+    pub burger_count: u32,
+}
+```
 
 ## Event Flow
 
@@ -146,6 +191,8 @@ This document defines the event-based architecture for the burger production sim
 
 ## Component Subscriptions
 
+Components subscribe to event types by their static string identifiers:
+
 ```rust
 // Fryer subscriptions
 ["start_frying", "buffer_full", "buffer_space_available"]
@@ -163,4 +210,21 @@ This document defines the event-based architecture for the burger production sim
 ["generate_order", "item_added"]
 ```
 
-This event-based design ensures deterministic execution, proper backpressure handling, and realistic simulation of the burger production process.
+## Event Type Constants
+
+```rust
+pub const START_FRYING: &str = "start_frying";
+pub const MEAT_READY: &str = "meat_ready";
+pub const START_BAKING: &str = "start_baking";
+pub const BREAD_READY: &str = "bread_ready";
+pub const START_ASSEMBLY: &str = "start_assembly";
+pub const BURGER_READY: &str = "burger_ready";
+pub const ITEM_ADDED: &str = "item_added";
+pub const BUFFER_FULL: &str = "buffer_full";
+pub const BUFFER_SPACE_AVAILABLE: &str = "buffer_space_available";
+pub const REQUEST_ITEM: &str = "request_item";
+pub const GENERATE_ORDER: &str = "generate_order";
+pub const PLACE_ORDER: &str = "place_order";
+```
+
+This trait-based event design ensures type safety, deterministic execution, proper backpressure handling, and realistic simulation of the burger production process.
