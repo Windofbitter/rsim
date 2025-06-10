@@ -1,15 +1,6 @@
 pub type ComponentId = String;
 pub type EventType = String;
 
-#[derive(Debug, Clone)]
-pub enum ComponentValue {
-    Int(i64),
-    Float(f64),
-    String(String),
-    Bool(bool),
-}
-
-
 
 #[derive(Debug, Clone)]
 pub struct Event {

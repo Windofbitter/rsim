@@ -5,5 +5,5 @@ pub mod builders;
 
 // Re-export commonly used types
 pub use crate::core::component::{
-    BaseComponent, ComponentId, ComponentValue, Event, EventType,
+    BaseComponent, ComponentId, Event, EventType,
 };
