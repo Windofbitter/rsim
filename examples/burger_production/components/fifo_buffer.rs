@@ -8,7 +8,7 @@ use log::{info, debug, warn};
 use crate::events::{
     ItemAddedEvent, BufferFullEvent, BufferSpaceAvailableEvent,
     MEAT_READY_EVENT, BREAD_READY_EVENT, BURGER_READY_EVENT, PLACE_ORDER_EVENT, REQUEST_ITEM_EVENT,
-    PlaceOrderEvent, ProductionRequestEvent, PRODUCTION_REQUEST_EVENT
+    ProductionRequestEvent, PRODUCTION_REQUEST_EVENT
 };
 
 #[derive(Debug, Clone)]
@@ -329,7 +329,6 @@ pub struct OrderItem {
     pub order_id: String,
     pub burger_count: u32,
     pub client_id: ComponentId,
-    pub order_time: u64,
 }
 
 /// OrderBuffer - FIFO queue for pending orders between Client and production system
@@ -339,7 +338,6 @@ pub struct OrderBuffer {
     pub capacity: u32,
     pub orders: VecDeque<OrderItem>,
     pub assembler_id: ComponentId,
-    pub current_time: u64,
 }
 
 impl OrderBuffer {
@@ -353,7 +351,6 @@ impl OrderBuffer {
             capacity,
             orders: VecDeque::new(),
             assembler_id,
-            current_time: 0,
         }
     }
 
@@ -395,7 +392,6 @@ impl OrderBuffer {
                 order_id: order_data.order_id,
                 burger_count: order_data.burger_count,
                 client_id: event.source_id().clone(),
-                order_time: self.current_time,
             };
             
             if self.add_order(order_item.clone()) {
@@ -438,11 +434,11 @@ struct PlaceOrderEventData {
 }
 
 impl BaseComponent for OrderBuffer {
-    fn id(&self) -> &ComponentId {
+    fn component_id(&self) -> &ComponentId {
         &self.component_id
     }
 
-    fn subscribed_events(&self) -> &[&str] {
+    fn subscriptions(&self) -> &[&'static str] {
         &[
             PLACE_ORDER_EVENT,
         ]
@@ -450,13 +446,6 @@ impl BaseComponent for OrderBuffer {
 
     fn react_atomic(&mut self, events: Vec<Box<dyn Event>>) -> Vec<(Box<dyn Event>, u64)> {
         let mut output_events = Vec::new();
-        
-        // Update current time from events
-        if let Some(_event) = events.first() {
-            // Extract time from event or use a time service
-            // For now, increment time manually
-            self.current_time += 1;
-        }
 
         for event in events {
             match event.event_type() {
