@@ -100,6 +100,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let meat_buffer_id = "fried_meat_buffer".to_string();
     let bread_buffer_id = "cooked_bread_buffer".to_string();
     let assembly_buffer_id = "assembly_buffer".to_string();
+    let order_buffer_id = "order_buffer".to_string();
     let client_id = "client".to_string();
     let metrics_collector_id = "metrics_collector".to_string();
 
@@ -123,6 +124,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         assembly_buffer_id.clone(),
         config.assembly_buffer_capacity,
         vec![client_id.clone()], // Client subscribes to assembly buffer
+    );
+    
+    // Create order buffer (FIFO queue for orders)
+    let order_buffer = OrderBuffer::new(
+        order_buffer_id.clone(),
+        10, // Order queue capacity
+        assembler_id.clone(), // Orders flow to assembler
     );
 
     // Create production components
@@ -152,10 +160,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.production_strategy.clone(),
     );
 
-    // Create client component
+    // Create client component (now sends orders to order_buffer instead of assembly_buffer)
     let client = Client::new(
         client_id.clone(),
-        assembly_buffer_id.clone(),
+        order_buffer_id.clone(), // Client now sends orders to OrderBuffer
         config.order_generation_interval,
         config.order_size_mean,
         config.order_size_std_dev,
@@ -177,6 +185,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     engine.register_component(Box::new(meat_buffer))?;
     engine.register_component(Box::new(bread_buffer))?;
     engine.register_component(Box::new(assembly_buffer))?;
+    engine.register_component(Box::new(order_buffer))?;
     engine.register_component(Box::new(client))?;
     engine.register_component(Box::new(metrics_collector))?;
 

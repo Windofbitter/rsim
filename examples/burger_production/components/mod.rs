@@ -6,7 +6,7 @@ pub mod client;
 pub mod metrics_collector;
 
 pub use fifo_buffer::{
-    FriedMeatBuffer, CookedBreadBuffer, AssemblyBuffer
+    FriedMeatBuffer, CookedBreadBuffer, AssemblyBuffer, OrderBuffer
 };
 pub use fryer::Fryer;
 pub use baker::Baker;

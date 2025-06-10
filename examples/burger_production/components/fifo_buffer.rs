@@ -7,7 +7,8 @@ use log::{info, debug, warn};
 
 use crate::events::{
     ItemAddedEvent, BufferFullEvent, BufferSpaceAvailableEvent,
-    MEAT_READY_EVENT, BREAD_READY_EVENT, BURGER_READY_EVENT, PLACE_ORDER_EVENT, REQUEST_ITEM_EVENT
+    MEAT_READY_EVENT, BREAD_READY_EVENT, BURGER_READY_EVENT, PLACE_ORDER_EVENT, REQUEST_ITEM_EVENT,
+    PlaceOrderEvent, ProductionRequestEvent, PRODUCTION_REQUEST_EVENT
 };
 
 #[derive(Debug, Clone)]
@@ -313,6 +314,154 @@ impl BaseComponent for AssemblyBuffer {
                 }
                 PLACE_ORDER_EVENT => {
                     let mut new_events = self.buffer.handle_request_event(event.as_ref());
+                    output_events.append(&mut new_events);
+                }
+                _ => {}
+            }
+        }
+
+        output_events
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct OrderItem {
+    pub order_id: String,
+    pub burger_count: u32,
+    pub client_id: ComponentId,
+    pub order_time: u64,
+}
+
+/// OrderBuffer - FIFO queue for pending orders between Client and production system
+#[derive(Debug)]
+pub struct OrderBuffer {
+    pub component_id: ComponentId,
+    pub capacity: u32,
+    pub orders: VecDeque<OrderItem>,
+    pub assembler_id: ComponentId,
+    pub current_time: u64,
+}
+
+impl OrderBuffer {
+    pub fn new(
+        component_id: ComponentId,
+        capacity: u32,
+        assembler_id: ComponentId,
+    ) -> Self {
+        Self {
+            component_id,
+            capacity,
+            orders: VecDeque::new(),
+            assembler_id,
+            current_time: 0,
+        }
+    }
+
+    pub fn current_count(&self) -> u32 {
+        self.orders.len() as u32
+    }
+
+    pub fn available_space(&self) -> u32 {
+        self.capacity - self.current_count()
+    }
+
+    pub fn add_order(&mut self, order: OrderItem) -> bool {
+        if self.current_count() >= self.capacity {
+            warn!("OrderBuffer {} is full, rejecting order {}", 
+                  self.component_id, order.order_id);
+            return false;
+        }
+        
+        info!("OrderBuffer {} queued order {} for {} burgers", 
+              self.component_id, order.order_id, order.burger_count);
+        self.orders.push_back(order);
+        true
+    }
+
+    pub fn get_next_order(&mut self) -> Option<OrderItem> {
+        let order = self.orders.pop_front();
+        if let Some(ref order) = order {
+            info!("OrderBuffer {} processing order {} for {} burgers", 
+                  self.component_id, order.order_id, order.burger_count);
+        }
+        order
+    }
+
+    fn handle_place_order_event(&mut self, event: &dyn Event) -> Vec<(Box<dyn Event>, u64)> {
+        let mut output_events = Vec::new();
+        
+        if let Some(order_data) = self.extract_order_from_event(event) {
+            let order_item = OrderItem {
+                order_id: order_data.order_id,
+                burger_count: order_data.burger_count,
+                client_id: event.source_id().clone(),
+                order_time: self.current_time,
+            };
+            
+            if self.add_order(order_item.clone()) {
+                // Forward the order to assembler for processing
+                let production_request = Box::new(ProductionRequestEvent {
+                    id: Uuid::new_v4().to_string(),
+                    source_id: self.component_id.clone(),
+                    target_id: self.assembler_id.clone(),
+                    item_type: "burger".to_string(),
+                    quantity: order_item.burger_count,
+                    order_id: order_item.order_id,
+                });
+                
+                output_events.push((production_request, 0));
+            }
+        }
+        
+        output_events
+    }
+
+    fn extract_order_from_event(&self, event: &dyn Event) -> Option<PlaceOrderEventData> {
+        if event.event_type() == PLACE_ORDER_EVENT {
+            let data = event.data();
+            if let (Some(ComponentValue::Int(burger_count)), Some(ComponentValue::String(order_id))) = 
+                (data.get("burger_count"), data.get("order_id")) {
+                return Some(PlaceOrderEventData {
+                    burger_count: *burger_count as u32,
+                    order_id: order_id.clone(),
+                });
+            }
+        }
+        None
+    }
+}
+
+#[derive(Debug)]
+struct PlaceOrderEventData {
+    burger_count: u32,
+    order_id: String,
+}
+
+impl BaseComponent for OrderBuffer {
+    fn id(&self) -> &ComponentId {
+        &self.component_id
+    }
+
+    fn subscribed_events(&self) -> &[&str] {
+        &[
+            PLACE_ORDER_EVENT,
+        ]
+    }
+
+    fn react_atomic(&mut self, events: Vec<Box<dyn Event>>) -> Vec<(Box<dyn Event>, u64)> {
+        let mut output_events = Vec::new();
+        
+        // Update current time from events
+        if let Some(_event) = events.first() {
+            // Extract time from event or use a time service
+            // For now, increment time manually
+            self.current_time += 1;
+        }
+
+        for event in events {
+            match event.event_type() {
+                PLACE_ORDER_EVENT => {
+                    let mut new_events = self.handle_place_order_event(event.as_ref());
                     output_events.append(&mut new_events);
                 }
                 _ => {}
