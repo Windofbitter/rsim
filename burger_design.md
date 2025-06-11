@@ -123,10 +123,6 @@ All buffers share common behavior with type-specific implementations:
 2. **MeatReadyEvent / BreadReadyEvent**: Producer → Buffer item completion
 3. **BurgerReadyEvent**: Assembler → AssemblyBuffer completion
 
-### Future Production Coordination Events (OrderBased mode)
-1. **ProductionRequestEvent**: Downstream → Upstream production trigger
-2. **InventoryQueryEvent**: Query buffer inventory levels
-3. **InventoryStatusEvent**: Response with current inventory
 
 ### Buffer Management Events
 1. **ItemAddedEvent**: Buffer → Subscribers (broadcast)
@@ -177,28 +173,28 @@ Item Consumed → Buffer has space → BufferSpaceAvailableEvent
 
 #### TriggerProductionEvent
 - **Purpose**: Initiates production cycle in a component
-- **Data**: `order_id: String?` (None for BufferBased mode, Some(order_id) for OrderBased mode)
+- **Data**: None (trigger only)
 - **Source**: Self (BufferBased mode) or Client via PlaceOrderEvent (OrderBased mode)
 - **Target**: Single production component (Fryer, Baker, or Assembler)
-- **Usage**: Starts production timer, tracks order_id in OrderBased mode
+- **Usage**: Starts production timer
 
 #### MeatReadyEvent
 - **Purpose**: Signals completion of a fried meat patty
-- **Data**: `item_id: String`, `order_id: String?`
+- **Data**: `item_id: String`
 - **Source**: Fryer
 - **Target**: FriedMeatBuffer (BufferBased) or Assembler (OrderBased)
 - **Usage**: Attempts to add completed patty to buffer or directly to assembler
 
 #### BreadReadyEvent
 - **Purpose**: Signals completion of a cooked bun
-- **Data**: `item_id: String`, `order_id: String?`
+- **Data**: `item_id: String`
 - **Source**: Baker
 - **Target**: CookedBreadBuffer (BufferBased) or Assembler (OrderBased)
 - **Usage**: Attempts to add completed bun to buffer or directly to assembler
 
 #### BurgerReadyEvent
 - **Purpose**: Signals completion of an assembled burger
-- **Data**: `item_id: String`, `order_id: String?`
+- **Data**: `item_id: String`
 - **Source**: Assembler
 - **Target**: AssemblyBuffer (BufferBased) or Client (OrderBased)
 - **Usage**: Completes burger production, mode-dependent routing
@@ -235,10 +231,10 @@ Item Consumed → Buffer has space → BufferSpaceAvailableEvent
 
 #### ItemDroppedEvent
 - **Purpose**: Notifies that an item/order was rejected due to full buffer, with retry capability
-- **Data**: `item_type: String`, `item_id: String`, `order_id: String?`, `reason: String`
+- **Data**: `item_type: String`, `item_id: String`, `reason: String`
 - **Source**: Any buffer component
 - **Target**: Component that attempted to add the item
-- **Usage**: Component stores dropped item details and waits for `BufferSpaceAvailableEvent` to retry the same item/order
+- **Usage**: Component stores dropped item details and waits for `BufferSpaceAvailableEvent` to retry the same item
 
 ### Demand Events
 
@@ -266,16 +262,6 @@ Item Consumed → Buffer has space → BufferSpaceAvailableEvent
   - **OrderBased mode**: Assembler (after coordinated production)
 - **Target**: Client
 - **Usage**: Completes order lifecycle and updates statistics
-
-### OrderBased Mode Coordination Events
-
-#### OrderProgressEvent
-- **Purpose**: Tracks production progress (simplified due to single-order constraint)
-- **Data**: `meat_ready: bool`, `bread_ready: bool` (no order_id needed since only one order in flight)
-- **Source**: Fryer/Baker → Assembler
-- **Target**: Assembler
-- **Usage**: Assembler tracks when both ingredients are ready to start assembly
-
 
 ## Configuration Parameters
 
