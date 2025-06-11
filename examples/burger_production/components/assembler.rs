@@ -292,13 +292,7 @@ impl BaseComponent for Assembler {
                     self.meat_item = None;
                     self.bread_item = None;
                     
-                    // Forward the burger to interested components
-                    let burger_event = BurgerReadyEvent::new(
-                        self.id.clone(),
-                        None, // Broadcast to all interested components
-                        burger_id.to_string(),
-                    );
-                    new_events.push((Box::new(burger_event), 0));
+                    // No need to forward the event - it already broadcasted to all interested components
                 }
                 _ => {
                     log::warn!(
