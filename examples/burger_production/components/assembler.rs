@@ -73,31 +73,66 @@ impl Assembler {
     fn handle_trigger_production(&mut self) -> Vec<(Box<dyn Event>, u64)> {
         let mut new_events = Vec::new();
 
-        if !self.can_start_assembly() {
-            return new_events;
+        match self.state {
+            AssemblerState::Idle => {
+                if !self.can_start_assembly() {
+                    return new_events;
+                }
+
+                log::info!("[Assembler {}] Starting ingredient acquisition for new burger.", self.id);
+
+                // Request both ingredients via broadcast
+                let meat_request = RequestItemEvent::new(
+                    self.id.clone(),
+                    None, // Broadcast to all buffers
+                    self.id.clone(),
+                    "meat".to_string(),
+                );
+                let bread_request = RequestItemEvent::new(
+                    self.id.clone(),
+                    None, // Broadcast to all buffers
+                    self.id.clone(),
+                    "bread".to_string(),
+                );
+
+                new_events.push((Box::new(meat_request), 0));
+                new_events.push((Box::new(bread_request), 0));
+
+                // Update state to waiting for ingredients
+                self.state = AssemblerState::WaitingForIngredients;
+            }
+            AssemblerState::WaitingForIngredients => {
+                if self.is_production_stopped {
+                    return new_events;
+                }
+
+                log::info!("[Assembler {}] Retrying ingredient acquisition - requesting missing ingredients.", self.id);
+
+                // Only request missing ingredients
+                if self.meat_item.is_none() {
+                    let meat_request = RequestItemEvent::new(
+                        self.id.clone(),
+                        None, // Broadcast to all buffers
+                        self.id.clone(),
+                        "meat".to_string(),
+                    );
+                    new_events.push((Box::new(meat_request), 0));
+                }
+
+                if self.bread_item.is_none() {
+                    let bread_request = RequestItemEvent::new(
+                        self.id.clone(),
+                        None, // Broadcast to all buffers
+                        self.id.clone(),
+                        "bread".to_string(),
+                    );
+                    new_events.push((Box::new(bread_request), 0));
+                }
+            }
+            AssemblerState::Assembling => {
+                // Already assembling, ignore trigger
+            }
         }
-
-        log::info!("[Assembler {}] Starting ingredient acquisition for new burger.", self.id);
-
-        // Request both ingredients via broadcast
-        let meat_request = RequestItemEvent::new(
-            self.id.clone(),
-            None, // Broadcast to all buffers
-            self.id.clone(),
-            "meat".to_string(),
-        );
-        let bread_request = RequestItemEvent::new(
-            self.id.clone(),
-            None, // Broadcast to all buffers
-            self.id.clone(),
-            "bread".to_string(),
-        );
-
-        new_events.push((Box::new(meat_request), 0));
-        new_events.push((Box::new(bread_request), 0));
-
-        // Update state to waiting for ingredients
-        self.state = AssemblerState::WaitingForIngredients;
 
         new_events
     }
@@ -212,6 +247,7 @@ impl BaseComponent for Assembler {
                         new_events.push((Box::new(held_item), 0));
                         self.state = AssemblerState::Idle;
                     } else {
+                        // Allow trigger production in any state - handle_trigger_production will decide what to do
                         let mut production_events = self.handle_trigger_production();
                         new_events.append(&mut production_events);
                     }
