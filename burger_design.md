@@ -115,9 +115,10 @@ All buffers share common behavior with type-specific implementations:
 ### Buffer Management Events
 1. **ItemAddedEvent**: Buffer → Subscribers (broadcast)
 2. **RequestItemEvent**: Consumer → Buffer (pull request)
-3. **BufferFullEvent**: Buffer → Producers (backpressure)
-4. **BufferSpaceAvailableEvent**: Buffer → Producers (resume)
-5. **ItemDroppedEvent**: Buffer → Producer (item rejected when full, for production backpressure only)
+3. **ItemDispatchedEvent**: Buffer → Consumer (response to `RequestItemEvent`)
+4. **BufferFullEvent**: Buffer → Producers (backpressure)
+5. **BufferSpaceAvailableEvent**: Buffer → Producers (resume)
+6. **ItemDroppedEvent**: Buffer → Producer (item rejected when full, for production backpressure only)
 
 ### Demand Events
 1. **GenerateOrderEvent**: Client self-scheduling
@@ -140,7 +141,7 @@ All buffers share common behavior with type-specific implementations:
 2. **Client** generates an order and holds it in a `pending` state.
 3. The **AssemblyBuffer** broadcasts an `ItemAddedEvent` when a new burger is added.
 4. The **Client**, listening for this event, sends a `RequestItemEvent` to pull the available burger.
-5. The **AssemblyBuffer** fulfills the request and sends `OrderFulfilledEvent` back to the client.
+5. The **AssemblyBuffer** fulfills the request by sending an `ItemDispatchedEvent` with the burger, and also sends an `OrderFulfilledEvent` back to the client.
 6. System self-regulates through event-driven backpressure.
 
 ### Backpressure Mechanism
@@ -202,7 +203,14 @@ Item Consumed → Buffer has space → BufferSpaceAvailableEvent
 - **Data**: `requester_id: String`
 - **Source**: Consumer component (Assembler or Client)
 - **Target**: Specific buffer
-- **Usage**: Pulls an item from the buffer FIFO queue to satisfy an ingredient need or a customer order.
+- **Usage**: Pulls an item from the buffer FIFO queue. The buffer is expected to respond with an `ItemDispatchedEvent`.
+
+#### ItemDispatchedEvent
+- **Purpose**: Response to a `RequestItemEvent`, carrying the requested item.
+- **Data**: `item_type: String`, `item_id: String`, `success: bool`
+- **Source**: Any buffer component
+- **Target**: The original requester component.
+- **Usage**: Delivers the requested item to the consumer. The `success` flag indicates if an item was available.
 
 #### BufferFullEvent
 - **Purpose**: Signals that a buffer has reached capacity

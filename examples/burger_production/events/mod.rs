@@ -10,6 +10,7 @@ pub mod request_item_event;
 pub mod buffer_full_event;
 pub mod buffer_space_available_event;
 pub mod item_dropped_event;
+pub mod item_dispatched_event;
 
 // Demand Events
 pub mod generate_order_event;
@@ -32,6 +33,7 @@ pub use request_item_event::RequestItemEvent;
 pub use buffer_full_event::BufferFullEvent;
 pub use buffer_space_available_event::BufferSpaceAvailableEvent;
 pub use item_dropped_event::ItemDroppedEvent;
+pub use item_dispatched_event::ItemDispatchedEvent;
 
 pub use generate_order_event::GenerateOrderEvent;
 pub use place_order_event::PlaceOrderEvent;

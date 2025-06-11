@@ -3,13 +3,9 @@ use rsim::core::event::Event;
 use rsim::core::types::ComponentId;
 use std::collections::VecDeque;
 
-use crate::production::meat_ready_event::MeatReadyEvent;
-use crate::buffer_management::{
-    item_added_event::ItemAddedEvent,
-    request_item_event::RequestItemEvent,
-    buffer_full_event::BufferFullEvent,
-    buffer_space_available_event::BufferSpaceAvailableEvent,
-    item_dropped_event::ItemDroppedEvent,
+use crate::events::{
+    BufferFullEvent, BufferSpaceAvailableEvent, ItemAddedEvent, ItemDispatchedEvent,
+    ItemDroppedEvent, MeatReadyEvent, RequestItemEvent,
 };
 
 #[derive(Debug)]
@@ -107,13 +103,20 @@ impl BaseComponent for FriedMeatBuffer {
                 }
                 "RequestItemEvent" => {
                     if let Some(requester_id_value) = event.data().get("requester_id") {
-                        if let rsim::core::types::ComponentValue::String(requester_id) = requester_id_value {
+                        if let rsim::core::types::ComponentValue::String(requester_id) =
+                            requester_id_value
+                        {
                             if let Some(item_id) = self.remove_item() {
                                 // Create a response event with the item
-                                let mut response_data = std::collections::HashMap::new();
-                                response_data.insert("item_id".to_string(), rsim::core::types::ComponentValue::String(item_id));
-                                response_data.insert("success".to_string(), rsim::core::types::ComponentValue::Bool(true));
-                                
+                                let item_dispatched_event = ItemDispatchedEvent::new(
+                                    self.component_id.clone(),
+                                    requester_id.clone(),
+                                    "fried_meat".to_string(),
+                                    item_id,
+                                    true,
+                                );
+                                output_events.push((Box::new(item_dispatched_event), 0));
+
                                 // Check if buffer was full and now has space
                                 if self.was_full && self.has_space() {
                                     self.was_full = false;
@@ -124,6 +127,15 @@ impl BaseComponent for FriedMeatBuffer {
                                     );
                                     output_events.push((Box::new(space_available_event), 0));
                                 }
+                            } else {
+                                let item_dispatched_event = ItemDispatchedEvent::new(
+                                    self.component_id.clone(),
+                                    requester_id.clone(),
+                                    "fried_meat".to_string(),
+                                    "".to_string(),
+                                    false,
+                                );
+                                output_events.push((Box::new(item_dispatched_event), 0));
                             }
                         }
                     }
