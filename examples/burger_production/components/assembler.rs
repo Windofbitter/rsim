@@ -175,8 +175,9 @@ impl Assembler {
                 .and_then(|v| if let ComponentValue::String(s) = v { Some(s.as_str()) } else { None })
                 .unwrap_or("unknown");
 
-            // Check if this is from an ingredient buffer
-            if buffer_type == "meat" || buffer_type == "bread" {
+            // Check if this is from an ingredient buffer (input buffers only)
+            // Ignore events from assembly buffer (our output)
+            if buffer_type == "fried_meat" || buffer_type == "cooked_bread" {
                 log::info!("[Assembler {}] Ingredient available in {}. Triggering production.", self.id, buffer_type);
                 let trigger_event = TriggerProductionEvent::new(
                     self.id.clone(),
@@ -224,7 +225,24 @@ impl BaseComponent for Assembler {
                     new_events.append(&mut dispatched_events);
                 }
                 "ItemDroppedEvent" => {
+                    // Check if this component is the intended recipient
+                    if let Some(target_ids) = event.target_ids() {
+                        if !target_ids.contains(&self.id) {
+                            // This event is not for us, ignore it
+                            continue;
+                        }
+                    }
+                    
                     let data = event.data();
+                    let item_type = data.get("item_type")
+                        .and_then(|v| if let ComponentValue::String(s) = v { Some(s.as_str()) } else { None })
+                        .unwrap_or("unknown");
+                    
+                    // Only handle drops for burger items (our output)
+                    if item_type != "burger" {
+                        continue;
+                    }
+                    
                     let item_id = data.get("item_id")
                         .and_then(|v| if let ComponentValue::String(s) = v { Some(s.as_str()) } else { None })
                         .unwrap_or("unknown");
@@ -248,35 +266,51 @@ impl BaseComponent for Assembler {
                     self.is_production_stopped = true;
                 }
                 "BufferFullEvent" => {
-                    log::info!(
-                        "[Assembler {}] received BufferFullEvent. Pausing production.",
-                        self.id
-                    );
-                    self.is_production_stopped = true;
+                    let data = event.data();
+                    let buffer_type = data.get("buffer_type")
+                        .and_then(|v| if let ComponentValue::String(s) = v { Some(s.as_str()) } else { None })
+                        .unwrap_or("unknown");
+                    
+                    // Only pause production if this is from our output buffer (assembly buffer)
+                    if buffer_type == "assembly" {
+                        log::info!(
+                            "[Assembler {}] Assembly buffer is full. Pausing production.",
+                            self.id
+                        );
+                        self.is_production_stopped = true;
+                    }
                 }
                 "BufferSpaceAvailableEvent" => {
-                    log::info!(
-                        "[Assembler {}] received BufferSpaceAvailableEvent. Resuming production.",
-                        self.id
-                    );
-                    let was_stopped = self.is_production_stopped;
-                    self.is_production_stopped = false;
+                    let data = event.data();
+                    let buffer_type = data.get("buffer_type")
+                        .and_then(|v| if let ComponentValue::String(s) = v { Some(s.as_str()) } else { None })
+                        .unwrap_or("unknown");
+                    
+                    // Only resume production if this is from our output buffer (assembly buffer)
+                    if buffer_type == "assembly" {
+                        log::info!(
+                            "[Assembler {}] Assembly buffer has space available. Resuming production.",
+                            self.id
+                        );
+                        let was_stopped = self.is_production_stopped;
+                        self.is_production_stopped = false;
 
-                    // If we have a held item, retry it immediately
-                    if self.held_item.is_some() {
-                        let trigger_event = TriggerProductionEvent::new(
-                            self.id.clone(),
-                            Some(vec![self.id.clone()])
-                        );
-                        new_events.push((Box::new(trigger_event), 0));
-                    }
-                    // Otherwise, if in buffer-based mode, trigger production if it was stopped
-                    else if self.production_mode == ProductionMode::BufferBased && was_stopped && self.state == AssemblerState::Idle {
-                        let trigger_event = TriggerProductionEvent::new(
-                            self.id.clone(),
-                            Some(vec![self.id.clone()])
-                        );
-                        new_events.push((Box::new(trigger_event), 1));
+                        // If we have a held item, retry it immediately
+                        if self.held_item.is_some() {
+                            let trigger_event = TriggerProductionEvent::new(
+                                self.id.clone(),
+                                Some(vec![self.id.clone()])
+                            );
+                            new_events.push((Box::new(trigger_event), 0));
+                        }
+                        // Otherwise, if in buffer-based mode, trigger production if it was stopped
+                        else if self.production_mode == ProductionMode::BufferBased && was_stopped && self.state == AssemblerState::Idle {
+                            let trigger_event = TriggerProductionEvent::new(
+                                self.id.clone(),
+                                Some(vec![self.id.clone()])
+                            );
+                            new_events.push((Box::new(trigger_event), 1));
+                        }
                     }
                 }
                 "BurgerReadyEvent" => {

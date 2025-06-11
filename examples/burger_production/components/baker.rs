@@ -159,7 +159,24 @@ impl BaseComponent for Baker {
                     }
                 }
                 "ItemDroppedEvent" => {
+                    // Check if this component is the intended recipient
+                    if let Some(target_ids) = event.target_ids() {
+                        if !target_ids.contains(&self.id) {
+                            // This event is not for us, ignore it
+                            continue;
+                        }
+                    }
+                    
                     let data = event.data();
+                    let item_type = data.get("item_type")
+                        .and_then(|v| if let ComponentValue::String(s) = v { Some(s.as_str()) } else { None })
+                        .unwrap_or("unknown");
+                    
+                    // Only handle drops for bread items (our output)
+                    if item_type != "bread" && item_type != "cooked_bread" {
+                        continue;
+                    }
+                    
                     let item_id = data.get("item_id")
                         .and_then(|v| if let ComponentValue::String(s) = v { Some(s.as_str()) } else { None })
                         .unwrap_or("unknown");
@@ -168,7 +185,7 @@ impl BaseComponent for Baker {
                         .unwrap_or("unknown");
                     
                     log::info!(
-                        "[Baker {}] Item {} was dropped. Reason: {}. Will retry when space available.",
+                        "[Baker {}] Bread item {} was dropped. Reason: {}. Will retry when space available.",
                         self.id,
                         item_id,
                         reason
@@ -189,31 +206,47 @@ impl BaseComponent for Baker {
                     self.is_production_stopped = true;
                 }
                 "BufferFullEvent" => {
-                    log::info!(
-                        "[Baker {}] received BufferFullEvent. Pausing production.",
-                        self.id
-                    );
-                    self.is_production_stopped = true;
+                    let data = event.data();
+                    let buffer_type = data.get("buffer_type")
+                        .and_then(|v| if let ComponentValue::String(s) = v { Some(s.as_str()) } else { None })
+                        .unwrap_or("unknown");
+                    
+                    // Only pause production if this is from our output buffer (cooked_bread buffer)
+                    if buffer_type == "cooked_bread" {
+                        log::info!(
+                            "[Baker {}] Cooked bread buffer is full. Pausing production.",
+                            self.id
+                        );
+                        self.is_production_stopped = true;
+                    }
                 }
                 "BufferSpaceAvailableEvent" => {
-                    log::info!(
-                        "[Baker {}] received BufferSpaceAvailableEvent. Resuming production.",
-                        self.id
-                    );
-                    let was_stopped = self.is_production_stopped;
-                    self.is_production_stopped = false;
+                    let data = event.data();
+                    let buffer_type = data.get("buffer_type")
+                        .and_then(|v| if let ComponentValue::String(s) = v { Some(s.as_str()) } else { None })
+                        .unwrap_or("unknown");
+                    
+                    // Only resume production if this is from our output buffer (cooked_bread buffer)
+                    if buffer_type == "cooked_bread" {
+                        log::info!(
+                            "[Baker {}] Cooked bread buffer has space available. Resuming production.",
+                            self.id
+                        );
+                        let was_stopped = self.is_production_stopped;
+                        self.is_production_stopped = false;
 
-                    // If we have a held item, retry it immediately
-                    if self.held_item.is_some() {
-                        let trigger_event =
-                            TriggerProductionEvent::new(self.id.clone(), Some(vec![self.id.clone()]));
-                        new_events.push((Box::new(trigger_event), 0));
-                    }
-                    // Otherwise, if in buffer-based mode, trigger production if it was stopped
-                    else if self.production_mode == ProductionMode::BufferBased && was_stopped {
-                        let trigger_event =
-                            TriggerProductionEvent::new(self.id.clone(), Some(vec![self.id.clone()]));
-                        new_events.push((Box::new(trigger_event), 1));
+                        // If we have a held item, retry it immediately
+                        if self.held_item.is_some() {
+                            let trigger_event =
+                                TriggerProductionEvent::new(self.id.clone(), Some(vec![self.id.clone()]));
+                            new_events.push((Box::new(trigger_event), 0));
+                        }
+                        // Otherwise, if in buffer-based mode, trigger production if it was stopped
+                        else if self.production_mode == ProductionMode::BufferBased && was_stopped {
+                            let trigger_event =
+                                TriggerProductionEvent::new(self.id.clone(), Some(vec![self.id.clone()]));
+                            new_events.push((Box::new(trigger_event), 1));
+                        }
                     }
                 }
                 _ => {
