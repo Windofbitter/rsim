@@ -105,10 +105,11 @@ All buffers share common behavior with type-specific implementations:
 - **Purpose**: Generates customer orders and consumes burgers
 - **Order Pattern**: 1 burger per order (simplified)
 - **Order Frequency**: Every 15 simulation cycles
+- **Order Constraint**: Only one order at a time until fulfillment (applies to both production modes)
 - **Behaviors**:
   - Self-schedules order generation via `GenerateOrderEvent`
-  - Sends `PlaceOrderEvent` to OrderBuffer
-  - Receives `OrderFulfilledEvent` when order complete
+  - Sends `PlaceOrderEvent` to OrderBuffer (BufferBased) or Fryer+Baker (OrderBased)
+  - Waits for `OrderFulfilledEvent` before generating next order
   - Receives `ItemDroppedEvent` if OrderBuffer rejects order (full)
   - Tracks order statistics: pending, fulfilled, dropped, total generated
   - Uses seeded RNG for reproducible simulations
@@ -269,11 +270,11 @@ Item Consumed → Buffer has space → BufferSpaceAvailableEvent
 ### OrderBased Mode Coordination Events
 
 #### OrderProgressEvent
-- **Purpose**: Tracks production progress for a specific order
-- **Data**: `order_id: String`, `meat_ready: bool`, `bread_ready: bool`
+- **Purpose**: Tracks production progress (simplified due to single-order constraint)
+- **Data**: `meat_ready: bool`, `bread_ready: bool` (no order_id needed since only one order in flight)
 - **Source**: Fryer/Baker → Assembler
 - **Target**: Assembler
-- **Usage**: Assembler tracks when both ingredients are ready for specific order
+- **Usage**: Assembler tracks when both ingredients are ready to start assembly
 
 
 ## Configuration Parameters
@@ -290,4 +291,4 @@ The simulation supports extensive configuration via `BurgerSimulationConfig`:
 
 ### Production Modes
 - **BufferBased**: Producers continuously self-schedule production until buffers are full
-- **OrderBased**: Production triggered by downstream demand (future implementation)
+- **OrderBased**: Production triggered by individual orders (single order processing constraint simplifies coordination)
