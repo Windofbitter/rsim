@@ -17,7 +17,6 @@ use crate::ProductionMode;
 pub struct Baker {
     id: ComponentId,
     production_mode: ProductionMode,
-    output_buffer: ComponentId,
     processing_time: u64,
     is_production_stopped: bool,
     subscriptions: Vec<&'static str>,
@@ -33,13 +32,11 @@ impl Baker {
     pub fn new(
         id: ComponentId,
         production_mode: ProductionMode,
-        output_buffer: ComponentId,
         processing_time: u64,
     ) -> Self {
         Self {
             id,
             production_mode,
-            output_buffer,
             processing_time,
             is_production_stopped: false,
             subscriptions: vec![
@@ -82,7 +79,7 @@ impl Baker {
         let item_id = format!("bun_{}", Uuid::new_v4());
         Some(BreadReadyEvent::new(
             self.id.clone(),
-            Some(vec![self.output_buffer.clone()]),
+            None,
             item_id,
         ))
     }
@@ -186,7 +183,7 @@ impl BaseComponent for Baker {
                     // Store the item to retry later with the same item_id
                     self.held_item = Some(BreadReadyEvent::new(
                         self.id.clone(),
-                        Some(vec![self.output_buffer.clone()]),
+                        None,
                         item_id.to_string(),
                     ));
                     self.is_production_stopped = true;
