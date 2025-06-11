@@ -40,8 +40,10 @@ graph LR
 #### Fryer
 - **Purpose**: Converts raw meat into fried meat patties
 - **Processing Time**: 10 simulation cycles per patty
+- **Behavior Flags**:
+  - `auto_produce`: true in BufferBased mode, false in OrderBased mode
 - **Behavior**:
-  - Self-schedules production via `StartFryingEvent`
+  - Production triggered via `TriggerProductionEvent` (self-sent in BufferBased mode)
   - Sends `MeatReadyEvent` to buffer when patty completes
   - Receives `ItemDroppedEvent` if buffer rejects item (full)
   - Monitors buffer capacity and halts on `BufferFullEvent`
@@ -51,12 +53,17 @@ graph LR
 #### Baker
 - **Purpose**: Converts raw bread into cooked buns
 - **Processing Time**: 8 simulation cycles per bun
+- **Behavior Flags**:
+  - `auto_produce`: true in BufferBased mode, false in OrderBased mode
 - **Behavior**: Identical to Fryer but produces bread items (including handling `ItemDroppedEvent`)
 
 #### Assembler
 - **Purpose**: Combines meat and bread into complete burgers
 - **Processing Time**: 5 simulation cycles per burger
+- **Behavior Flags**:
+  - `auto_produce`: true in BufferBased mode, false in OrderBased mode
 - **Behavior**:
+  - Production triggered via `TriggerProductionEvent` (self-sent in BufferBased mode)
   - Monitors available ingredients via `ItemAddedEvent` from buffers
   - Sends `RequestItemEvent` to both ingredient buffers when ready
   - Only starts assembly when both ingredients confirmed available
@@ -109,10 +116,16 @@ All buffers share common behavior with type-specific implementations:
 ## Event Flow and Communication
 
 ### Production Events
-1. **StartFryingEvent / StartBakingEvent**: Self-scheduled production initiation
+1. **TriggerProductionEvent**: Generic production initiation
+   - In BufferBased mode: Self-scheduled by producers
+   - In OrderBased mode: Sent by downstream components (future)
 2. **MeatReadyEvent / BreadReadyEvent**: Producer → Buffer item completion
-3. **StartAssemblyEvent**: Self-scheduled assembly initiation
-4. **BurgerReadyEvent**: Assembler → AssemblyBuffer completion
+3. **BurgerReadyEvent**: Assembler → AssemblyBuffer completion
+
+### Future Production Coordination Events (OrderBased mode)
+1. **ProductionRequestEvent**: Downstream → Upstream production trigger
+2. **InventoryQueryEvent**: Query buffer inventory levels
+3. **InventoryStatusEvent**: Response with current inventory
 
 ### Buffer Management Events
 1. **ItemAddedEvent**: Buffer → Subscribers (broadcast)
@@ -130,10 +143,11 @@ All buffers share common behavior with type-specific implementations:
 
 ### Initialization Sequence
 1. All components register with simulation engine
-2. Initial events scheduled:
-   - Fryer: `StartFryingEvent` at cycle 1
-   - Baker: `StartBakingEvent` at cycle 1
-   - Assembler: `StartAssemblyEvent` at cycle 5
+2. Components configured with behavior flags based on `production_mode`
+3. Initial events scheduled (BufferBased mode):
+   - Fryer: `TriggerProductionEvent` at cycle 1 (if auto_produce=true)
+   - Baker: `TriggerProductionEvent` at cycle 1 (if auto_produce=true)
+   - Assembler: `TriggerProductionEvent` at cycle 5 (if auto_produce=true)
    - Client: `GenerateOrderEvent` at cycle 20
 
 ### Steady-State Operation
@@ -147,18 +161,19 @@ All buffers share common behavior with type-specific implementations:
 ```
 Buffer Full → BufferFullEvent → Producer.is_production_stopped = true
                                         ↓
-                                 No new StartEvent scheduled
+                                 No new TriggerProductionEvent scheduled
                                         ↓
 Item Consumed → Buffer has space → BufferSpaceAvailableEvent
                                         ↓
                           Producer.is_production_stopped = false
                                         ↓
-                              Schedule new StartEvent
+                        Schedule new TriggerProductionEvent (if auto_produce=true)
 ```
 
 ## Configuration Parameters
 
 The simulation supports extensive configuration via `BurgerSimulationConfig`:
+- **Production Mode**: `ProductionMode` enum (BufferBased, OrderBased)
 - **Processing Delays**: Frying (10), Baking (8), Assembly (5) cycles
 - **Buffer Capacities**: Default 5 items each
 - **Concurrent Processing**: Max items in process per component
@@ -166,3 +181,7 @@ The simulation supports extensive configuration via `BurgerSimulationConfig`:
 - **Order Buffer Capacity**: Default 10 orders
 - **Simulation Duration**: Total cycles to run
 - **Random Seed**: For reproducible order patterns
+
+### Production Modes
+- **BufferBased**: Producers continuously self-schedule production until buffers are full
+- **OrderBased**: Production triggered by downstream demand (future implementation)
