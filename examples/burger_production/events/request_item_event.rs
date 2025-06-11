@@ -8,6 +8,7 @@ pub struct RequestItemEvent {
     source_id: ComponentId,
     target_ids: Option<Vec<ComponentId>>,
     requester_id: String,
+    item_type: String,
 }
 
 impl RequestItemEvent {
@@ -15,17 +16,23 @@ impl RequestItemEvent {
         source_id: ComponentId,
         target_ids: Option<Vec<ComponentId>>,
         requester_id: String,
+        item_type: String,
     ) -> Self {
         Self {
             id: format!("request_item_{}", uuid::Uuid::new_v4()),
             source_id,
             target_ids,
             requester_id,
+            item_type,
         }
     }
 
     pub fn requester_id(&self) -> &str {
         &self.requester_id
+    }
+
+    pub fn item_type(&self) -> &str {
+        &self.item_type
     }
 }
 
@@ -49,6 +56,7 @@ impl Event for RequestItemEvent {
     fn data(&self) -> HashMap<String, ComponentValue> {
         let mut data = HashMap::new();
         data.insert("requester_id".to_string(), ComponentValue::String(self.requester_id.clone()));
+        data.insert("item_type".to_string(), ComponentValue::String(self.item_type.clone()));
         data
     }
 

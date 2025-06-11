@@ -14,34 +14,26 @@ use crate::events::{
 };
 use crate::ProductionMode;
 
-/// Assembly state tracking ingredient acquisition
+/// Simplified assembly state
 #[derive(Debug, Clone, PartialEq)]
-enum AssemblyState {
+enum AssemblerState {
     Idle,
-    WaitingForIngredients {
-        meat_requested: bool,
-        bread_requested: bool,
-        meat_item: Option<String>,
-        bread_item: Option<String>,
-    },
-    Assembling {
-        meat_item: String,
-        bread_item: String,
-    },
+    WaitingForIngredients,
+    Assembling,
 }
 
 /// The Assembler component, responsible for combining meat and bread into complete burgers.
 pub struct Assembler {
     id: ComponentId,
     production_mode: ProductionMode,
-    meat_buffer: ComponentId,
-    bread_buffer: ComponentId,
-    output_buffer: ComponentId,
     processing_time: u64,
     is_production_stopped: bool,
     subscriptions: Vec<&'static str>,
     // Assembly state management
-    assembly_state: AssemblyState,
+    state: AssemblerState,
+    // Ingredient tracking
+    meat_item: Option<String>,
+    bread_item: Option<String>,
     // Backpressure handling
     held_item: Option<BurgerReadyEvent>,
 }
@@ -51,17 +43,11 @@ impl Assembler {
     pub fn new(
         id: ComponentId,
         production_mode: ProductionMode,
-        meat_buffer: ComponentId,
-        bread_buffer: ComponentId,
-        output_buffer: ComponentId,
         processing_time: u64,
     ) -> Self {
         Self {
             id,
             production_mode,
-            meat_buffer,
-            bread_buffer,
-            output_buffer,
             processing_time,
             is_production_stopped: false,
             subscriptions: vec![
@@ -73,13 +59,15 @@ impl Assembler {
                 "BufferSpaceAvailableEvent",
                 "BurgerReadyEvent",
             ],
-            assembly_state: AssemblyState::Idle,
+            state: AssemblerState::Idle,
+            meat_item: None,
+            bread_item: None,
             held_item: None,
         }
     }
 
     fn can_start_assembly(&self) -> bool {
-        !self.is_production_stopped && self.assembly_state == AssemblyState::Idle
+        !self.is_production_stopped && self.state == AssemblerState::Idle
     }
 
     fn handle_trigger_production(&mut self) -> Vec<(Box<dyn Event>, u64)> {
@@ -91,28 +79,25 @@ impl Assembler {
 
         log::info!("[Assembler {}] Starting ingredient acquisition for new burger.", self.id);
 
-        // Request both ingredients
+        // Request both ingredients via broadcast
         let meat_request = RequestItemEvent::new(
             self.id.clone(),
-            Some(vec![self.meat_buffer.clone()]),
+            None, // Broadcast to all buffers
             self.id.clone(),
+            "meat".to_string(),
         );
         let bread_request = RequestItemEvent::new(
             self.id.clone(),
-            Some(vec![self.bread_buffer.clone()]),
+            None, // Broadcast to all buffers
             self.id.clone(),
+            "bread".to_string(),
         );
 
         new_events.push((Box::new(meat_request), 0));
         new_events.push((Box::new(bread_request), 0));
 
-        // Update state to track ingredient requests
-        self.assembly_state = AssemblyState::WaitingForIngredients {
-            meat_requested: true,
-            bread_requested: true,
-            meat_item: None,
-            bread_item: None,
-        };
+        // Update state to waiting for ingredients
+        self.state = AssemblerState::WaitingForIngredients;
 
         new_events
     }
@@ -131,19 +116,16 @@ impl Assembler {
             .and_then(|v| if let ComponentValue::Bool(b) = v { Some(*b) } else { None })
             .unwrap_or(false);
 
-        if let AssemblyState::WaitingForIngredients { 
-            meat_requested, bread_requested, mut meat_item, mut bread_item 
-        } = self.assembly_state.clone() {
-            
+        if self.state == AssemblerState::WaitingForIngredients {
             if success {
                 match item_type {
                     "meat" => {
                         log::info!("[Assembler {}] Received meat ingredient: {}", self.id, item_id);
-                        meat_item = Some(item_id.to_string());
+                        self.meat_item = Some(item_id.to_string());
                     }
                     "bread" => {
                         log::info!("[Assembler {}] Received bread ingredient: {}", self.id, item_id);
-                        bread_item = Some(item_id.to_string());
+                        self.bread_item = Some(item_id.to_string());
                     }
                     _ => {
                         log::warn!("[Assembler {}] Received unexpected item type: {}", self.id, item_type);
@@ -151,22 +133,19 @@ impl Assembler {
                 }
 
                 // Check if we have both ingredients
-                if let (Some(meat), Some(bread)) = (&meat_item, &bread_item) {
+                if let (Some(meat), Some(bread)) = (&self.meat_item, &self.bread_item) {
                     log::info!("[Assembler {}] Both ingredients acquired. Starting assembly.", self.id);
                     
                     let burger_id = format!("burger_{}", Uuid::new_v4());
                     let burger_event = BurgerReadyEvent::new(
                         self.id.clone(),
-                        Some(vec![self.output_buffer.clone()]),
+                        None, // Broadcast to all interested components
                         burger_id,
                     );
 
                     new_events.push((Box::new(burger_event), self.processing_time));
 
-                    self.assembly_state = AssemblyState::Assembling {
-                        meat_item: meat.clone(),
-                        bread_item: bread.clone(),
-                    };
+                    self.state = AssemblerState::Assembling;
 
                     // In BufferBased mode, immediately trigger next production cycle
                     if self.production_mode == ProductionMode::BufferBased && !self.is_production_stopped {
@@ -176,19 +155,10 @@ impl Assembler {
                         );
                         new_events.push((Box::new(trigger_event), 1));
                     }
-                } else {
-                    // Update state with partial ingredients
-                    self.assembly_state = AssemblyState::WaitingForIngredients {
-                        meat_requested,
-                        bread_requested,
-                        meat_item,
-                        bread_item,
-                    };
                 }
             } else {
-                // Ingredient request failed, reset to idle
-                log::info!("[Assembler {}] Ingredient request failed for {}. Resetting to idle.", self.id, item_type);
-                self.assembly_state = AssemblyState::Idle;
+                // Ingredient request failed - keep acquired ingredients, don't reset to idle
+                log::info!("[Assembler {}] Ingredient request failed for {}. Keeping acquired ingredients.", self.id, item_type);
             }
         }
 
@@ -205,7 +175,7 @@ impl Assembler {
                 .and_then(|v| if let ComponentValue::String(s) = v { Some(s.as_str()) } else { None })
                 .unwrap_or("unknown");
 
-            // Check if this is from one of our ingredient buffers
+            // Check if this is from an ingredient buffer
             if buffer_type == "meat" || buffer_type == "bread" {
                 log::info!("[Assembler {}] Ingredient available in {}. Triggering production.", self.id, buffer_type);
                 let trigger_event = TriggerProductionEvent::new(
@@ -239,7 +209,7 @@ impl BaseComponent for Assembler {
                     if let Some(held_item) = self.held_item.take() {
                         log::info!("[Assembler {}] Retrying held burger after space became available.", self.id);
                         new_events.push((Box::new(held_item), 0));
-                        self.assembly_state = AssemblyState::Idle;
+                        self.state = AssemblerState::Idle;
                     } else {
                         let mut production_events = self.handle_trigger_production();
                         new_events.append(&mut production_events);
@@ -272,7 +242,7 @@ impl BaseComponent for Assembler {
                     // Store the burger to retry later
                     self.held_item = Some(BurgerReadyEvent::new(
                         self.id.clone(),
-                        Some(vec![self.output_buffer.clone()]),
+                        None, // Broadcast to all interested components
                         item_id.to_string(),
                     ));
                     self.is_production_stopped = true;
@@ -301,7 +271,7 @@ impl BaseComponent for Assembler {
                         new_events.push((Box::new(trigger_event), 0));
                     }
                     // Otherwise, if in buffer-based mode, trigger production if it was stopped
-                    else if self.production_mode == ProductionMode::BufferBased && was_stopped && self.assembly_state == AssemblyState::Idle {
+                    else if self.production_mode == ProductionMode::BufferBased && was_stopped && self.state == AssemblerState::Idle {
                         let trigger_event = TriggerProductionEvent::new(
                             self.id.clone(),
                             Some(vec![self.id.clone()])
@@ -317,13 +287,15 @@ impl BaseComponent for Assembler {
                     
                     log::info!("[Assembler {}] Burger {} assembly completed. Transitioning to Idle.", self.id, burger_id);
                     
-                    // Assembly processing is complete, reset to idle
-                    self.assembly_state = AssemblyState::Idle;
+                    // Assembly processing is complete, reset to idle and clear ingredients
+                    self.state = AssemblerState::Idle;
+                    self.meat_item = None;
+                    self.bread_item = None;
                     
-                    // Forward the burger to the output buffer
+                    // Forward the burger to interested components
                     let burger_event = BurgerReadyEvent::new(
                         self.id.clone(),
-                        Some(vec![self.output_buffer.clone()]),
+                        None, // Broadcast to all interested components
                         burger_id.to_string(),
                     );
                     new_events.push((Box::new(burger_event), 0));

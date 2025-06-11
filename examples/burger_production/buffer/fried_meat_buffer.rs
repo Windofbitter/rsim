@@ -102,43 +102,52 @@ impl BaseComponent for FriedMeatBuffer {
                     }
                 }
                 "RequestItemEvent" => {
-                    if let Some(requester_id_value) = event.data().get("requester_id") {
-                        if let rsim::core::types::ComponentValue::String(requester_id) =
-                            requester_id_value
-                        {
-                            if let Some(item_id) = self.remove_item() {
-                                // Create a response event with the item
-                                let item_dispatched_event = ItemDispatchedEvent::new(
-                                    self.component_id.clone(),
-                                    requester_id.clone(),
-                                    "fried_meat".to_string(),
-                                    item_id,
-                                    true,
-                                );
-                                output_events.push((Box::new(item_dispatched_event), 0));
-
-                                // Check if buffer was full and now has space
-                                if self.was_full && self.has_space() {
-                                    self.was_full = false;
-                                    let space_available_event = BufferSpaceAvailableEvent::new(
+                    // Check if this request is for meat items
+                    let item_type = event.data().get("item_type")
+                        .and_then(|v| if let rsim::core::types::ComponentValue::String(s) = v { Some(s.as_str()) } else { None })
+                        .unwrap_or("");
+                    
+                    // Only respond to meat requests
+                    if item_type == "meat" {
+                        if let Some(requester_id_value) = event.data().get("requester_id") {
+                            if let rsim::core::types::ComponentValue::String(requester_id) =
+                                requester_id_value
+                            {
+                                if let Some(item_id) = self.remove_item() {
+                                    // Create a response event with the item
+                                    let item_dispatched_event = ItemDispatchedEvent::new(
                                         self.component_id.clone(),
-                                        None, // Broadcast to all upstream producers
-                                        "fried_meat".to_string(),
+                                        requester_id.clone(),
+                                        "meat".to_string(), // Use generic "meat" type
+                                        item_id,
+                                        true,
                                     );
-                                    output_events.push((Box::new(space_available_event), 0));
+                                    output_events.push((Box::new(item_dispatched_event), 0));
+
+                                    // Check if buffer was full and now has space
+                                    if self.was_full && self.has_space() {
+                                        self.was_full = false;
+                                        let space_available_event = BufferSpaceAvailableEvent::new(
+                                            self.component_id.clone(),
+                                            None, // Broadcast to all upstream producers
+                                            "fried_meat".to_string(),
+                                        );
+                                        output_events.push((Box::new(space_available_event), 0));
+                                    }
+                                } else {
+                                    let item_dispatched_event = ItemDispatchedEvent::new(
+                                        self.component_id.clone(),
+                                        requester_id.clone(),
+                                        "meat".to_string(), // Use generic "meat" type
+                                        "".to_string(),
+                                        false,
+                                    );
+                                    output_events.push((Box::new(item_dispatched_event), 0));
                                 }
-                            } else {
-                                let item_dispatched_event = ItemDispatchedEvent::new(
-                                    self.component_id.clone(),
-                                    requester_id.clone(),
-                                    "fried_meat".to_string(),
-                                    "".to_string(),
-                                    false,
-                                );
-                                output_events.push((Box::new(item_dispatched_event), 0));
                             }
                         }
                     }
+                    // Ignore requests for other item types (bread, etc.)
                 }
                 _ => {} // Ignore unknown events
             }
