@@ -11,9 +11,8 @@ graph LR
     C -->|RequestItemEvent| G[Assembler<br/>5 cycles/burger]
     F -->|RequestItemEvent| G
     G -->|BurgerReadyEvent| I{Assembly FIFO<br/>capacity: 5}
-    H[Client<br/>Orders: μ=2.0, σ=0.5] -->|PlaceOrderEvent| J{Order FIFO<br/>capacity: 10}
-    J -->|RequestItemEvent| I
-    J -->|OrderFulfilledEvent<br/>ItemDroppedEvent| H
+    H[Client<br/>Orders: μ=2.0, σ=0.5] -->|PlaceOrderEvent| I
+    I -->|OrderFulfilledEvent<br/>ItemDroppedEvent| H
 
     subgraph "Production Line"
         A
@@ -24,13 +23,11 @@ graph LR
         F
         G
         I
-        J
     end
 
     C -.->|BufferFullEvent<br/>BufferSpaceAvailableEvent<br/>ItemDroppedEvent| B
     F -.->|BufferFullEvent<br/>BufferSpaceAvailableEvent<br/>ItemDroppedEvent| E
     I -.->|BufferFullEvent<br/>BufferSpaceAvailableEvent<br/>ItemDroppedEvent| G
-    I -->|ItemAddedEvent| J
 ```
 
 ## Component Responsibilities
@@ -88,16 +85,6 @@ All buffers share common behavior with type-specific implementations:
     - Sends `BufferSpaceAvailableEvent` when space opens up
   - Maintains FIFO ordering for fairness
 
-#### OrderBuffer
-- **Purpose**: Queues customer orders in FIFO order
-- **Capacity**: 10 orders (configurable)
-- **Behaviors**:
-  - Accepts `PlaceOrderEvent` from Client (1 burger per order) if space available
-  - If full, rejects order and sends `ItemDroppedEvent` back to Client
-  - Listens for `ItemAddedEvent` from AssemblyBuffer
-  - When burger available, sends `RequestItemEvent` to AssemblyBuffer for oldest order
-  - Sends `OrderFulfilledEvent` back to Client when order complete
-  - Maintains FIFO ordering to ensure fair order fulfillment
 
 ### Demand Component
 
@@ -108,9 +95,9 @@ All buffers share common behavior with type-specific implementations:
 - **Order Constraint**: Only one order at a time until fulfillment (applies to both production modes)
 - **Behaviors**:
   - Self-schedules order generation via `GenerateOrderEvent`
-  - Sends `PlaceOrderEvent` to OrderBuffer (BufferBased) or Fryer+Baker (OrderBased)
+  - Sends `PlaceOrderEvent` to AssemblyBuffer (BufferBased) or Fryer+Baker (OrderBased)
   - Waits for `OrderFulfilledEvent` before generating next order
-  - Receives `ItemDroppedEvent` if OrderBuffer rejects order (full)
+  - Receives `ItemDroppedEvent` if AssemblyBuffer rejects order (full)
   - Tracks order statistics: pending, fulfilled, dropped, total generated
   - Uses seeded RNG for reproducible simulations
 
@@ -133,8 +120,8 @@ All buffers share common behavior with type-specific implementations:
 
 ### Demand Events
 1. **GenerateOrderEvent**: Client self-scheduling
-2. **PlaceOrderEvent**: Client → OrderBuffer
-3. **OrderFulfilledEvent**: OrderBuffer → Client
+2. **PlaceOrderEvent**: Client → AssemblyBuffer (BufferBased) or Fryer+Baker (OrderBased)
+3. **OrderFulfilledEvent**: AssemblyBuffer/Assembler → Client
 
 ## Production Workflow
 
@@ -271,7 +258,6 @@ The simulation supports extensive configuration via `BurgerSimulationConfig`:
 - **Buffer Capacities**: Default 5 items each
 - **Concurrent Processing**: Max items in process per component
 - **Order Generation**: Interval (15), 1 burger per order
-- **Order Buffer Capacity**: Default 10 orders
 - **Simulation Duration**: Total cycles to run
 - **Random Seed**: For reproducible order patterns
 
