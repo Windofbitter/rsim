@@ -64,8 +64,9 @@ graph LR
     - Production triggered via `TriggerProductionEvent` (self-sent).
     - Monitors available ingredients via `ItemAddedEvent` from buffers.
     - Sends `RequestItemEvent` to both ingredient buffers when ready.
+    - Subscribes to `ItemDispatchedEvent` from both FriedMeatBuffer and CookedBreadBuffer.
   - **Shared Behavior**:
-    - Only starts assembly when both ingredients confirmed available.
+    - Only starts assembly when both ingredients confirmed available via `ItemDispatchedEvent`.
     - Sends `BurgerReadyEvent` to AssemblyBuffer when complete.
     - Receives `ItemDroppedEvent` if AssemblyBuffer rejects burger (full).
     - Implements same backpressure mechanism as producers.
