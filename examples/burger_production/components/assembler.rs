@@ -71,6 +71,7 @@ impl Assembler {
                 "ItemDroppedEvent",
                 "BufferFullEvent",
                 "BufferSpaceAvailableEvent",
+                "BurgerReadyEvent",
             ],
             assembly_state: AssemblyState::Idle,
             held_item: None,
@@ -308,6 +309,25 @@ impl BaseComponent for Assembler {
                         new_events.push((Box::new(trigger_event), 1));
                     }
                 }
+                "BurgerReadyEvent" => {
+                    let data = event.data();
+                    let burger_id = data.get("item_id")
+                        .and_then(|v| if let ComponentValue::String(s) = v { Some(s.as_str()) } else { None })
+                        .unwrap_or("unknown");
+                    
+                    log::info!("[Assembler {}] Burger {} assembly completed. Transitioning to Idle.", self.id, burger_id);
+                    
+                    // Assembly processing is complete, reset to idle
+                    self.assembly_state = AssemblyState::Idle;
+                    
+                    // Forward the burger to the output buffer
+                    let burger_event = BurgerReadyEvent::new(
+                        self.id.clone(),
+                        Some(vec![self.output_buffer.clone()]),
+                        burger_id.to_string(),
+                    );
+                    new_events.push((Box::new(burger_event), 0));
+                }
                 _ => {
                     log::warn!(
                         "[Assembler {}] received unhandled event type: {}",
@@ -318,13 +338,6 @@ impl BaseComponent for Assembler {
             }
         }
 
-        // Reset assembly state when burger is completed
-        if let AssemblyState::Assembling { .. } = self.assembly_state {
-            // Check if we just scheduled a BurgerReadyEvent
-            if new_events.iter().any(|(event, _)| event.event_type() == "BurgerReadyEvent") {
-                self.assembly_state = AssemblyState::Idle;
-            }
-        }
 
         new_events
     }
