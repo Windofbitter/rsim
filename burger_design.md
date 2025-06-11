@@ -170,6 +170,121 @@ Item Consumed → Buffer has space → BufferSpaceAvailableEvent
                         Schedule new TriggerProductionEvent (if auto_produce=true)
 ```
 
+## Events Implementation
+
+### Production Events
+
+#### TriggerProductionEvent
+- **Purpose**: Initiates production cycle in a component
+- **Data**: None (trigger only)
+- **Source**: Self (BufferBased mode) or downstream component (OrderBased mode)
+- **Target**: Single production component (Fryer, Baker, or Assembler)
+- **Usage**: Starts the production timer for creating an item
+
+#### MeatReadyEvent
+- **Purpose**: Signals completion of a fried meat patty
+- **Data**: `item_id: String` (unique identifier for tracking)
+- **Source**: Fryer
+- **Target**: FriedMeatBuffer
+- **Usage**: Attempts to add completed patty to buffer
+
+#### BreadReadyEvent
+- **Purpose**: Signals completion of a cooked bun
+- **Data**: `item_id: String` (unique identifier for tracking)
+- **Source**: Baker
+- **Target**: CookedBreadBuffer
+- **Usage**: Attempts to add completed bun to buffer
+
+#### BurgerReadyEvent
+- **Purpose**: Signals completion of an assembled burger
+- **Data**: `item_id: String` (unique identifier for tracking)
+- **Source**: Assembler
+- **Target**: AssemblyBuffer
+- **Usage**: Attempts to add completed burger to buffer
+
+### Buffer Management Events
+
+#### ItemAddedEvent
+- **Purpose**: Broadcasts that an item was successfully added to a buffer
+- **Data**: `buffer_type: String`, `item_id: String`, `current_count: i32`
+- **Source**: Any buffer component
+- **Target**: All subscribers (broadcast)
+- **Usage**: Notifies downstream consumers that items are available
+
+#### RequestItemEvent
+- **Purpose**: Requests an item from a buffer
+- **Data**: `requester_id: String`
+- **Source**: Consumer component (Assembler or OrderBuffer)
+- **Target**: Specific buffer
+- **Usage**: Pulls an item from the buffer FIFO queue
+
+#### BufferFullEvent
+- **Purpose**: Signals that a buffer has reached capacity
+- **Data**: `buffer_type: String`
+- **Source**: Any buffer component
+- **Target**: Upstream producer
+- **Usage**: Implements backpressure to stop production
+
+#### BufferSpaceAvailableEvent
+- **Purpose**: Signals that a full buffer now has space
+- **Data**: `buffer_type: String`
+- **Source**: Any buffer component
+- **Target**: Upstream producer
+- **Usage**: Releases backpressure to resume production
+
+#### ItemDroppedEvent
+- **Purpose**: Notifies that an item/order was rejected due to full buffer
+- **Data**: `item_type: String`, `item_id: String`, `reason: String`
+- **Source**: Any buffer component
+- **Target**: Component that attempted to add the item
+- **Usage**: Allows tracking of dropped items/orders
+
+### Demand Events
+
+#### GenerateOrderEvent
+- **Purpose**: Triggers order generation in the Client
+- **Data**: None (trigger only)
+- **Source**: Client (self-scheduled)
+- **Target**: Client
+- **Usage**: Periodic trigger for order creation
+
+#### PlaceOrderEvent
+- **Purpose**: Places a burger order
+- **Data**: `order_id: String`, `quantity: i32` (always 1 in current design)
+- **Source**: Client
+- **Target**: OrderBuffer
+- **Usage**: Adds order to the order queue
+
+#### OrderFulfilledEvent
+- **Purpose**: Notifies that an order has been completed
+- **Data**: `order_id: String`, `fulfillment_time: u64`
+- **Source**: OrderBuffer
+- **Target**: Client
+- **Usage**: Completes order lifecycle and updates statistics
+
+### Future Events (OrderBased Mode)
+
+#### ProductionRequestEvent
+- **Purpose**: Requests production from upstream component
+- **Data**: `item_type: String`, `quantity: i32`
+- **Source**: Downstream component
+- **Target**: Upstream producer
+- **Usage**: Pulls production based on demand
+
+#### InventoryQueryEvent
+- **Purpose**: Queries current inventory levels
+- **Data**: `buffer_type: String`
+- **Source**: Any component
+- **Target**: Buffer component
+- **Usage**: Checks available inventory before ordering
+
+#### InventoryStatusEvent
+- **Purpose**: Reports current inventory status
+- **Data**: `buffer_type: String`, `current_count: i32`, `capacity: i32`
+- **Source**: Buffer component
+- **Target**: Requesting component
+- **Usage**: Responds to inventory queries
+
 ## Configuration Parameters
 
 The simulation supports extensive configuration via `BurgerSimulationConfig`:
