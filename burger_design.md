@@ -57,19 +57,15 @@ graph LR
 #### Assembler
 - **Purpose**: Combines meat and bread into complete burgers
 - **Processing Time**: 5 simulation cycles per burger
-- **Behavior Flags**:
-  - `auto_produce`: true in BufferBased mode, false in OrderBased mode
-- **Behavior**:
-  - **BufferBased Mode**:
-    - Production triggered via `TriggerProductionEvent` (self-sent).
-    - Monitors available ingredients via `ItemAddedEvent` from buffers.
-    - Sends `RequestItemEvent` to both ingredient buffers when ready.
-    - Subscribes to `ItemDispatchedEvent` from both FriedMeatBuffer and CookedBreadBuffer.
-  - **Shared Behavior**:
-    - Only starts assembly when both ingredients confirmed available via `ItemDispatchedEvent`.
-    - Sends `BurgerReadyEvent` to AssemblyBuffer when complete.
-    - Receives `ItemDroppedEvent` if AssemblyBuffer rejects burger (full).
-    - Implements same backpressure mechanism as producers.
+- **Behavior**: Mode-agnostic - operates identically in both BufferBased and OrderBased modes
+  - Monitors available ingredients via `ItemAddedEvent` from both ingredient buffers
+  - When both meat and bread are available, sends `RequestItemEvent` to both ingredient buffers
+  - Only starts assembly when both ingredients confirmed available via `ItemDispatchedEvent`
+  - Sends `BurgerReadyEvent` to AssemblyBuffer when complete
+  - **Continuous Production**: After completing a burger, self-schedules next production cycle via `TriggerProductionEvent` to check for more ingredients (if not stopped by backpressure)
+  - Receives `ItemDroppedEvent` if AssemblyBuffer rejects burger (full)
+  - Implements backpressure mechanism: pauses production when downstream buffer is full
+  - **Rationale**: The Assembler's production loop is ingredient-gated rather than purely time-based. It waits for ingredient availability but maintains continuous production once started. Production mode differences are handled upstream by the Fryer/Baker (which control ingredient supply) and downstream by the Client (which controls demand).
 
 ### FIFO Buffer Components
 
@@ -132,20 +128,25 @@ All buffers share common behavior with type-specific implementations:
 ### Initialization Sequence
 1. All components register with simulation engine
 2. Components configured with behavior flags based on `production_mode`
-3. Initial events scheduled (BufferBased mode):
-   - Fryer: `TriggerProductionEvent` at cycle 1 (if auto_produce=true)
-   - Baker: `TriggerProductionEvent` at cycle 1 (if auto_produce=true)
-   - Assembler: `TriggerProductionEvent` at cycle 5 (if auto_produce=true)
-   - Client: `GenerateOrderEvent` at cycle 20
+3. Initial events scheduled:
+   - BufferBased mode:
+     - Fryer: `TriggerProductionEvent` at cycle 1 (auto_produce=true)
+     - Baker: `TriggerProductionEvent` at cycle 1 (auto_produce=true)
+   - Both modes:
+     - Client: `GenerateOrderEvent` at cycle 20
+   - Note: Assembler has no initial events - it operates purely reactively to ingredient availability
 
 ### BufferBased Workflow (Steady-State)
-1. **Producers** (Fryer/Baker) and **Assembler** continuously create items, regulated by backpressure from their target buffers.
-2. **Client** generates an order (e.g., for 3 burgers) and holds it in a `pending` state.
-3. The **AssemblyBuffer** broadcasts an `ItemAddedEvent` when a new burger is added.
-4. The **Client**, listening for this event, sends a `RequestItemEvent` to pull an available burger.
-5. The **AssemblyBuffer** fulfills the request by sending an `ItemDispatchedEvent` with the burger. The Client decrements its pending order quantity.
-6. The Client repeats steps 4-5 until the order quantity is met.
-7. Once fulfilled, the Client triggers an internal `OrderFulfilledEvent` and schedules the next `GenerateOrderEvent`.
+1. **Producers** (Fryer/Baker) continuously create items, regulated by backpressure from their target buffers.
+2. **Assembler** reacts to ingredient availability by monitoring `ItemAddedEvent` from both ingredient buffers.
+3. When ingredients are available, **Assembler** requests them and assembles burgers.
+4. After completing each burger, **Assembler** self-schedules next production cycle to maintain continuous operation.
+5. **Client** generates an order (e.g., for 3 burgers) and holds it in a `pending` state.
+6. The **AssemblyBuffer** broadcasts an `ItemAddedEvent` when a new burger is added.
+7. The **Client**, listening for this event, sends a `RequestItemEvent` to pull an available burger.
+8. The **AssemblyBuffer** fulfills the request by sending an `ItemDispatchedEvent` with the burger. The Client decrements its pending order quantity.
+9. The Client repeats steps 7-8 until the order quantity is met.
+10. Once fulfilled, the Client triggers an internal `OrderFulfilledEvent` and schedules the next `GenerateOrderEvent`.
 
 ### OrderBased Workflow (Steady-State)
 1.  **Order Placement**: The Client generates a pending order (e.g., for 2 burgers) and sends `PlaceOrderEvent`s to the Fryer and Baker to request the total number of ingredients required.
@@ -155,7 +156,8 @@ All buffers share common behavior with type-specific implementations:
 5.  **Assembly Coordination**: The Assembler listens for these `ItemAddedEvent`s to know when ingredients are available.
 6.  **Ingredient Request**: Once ingredients are available, the Assembler sends `RequestItemEvent`s to retrieve them.
 7.  **Assembly & Buffering**: The Assembler creates the burger and sends it to the `AssemblyBuffer`. The `AssemblyBuffer` then broadcasts an `ItemAddedEvent`.
-8.  **Order Fulfillment**: The **Client**, listening for the `ItemAddedEvent` from the `AssemblyBuffer`, sends a `RequestItemEvent` to retrieve the completed burger. This process is repeated until the Client has received all burgers for its pending order. Upon fulfillment, it is free to generate a new one.
+8.  **Continuous Assembly**: After completing each burger, the Assembler self-schedules to check for more ingredients and continue production.
+9.  **Order Fulfillment**: The **Client**, listening for the `ItemAddedEvent` from the `AssemblyBuffer`, sends a `RequestItemEvent` to retrieve the completed burger. This process is repeated until the Client has received all burgers for its pending order. Upon fulfillment, it is free to generate a new one.
 
 ### Backpressure Mechanism
 ```
@@ -177,9 +179,10 @@ Item Consumed → Buffer has space → BufferSpaceAvailableEvent
 #### TriggerProductionEvent
 - **Purpose**: Initiates production cycle in a component
 - **Data**: None (trigger only)
-- **Source**: Self (BufferBased mode) or Client via PlaceOrderEvent (OrderBased mode)
-- **Target**: Single production component (Fryer, Baker, or Assembler)
-- **Usage**: Starts production timer
+- **Source**: Self (BufferBased mode for Fryer/Baker, and Assembler after burger completion)
+- **Target**: Production component (Fryer, Baker, or Assembler)
+- **Usage**: Starts production timer or ingredient availability check
+- **Note**: Assembler uses this for continuous production scheduling after completing each burger
 
 #### MeatReadyEvent
 - **Purpose**: Signals completion of a fried meat patty
