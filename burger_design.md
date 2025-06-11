@@ -40,19 +40,20 @@ graph LR
 - **Behavior Flags**:
   - `auto_produce`: true in BufferBased mode, false in OrderBased mode
 - **Behavior**:
-  - Production triggered via `TriggerProductionEvent` (self-sent in BufferBased mode)
-  - Sends `MeatReadyEvent` to buffer when patty completes
-  - Receives `ItemDroppedEvent` if buffer rejects item (full)
-  - Monitors buffer capacity and halts on `BufferFullEvent`
-  - Resumes production on `BufferSpaceAvailableEvent`
-  - Supports concurrent processing (configurable)
+  - **BufferBased Mode**: Self-schedules production, pausing/resuming based on `BufferFullEvent`/`BufferSpaceAvailableEvent`.
+  - **OrderBased Mode**:
+    - Upon receiving `PlaceOrderEvent(quantity)`, stores the target quantity.
+    - Produces items until the quantity is fulfilled, meaning all items have been successfully accepted by the buffer.
+    - If an item is rejected (`ItemDroppedEvent`), production of new items is paused. The completed item is held and retried upon `BufferSpaceAvailableEvent`.
+  - Sends `MeatReadyEvent` to buffer when a patty completes.
+  - Supports concurrent processing (configurable).
 
 #### Baker
 - **Purpose**: Converts raw bread into cooked buns
 - **Processing Time**: 8 simulation cycles per bun
 - **Behavior Flags**:
   - `auto_produce`: true in BufferBased mode, false in OrderBased mode
-- **Behavior**: Identical to Fryer but produces bread items (including handling `ItemDroppedEvent`)
+- **Behavior**: Identical to Fryer, including the stateful `OrderBased` logic to fulfill an order quantity and handle backpressure by retrying.
 
 #### Assembler
 - **Purpose**: Combines meat and bread into complete burgers
@@ -256,10 +257,10 @@ Item Consumed → Buffer has space → BufferSpaceAvailableEvent
 
 #### PlaceOrderEvent
 - **Purpose**: Places a burger order to trigger production directly. Used in `OrderBased` mode only.
-- **Data**: None (trigger only)
+- **Data**: `quantity: u32`
 - **Source**: Client
 - **Target**: Fryer + Baker (broadcast to trigger production)
-- **Usage**: Kicks off the production chain for the single pending order.
+- **Usage**: Kicks off the production chain for a specific quantity of burgers.
 
 #### OrderFulfilledEvent
 - **Purpose**: Notifies that an order has been completed
