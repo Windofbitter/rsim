@@ -11,7 +11,9 @@ graph LR
     C -->|RequestItemEvent| G[Assembler<br/>5 cycles/burger]
     F -->|RequestItemEvent| G
     G -->|BurgerReadyEvent| I{Assembly FIFO<br/>capacity: 5}
-    I -->|RequestItemEvent| H[Client<br/>Orders: μ=2.0, σ=0.5]
+    H[Client<br/>Orders: μ=2.0, σ=0.5] -->|PlaceOrderEvent| J{Order FIFO<br/>capacity: 10}
+    J -->|RequestItemEvent| I
+    J -->|OrderFulfilledEvent<br/>ItemDroppedEvent| H
 
     subgraph "Production Line"
         A
@@ -22,11 +24,13 @@ graph LR
         F
         G
         I
+        J
     end
 
-    C -.->|BufferFullEvent<br/>BufferSpaceAvailableEvent| B
-    F -.->|BufferFullEvent<br/>BufferSpaceAvailableEvent| E
-    I -.->|BufferFullEvent<br/>BufferSpaceAvailableEvent| G
+    C -.->|BufferFullEvent<br/>BufferSpaceAvailableEvent<br/>ItemDroppedEvent| B
+    F -.->|BufferFullEvent<br/>BufferSpaceAvailableEvent<br/>ItemDroppedEvent| E
+    I -.->|BufferFullEvent<br/>BufferSpaceAvailableEvent<br/>ItemDroppedEvent| G
+    I -->|ItemAddedEvent| J
 ```
 
 ## Component Responsibilities
@@ -39,6 +43,7 @@ graph LR
 - **Behavior**:
   - Self-schedules production via `StartFryingEvent`
   - Sends `MeatReadyEvent` to buffer when patty completes
+  - Receives `ItemDroppedEvent` if buffer rejects item (full)
   - Monitors buffer capacity and halts on `BufferFullEvent`
   - Resumes production on `BufferSpaceAvailableEvent`
   - Supports concurrent processing (configurable)
@@ -46,7 +51,7 @@ graph LR
 #### Baker
 - **Purpose**: Converts raw bread into cooked buns
 - **Processing Time**: 8 simulation cycles per bun
-- **Behavior**: Identical to Fryer but produces bread items
+- **Behavior**: Identical to Fryer but produces bread items (including handling `ItemDroppedEvent`)
 
 #### Assembler
 - **Purpose**: Combines meat and bread into complete burgers
@@ -55,6 +60,8 @@ graph LR
   - Monitors available ingredients via `ItemAddedEvent` from buffers
   - Sends `RequestItemEvent` to both ingredient buffers when ready
   - Only starts assembly when both ingredients confirmed available
+  - Sends `BurgerReadyEvent` to AssemblyBuffer when complete
+  - Receives `ItemDroppedEvent` if AssemblyBuffer rejects burger (full)
   - Tracks pending requests to avoid duplicates
   - Implements same backpressure mechanism as producers
 
@@ -65,24 +72,38 @@ All buffers share common behavior with type-specific implementations:
 #### FriedMeatBuffer / CookedBreadBuffer / AssemblyBuffer
 - **Capacity**: 5 items (configurable)
 - **Behaviors**:
-  - Accepts items from upstream producers
-  - Broadcasts `ItemAddedEvent` when items added
+  - Accepts items from upstream producers if space available
+  - If full, rejects item and sends `ItemDroppedEvent` back to producer
+  - Broadcasts `ItemAddedEvent` when items successfully added
   - Responds to `RequestItemEvent` from downstream consumers
   - Implements backpressure:
     - Sends `BufferFullEvent` when reaching capacity
     - Sends `BufferSpaceAvailableEvent` when space opens up
   - Maintains FIFO ordering for fairness
 
+#### OrderBuffer
+- **Purpose**: Queues customer orders in FIFO order
+- **Capacity**: 10 orders (configurable)
+- **Behaviors**:
+  - Accepts `PlaceOrderEvent` from Client (1 burger per order) if space available
+  - If full, rejects order and sends `ItemDroppedEvent` back to Client
+  - Listens for `ItemAddedEvent` from AssemblyBuffer
+  - When burger available, sends `RequestItemEvent` to AssemblyBuffer for oldest order
+  - Sends `OrderFulfilledEvent` back to Client when order complete
+  - Maintains FIFO ordering to ensure fair order fulfillment
+
 ### Demand Component
 
 #### Client
 - **Purpose**: Generates customer orders and consumes burgers
-- **Order Pattern**: Normal distribution (mean: 2.0, std dev: 0.5)
+- **Order Pattern**: 1 burger per order (simplified)
 - **Order Frequency**: Every 15 simulation cycles
 - **Behaviors**:
   - Self-schedules order generation via `GenerateOrderEvent`
-  - Sends `PlaceOrderEvent` to AssemblyBuffer
-  - Tracks order statistics: pending, fulfilled, total generated
+  - Sends `PlaceOrderEvent` to OrderBuffer
+  - Receives `OrderFulfilledEvent` when order complete
+  - Receives `ItemDroppedEvent` if OrderBuffer rejects order (full)
+  - Tracks order statistics: pending, fulfilled, dropped, total generated
   - Uses seeded RNG for reproducible simulations
 
 ## Event Flow and Communication
@@ -98,10 +119,12 @@ All buffers share common behavior with type-specific implementations:
 2. **RequestItemEvent**: Consumer → Buffer (pull request)
 3. **BufferFullEvent**: Buffer → Producers (backpressure)
 4. **BufferSpaceAvailableEvent**: Buffer → Producers (resume)
+5. **ItemDroppedEvent**: Buffer → Producer (item rejected when full)
 
 ### Demand Events
 1. **GenerateOrderEvent**: Client self-scheduling
-2. **PlaceOrderEvent**: Client → AssemblyBuffer
+2. **PlaceOrderEvent**: Client → OrderBuffer
+3. **OrderFulfilledEvent**: OrderBuffer → Client
 
 ## Production Workflow
 
@@ -139,6 +162,7 @@ The simulation supports extensive configuration via `BurgerSimulationConfig`:
 - **Processing Delays**: Frying (10), Baking (8), Assembly (5) cycles
 - **Buffer Capacities**: Default 5 items each
 - **Concurrent Processing**: Max items in process per component
-- **Order Generation**: Interval (15), mean (2.0), std deviation (0.5)
+- **Order Generation**: Interval (15), 1 burger per order
+- **Order Buffer Capacity**: Default 10 orders
 - **Simulation Duration**: Total cycles to run
 - **Random Seed**: For reproducible order patterns
