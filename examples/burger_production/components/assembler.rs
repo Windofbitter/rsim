@@ -182,8 +182,8 @@ impl Assembler {
 
                     self.state = AssemblerState::Assembling;
 
-                    // In BufferBased mode, immediately trigger next production cycle
-                    if self.production_mode == ProductionMode::BufferBased && !self.is_production_stopped {
+                    // Always trigger next production cycle to maintain continuous production
+                    if !self.is_production_stopped {
                         let trigger_event = TriggerProductionEvent::new(
                             self.id.clone(),
                             Some(vec![self.id.clone()])
@@ -203,8 +203,9 @@ impl Assembler {
     fn handle_item_added(&mut self, event: &dyn Event) -> Vec<(Box<dyn Event>, u64)> {
         let mut new_events = Vec::new();
 
-        // Only trigger production in BufferBased mode when idle
-        if self.production_mode == ProductionMode::BufferBased && self.can_start_assembly() {
+        // Trigger production when idle or waiting for ingredients
+        if !self.is_production_stopped && 
+           (self.state == AssemblerState::Idle || self.state == AssemblerState::WaitingForIngredients) {
             let data = event.data();
             let buffer_type = data.get("buffer_type")
                 .and_then(|v| if let ComponentValue::String(s) = v { Some(s.as_str()) } else { None })
@@ -339,13 +340,13 @@ impl BaseComponent for Assembler {
                             );
                             new_events.push((Box::new(trigger_event), 0));
                         }
-                        // Otherwise, if in buffer-based mode, trigger production if it was stopped
-                        else if self.production_mode == ProductionMode::BufferBased && was_stopped && self.state == AssemblerState::Idle {
+                        // Otherwise, always trigger production when space is available and idle
+                        else if self.state == AssemblerState::Idle {
                             let trigger_event = TriggerProductionEvent::new(
                                 self.id.clone(),
                                 Some(vec![self.id.clone()])
                             );
-                            new_events.push((Box::new(trigger_event), 1));
+                            new_events.push((Box::new(trigger_event), 0));
                         }
                     }
                 }
@@ -361,6 +362,15 @@ impl BaseComponent for Assembler {
                     self.state = AssemblerState::Idle;
                     self.meat_item = None;
                     self.bread_item = None;
+                    
+                    // Always trigger next production cycle to check for more ingredients
+                    if !self.is_production_stopped {
+                        let trigger_event = TriggerProductionEvent::new(
+                            self.id.clone(),
+                            Some(vec![self.id.clone()])
+                        );
+                        new_events.push((Box::new(trigger_event), 0));
+                    }
                     
                     // No need to forward the event - it already broadcasted to all interested components
                 }
