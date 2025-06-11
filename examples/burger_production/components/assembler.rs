@@ -182,14 +182,6 @@ impl Assembler {
 
                     self.state = AssemblerState::Assembling;
 
-                    // Always trigger next production cycle to maintain continuous production
-                    if !self.is_production_stopped {
-                        let trigger_event = TriggerProductionEvent::new(
-                            self.id.clone(),
-                            Some(vec![self.id.clone()])
-                        );
-                        new_events.push((Box::new(trigger_event), 1));
-                    }
                 }
             } else {
                 // Ingredient request failed - keep acquired ingredients, don't reset to idle
