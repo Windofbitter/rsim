@@ -46,7 +46,6 @@ graph LR
     - Produces items until the quantity is fulfilled, meaning all items have been successfully accepted by the buffer.
     - If an item is rejected (`ItemDroppedEvent`), production of new items is paused. The completed item is held and retried upon `BufferSpaceAvailableEvent`.
   - Sends `MeatReadyEvent` to buffer when a patty completes.
-  - Supports concurrent processing (configurable).
 
 #### Baker
 - **Purpose**: Converts raw bread into cooked buns
@@ -275,7 +274,6 @@ The simulation supports extensive configuration via `BurgerSimulationConfig`:
 - **Production Mode**: `ProductionMode` enum (BufferBased, OrderBased)
 - **Processing Delays**: Frying (10), Baking (8), Assembly (5) cycles
 - **Buffer Capacities**: Default 5 items each
-- **Concurrent Processing**: Max items in process per component
 - **Order Generation**: Interval (15), Quantity per order (configurable)
 - **Simulation Duration**: Total cycles to run
 - **Random Seed**: For reproducible order patterns
