@@ -23,7 +23,9 @@
       "Bash(~/.cargo/bin/cargo run --example burger_production)",
       "Bash(rustc --version)",
       "Bash(source ~/.bashrc)",
-      "Bash(source:*)"
+      "Bash(source:*)",
+      "Bash(cargo fmt:*)",
+      "Bash(cargo clippy:*)"
     ],
     "deny": []
   }

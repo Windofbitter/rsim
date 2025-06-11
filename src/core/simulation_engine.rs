@@ -1,9 +1,9 @@
-use std::collections::HashMap;
-use super::event_manager::EventManager;
-use super::event_scheduler::EventScheduler;
 use super::component::BaseComponent;
 use super::event::Event;
+use super::event_manager::EventManager;
+use super::event_scheduler::EventScheduler;
 use log::debug;
+use std::collections::HashMap;
 pub struct SimulationEngine {
     event_manager: EventManager,
     scheduler: EventScheduler,
@@ -40,7 +40,7 @@ impl SimulationEngine {
                     return Ok(self.current_cycle);
                 }
             }
-            
+
             if !self.step()? {
                 break;
             }
@@ -57,13 +57,13 @@ impl SimulationEngine {
         let next_delay = self.scheduler.peek_next_delay().unwrap_or(0);
         self.scheduler.advance_time(next_delay);
         self.current_cycle += next_delay;
-        
+
         debug!("=== Simulation Cycle {} ===", self.current_cycle);
 
         let events = self.scheduler.get_next_time_events();
-        
+
         let mut events_by_component = HashMap::new();
-        
+
         for event in events {
             let target_ids = self.event_manager.route_event(event.as_ref());
 
@@ -78,7 +78,7 @@ impl SimulationEngine {
         for (component_id, component_events) in events_by_component {
             if let Some(component) = self.event_manager.get_component_mut(&component_id) {
                 let new_events = component.react_atomic(component_events);
-                
+
                 for (new_event, delay) in new_events {
                     self.scheduler.schedule_event(new_event, delay);
                 }

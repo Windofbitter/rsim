@@ -1,6 +1,6 @@
-use std::collections::BinaryHeap;
-use std::cmp::Ordering;
 use super::event::Event;
+use std::cmp::Ordering;
+use std::collections::BinaryHeap;
 
 #[derive(Debug)]
 pub struct ScheduledEvent {
@@ -26,7 +26,9 @@ impl PartialOrd for ScheduledEvent {
 impl Ord for ScheduledEvent {
     fn cmp(&self, other: &Self) -> Ordering {
         // Reverse ordering for min-heap (BinaryHeap is max-heap by default)
-        other.delay_cycles.cmp(&self.delay_cycles)
+        other
+            .delay_cycles
+            .cmp(&self.delay_cycles)
             .then_with(|| other.sequence_num.cmp(&self.sequence_num))
     }
 }
@@ -52,7 +54,7 @@ impl EventScheduler {
             sequence_num: self.sequence_counter,
             event,
         };
-        
+
         self.event_queue.push(scheduled_event);
         self.sequence_counter += 1;
     }
@@ -60,7 +62,7 @@ impl EventScheduler {
     /// Get all events scheduled for the next time step (minimum delay)
     pub fn get_next_time_events(&mut self) -> Vec<Box<dyn Event>> {
         let mut events = Vec::new();
-        
+
         if let Some(next_delay) = self.peek_next_delay() {
             while let Some(scheduled_event) = self.event_queue.peek() {
                 if scheduled_event.delay_cycles == next_delay {
@@ -71,7 +73,7 @@ impl EventScheduler {
                 }
             }
         }
-        
+
         events
     }
 
@@ -88,12 +90,12 @@ impl EventScheduler {
     /// Advance time by reducing all event delays by the specified amount
     pub fn advance_time(&mut self, cycles: u64) {
         let mut temp_events = Vec::new();
-        
+
         while let Some(mut scheduled_event) = self.event_queue.pop() {
             scheduled_event.delay_cycles = scheduled_event.delay_cycles.saturating_sub(cycles);
             temp_events.push(scheduled_event);
         }
-        
+
         for event in temp_events {
             self.event_queue.push(event);
         }
