@@ -302,6 +302,13 @@ impl MetricsCollector {
     }
 }
 
+impl Drop for MetricsCollector {
+    fn drop(&mut self) {
+        log::info!("🔚 Simulation complete - printing final metrics summary");
+        self.print_metrics_summary();
+    }
+}
+
 impl BaseComponent for MetricsCollector {
     fn component_id(&self) -> &ComponentId {
         &self.id
@@ -348,12 +355,6 @@ impl BaseComponent for MetricsCollector {
             }
         }
         
-        // Check if we should print a final summary (if we haven't seen activity for a while)
-        if self.current_cycle > self.last_activity_cycle + 50 && self.total_orders_fulfilled > 0 {
-            log::info!("🔚 Simulation appears to be ending - printing final metrics summary");
-            self.print_metrics_summary();
-            self.last_activity_cycle = self.current_cycle; // Prevent repeated printing
-        }
         
         // Metrics collector doesn't generate new events
         Vec::new()
