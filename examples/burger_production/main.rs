@@ -4,7 +4,7 @@ mod burger_production;
 
 use burger_production::{
     config::ProductionMode, Assembler, AssemblyBuffer, Baker, BurgerSimulationConfig, Client,
-    CookedBreadBuffer, FriedMeatBuffer, Fryer, GenerateOrderEvent, TriggerProductionEvent,
+    CookedBreadBuffer, FriedMeatBuffer, Fryer, GenerateOrderEvent, MetricsCollector, TriggerProductionEvent,
 };
 use rsim::core::simulation_engine::SimulationEngine;
 
@@ -15,10 +15,10 @@ fn main() {
     // Create configuration
     let config = BurgerSimulationConfig::new()
         .with_production_mode(ProductionMode::BufferBased)
-        .with_simulation_duration(500)
+        .with_simulation_duration(200) // Shorter test
         .with_buffer_capacities(5)
-        .with_order_quantity_range(1, 3)
-        .with_order_interval(20)
+        .with_order_quantity_range(1, 2) // Smaller orders
+        .with_order_interval(15) // More frequent orders
         .with_random_seed(Some(42))
         .with_metrics_enabled(true)
         .with_event_logging_enabled(true);
@@ -92,6 +92,9 @@ fn main() {
         config.random_seed.unwrap_or(42),
     );
 
+    // Create metrics collector
+    let metrics_collector = MetricsCollector::new("metrics_collector".to_string());
+
     // Register all components
     engine.register_component(Box::new(fryer)).unwrap();
     engine.register_component(Box::new(baker)).unwrap();
@@ -106,6 +109,7 @@ fn main() {
         .register_component(Box::new(assembly_buffer))
         .unwrap();
     engine.register_component(Box::new(client)).unwrap();
+    engine.register_component(Box::new(metrics_collector)).unwrap();
 
     // Schedule initial events
     if config.production_mode == ProductionMode::BufferBased {
