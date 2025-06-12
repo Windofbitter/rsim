@@ -1,4 +1,4 @@
-use rsim::core::event::{Event, EventId, EventType};
+use rsim::core::event::{Event, EventId};
 use rsim::core::types::{ComponentId, ComponentValue};
 use std::collections::HashMap;
 
@@ -23,10 +23,6 @@ impl BufferSpaceAvailableEvent {
             buffer_type,
         }
     }
-
-    pub fn buffer_type(&self) -> &str {
-        &self.buffer_type
-    }
 }
 
 impl Event for BufferSpaceAvailableEvent {
@@ -48,7 +44,10 @@ impl Event for BufferSpaceAvailableEvent {
 
     fn data(&self) -> HashMap<String, ComponentValue> {
         let mut data = HashMap::new();
-        data.insert("buffer_type".to_string(), ComponentValue::String(self.buffer_type.clone()));
+        data.insert(
+            "buffer_type".to_string(),
+            ComponentValue::String(self.buffer_type.clone()),
+        );
         data
     }
 

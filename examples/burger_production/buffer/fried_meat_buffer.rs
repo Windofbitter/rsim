@@ -5,7 +5,7 @@ use std::collections::VecDeque;
 
 use super::super::events::{
     BufferFullEvent, BufferSpaceAvailableEvent, ItemAddedEvent, ItemDispatchedEvent,
-    ItemDroppedEvent, MeatReadyEvent, RequestItemEvent,
+    ItemDroppedEvent,
 };
 
 #[derive(Debug)]
@@ -103,10 +103,18 @@ impl BaseComponent for FriedMeatBuffer {
                 }
                 "RequestItemEvent" => {
                     // Check if this request is for meat items
-                    let item_type = event.data().get("item_type")
-                        .and_then(|v| if let rsim::core::types::ComponentValue::String(s) = v { Some(s.clone()) } else { None })
+                    let item_type = event
+                        .data()
+                        .get("item_type")
+                        .and_then(|v| {
+                            if let rsim::core::types::ComponentValue::String(s) = v {
+                                Some(s.clone())
+                            } else {
+                                None
+                            }
+                        })
                         .unwrap_or_else(|| String::new());
-                    
+
                     // Only respond to meat requests
                     if item_type == "meat" {
                         if let Some(requester_id_value) = event.data().get("requester_id") {

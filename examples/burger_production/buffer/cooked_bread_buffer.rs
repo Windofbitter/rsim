@@ -4,8 +4,8 @@ use rsim::core::types::ComponentId;
 use std::collections::VecDeque;
 
 use super::super::events::{
-    BreadReadyEvent, BufferFullEvent, BufferSpaceAvailableEvent, ItemAddedEvent,
-    ItemDispatchedEvent, ItemDroppedEvent, RequestItemEvent,
+    BufferFullEvent, BufferSpaceAvailableEvent, ItemAddedEvent, ItemDispatchedEvent,
+    ItemDroppedEvent,
 };
 
 #[derive(Debug)]
@@ -103,10 +103,18 @@ impl BaseComponent for CookedBreadBuffer {
                 }
                 "RequestItemEvent" => {
                     // Check if this request is for bread items
-                    let item_type = event.data().get("item_type")
-                        .and_then(|v| if let rsim::core::types::ComponentValue::String(s) = v { Some(s.clone()) } else { None })
+                    let item_type = event
+                        .data()
+                        .get("item_type")
+                        .and_then(|v| {
+                            if let rsim::core::types::ComponentValue::String(s) = v {
+                                Some(s.clone())
+                            } else {
+                                None
+                            }
+                        })
                         .unwrap_or_else(|| String::new());
-                    
+
                     // Only respond to bread requests
                     if item_type == "bread" {
                         if let Some(requester_id_value) = event.data().get("requester_id") {

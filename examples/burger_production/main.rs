@@ -2,25 +2,16 @@
 #[path = "mod.rs"]
 mod burger_production;
 
-use rsim::core::{
-    simulation_engine::SimulationEngine,
-    event_manager::EventManager,
-    event_scheduler::EventScheduler,
-    event::Event,
-    types::ComponentValue,
-};
 use burger_production::{
-    BurgerSimulationConfig,
-    config::ProductionMode,
-    Fryer, Baker, Assembler, Client,
-    FriedMeatBuffer, CookedBreadBuffer, AssemblyBuffer,
-    TriggerProductionEvent, GenerateOrderEvent,
+    config::ProductionMode, Assembler, AssemblyBuffer, Baker, BurgerSimulationConfig, Client,
+    CookedBreadBuffer, FriedMeatBuffer, Fryer, GenerateOrderEvent, TriggerProductionEvent,
 };
+use rsim::core::simulation_engine::SimulationEngine;
 
 fn main() {
     // Initialize logger
     env_logger::init();
-    
+
     // Create configuration
     let config = BurgerSimulationConfig::new()
         .with_production_mode(ProductionMode::BufferBased)
@@ -42,9 +33,16 @@ fn main() {
     log::info!("================================");
     log::info!("Mode: {:?}", config.production_mode);
     log::info!("Duration: {} cycles", config.simulation_duration_cycles);
-    log::info!("Buffer Capacities: {}", config.buffer_capacities.fried_meat_capacity);
-    log::info!("Order Interval: {} cycles", config.order_generation.order_interval_cycles);
-    log::info!("Order Quantity: {}-{}", 
+    log::info!(
+        "Buffer Capacities: {}",
+        config.buffer_capacities.fried_meat_capacity
+    );
+    log::info!(
+        "Order Interval: {} cycles",
+        config.order_generation.order_interval_cycles
+    );
+    log::info!(
+        "Order Quantity: {}-{}",
         config.order_generation.min_quantity_per_order,
         config.order_generation.max_quantity_per_order
     );
@@ -97,73 +95,89 @@ fn main() {
     // Register all components
     engine.register_component(Box::new(fryer)).unwrap();
     engine.register_component(Box::new(baker)).unwrap();
-    engine.register_component(Box::new(fried_meat_buffer)).unwrap();
-    engine.register_component(Box::new(cooked_bread_buffer)).unwrap();
+    engine
+        .register_component(Box::new(fried_meat_buffer))
+        .unwrap();
+    engine
+        .register_component(Box::new(cooked_bread_buffer))
+        .unwrap();
     engine.register_component(Box::new(assembler)).unwrap();
-    engine.register_component(Box::new(assembly_buffer)).unwrap();
+    engine
+        .register_component(Box::new(assembly_buffer))
+        .unwrap();
     engine.register_component(Box::new(client)).unwrap();
 
     // Schedule initial events
     if config.production_mode == ProductionMode::BufferBased {
         // Start production immediately in buffer-based mode
-        let fryer_trigger = TriggerProductionEvent::new(
-            "system".to_string(),
-            Some(vec!["fryer".to_string()]),
-        );
+        let fryer_trigger =
+            TriggerProductionEvent::new("system".to_string(), Some(vec!["fryer".to_string()]));
         engine.schedule_initial_event(Box::new(fryer_trigger), 1);
-        
-        let baker_trigger = TriggerProductionEvent::new(
-            "system".to_string(),
-            Some(vec!["baker".to_string()]),
-        );
+
+        let baker_trigger =
+            TriggerProductionEvent::new("system".to_string(), Some(vec!["baker".to_string()]));
         engine.schedule_initial_event(Box::new(baker_trigger), 1);
     }
 
     // Schedule first order generation
-    let first_order = GenerateOrderEvent::new(
-        "system".to_string(),
-        Some(vec!["client".to_string()]),
+    let first_order =
+        GenerateOrderEvent::new("system".to_string(), Some(vec!["client".to_string()]));
+    engine.schedule_initial_event(
+        Box::new(first_order),
+        config.order_generation.order_interval_cycles,
     );
-    engine.schedule_initial_event(Box::new(first_order), config.order_generation.order_interval_cycles);
 
     // Note: Event logging not available in this SimulationEngine version
 
     // Run simulation with detailed logging
     log::info!("Starting simulation...");
     let start_time = std::time::Instant::now();
-    
+
     log::info!("Initial events scheduled:");
     log::info!("- Production triggers at cycle 1");
-    log::info!("- First order generation at cycle {}", config.order_generation.order_interval_cycles);
-    
+    log::info!(
+        "- First order generation at cycle {}",
+        config.order_generation.order_interval_cycles
+    );
+
     // Run simulation step by step for first 20 cycles to see what happens
     let mut cycle_count = 0;
     log::debug!("=== DETAILED SIMULATION TRACE ===");
-    
+
     while engine.has_pending_events() && cycle_count < 150 {
         let current_cycle = engine.current_cycle();
         let has_events_before = engine.has_pending_events();
-        
-        log::debug!("Before step {}: Cycle {}, Has events: {}", cycle_count + 1, current_cycle, has_events_before);
-        
+
+        log::debug!(
+            "Before step {}: Cycle {}, Has events: {}",
+            cycle_count + 1,
+            current_cycle,
+            has_events_before
+        );
+
         if !engine.step().unwrap() {
             log::debug!("Step returned false - no more events");
             break;
         }
-        
+
         let new_cycle = engine.current_cycle();
         let has_events_after = engine.has_pending_events();
-        
-        log::debug!("After step {}: Cycle {}, Has events: {}", cycle_count + 1, new_cycle, has_events_after);
-        
+
+        log::debug!(
+            "After step {}: Cycle {}, Has events: {}",
+            cycle_count + 1,
+            new_cycle,
+            has_events_after
+        );
+
         cycle_count += 1;
-        
+
         if new_cycle >= config.simulation_duration_cycles {
             log::info!("Reached max cycles: {}", config.simulation_duration_cycles);
             break;
         }
     }
-    
+
     // Finish remaining simulation
     let final_cycle = if engine.has_pending_events() {
         log::info!("Continuing simulation to completion...");
@@ -171,15 +185,15 @@ fn main() {
     } else {
         engine.current_cycle()
     };
-    
+
     let elapsed = start_time.elapsed();
-    
+
     // Print results
     log::info!("================================");
     log::info!("Simulation Complete!");
     log::info!("================================");
     log::info!("Total cycles simulated: {}", final_cycle);
     log::info!("Real time elapsed: {:.2?}", elapsed);
-    
+
     // Note: Component metrics not available in this SimulationEngine version
 }

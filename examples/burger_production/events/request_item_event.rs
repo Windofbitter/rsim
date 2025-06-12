@@ -1,4 +1,4 @@
-use rsim::core::event::{Event, EventId, EventType};
+use rsim::core::event::{Event, EventId};
 use rsim::core::types::{ComponentId, ComponentValue};
 use std::collections::HashMap;
 
@@ -26,14 +26,6 @@ impl RequestItemEvent {
             item_type,
         }
     }
-
-    pub fn requester_id(&self) -> &str {
-        &self.requester_id
-    }
-
-    pub fn item_type(&self) -> &str {
-        &self.item_type
-    }
 }
 
 impl Event for RequestItemEvent {
@@ -55,8 +47,14 @@ impl Event for RequestItemEvent {
 
     fn data(&self) -> HashMap<String, ComponentValue> {
         let mut data = HashMap::new();
-        data.insert("requester_id".to_string(), ComponentValue::String(self.requester_id.clone()));
-        data.insert("item_type".to_string(), ComponentValue::String(self.item_type.clone()));
+        data.insert(
+            "requester_id".to_string(),
+            ComponentValue::String(self.requester_id.clone()),
+        );
+        data.insert(
+            "item_type".to_string(),
+            ComponentValue::String(self.item_type.clone()),
+        );
         data
     }
 

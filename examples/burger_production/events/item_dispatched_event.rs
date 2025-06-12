@@ -29,18 +29,6 @@ impl ItemDispatchedEvent {
             success,
         }
     }
-
-    pub fn item_type(&self) -> &str {
-        &self.item_type
-    }
-
-    pub fn item_id(&self) -> &str {
-        &self.item_id
-    }
-
-    pub fn success(&self) -> bool {
-        self.success
-    }
 }
 
 impl Event for ItemDispatchedEvent {
@@ -62,8 +50,14 @@ impl Event for ItemDispatchedEvent {
 
     fn data(&self) -> HashMap<String, ComponentValue> {
         let mut data = HashMap::new();
-        data.insert("item_type".to_string(), ComponentValue::String(self.item_type.clone()));
-        data.insert("item_id".to_string(), ComponentValue::String(self.item_id.clone()));
+        data.insert(
+            "item_type".to_string(),
+            ComponentValue::String(self.item_type.clone()),
+        );
+        data.insert(
+            "item_id".to_string(),
+            ComponentValue::String(self.item_id.clone()),
+        );
         data.insert("success".to_string(), ComponentValue::Bool(self.success));
         data
     }
@@ -71,4 +65,4 @@ impl Event for ItemDispatchedEvent {
     fn clone_event(&self) -> Box<dyn Event> {
         Box::new(self.clone())
     }
-} 
+}

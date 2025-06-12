@@ -1,20 +1,18 @@
 //! The client component for the burger production simulation.
 
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 use rsim::core::{
     component::BaseComponent,
-    event::{Event, EventId, EventType},
+    event::Event,
     types::{ComponentId, ComponentValue},
 };
-use std::collections::HashMap;
 use uuid::Uuid;
-use rand::{Rng, SeedableRng};
-use rand::rngs::StdRng;
 
-use super::super::events::{
-    GenerateOrderEvent, PlaceOrderEvent, OrderFulfilledEvent, ItemAddedEvent,
-    RequestItemEvent, ItemDispatchedEvent,
-};
 use super::super::config::ProductionMode;
+use super::super::events::{
+    GenerateOrderEvent, OrderFulfilledEvent, PlaceOrderEvent, RequestItemEvent,
+};
 
 /// Represents a pending order
 #[derive(Debug, Clone)]
@@ -41,14 +39,14 @@ pub struct Client {
     min_order_quantity: u32,
     assembly_buffer_id: ComponentId,
     subscriptions: Vec<&'static str>,
-    
+
     // Order management
     pending_order: Option<PendingOrder>,
     outstanding_requests: u32,
-    
+
     // Statistics
     stats: OrderStats,
-    
+
     // RNG for reproducible simulations
     rng: StdRng,
 }
@@ -91,10 +89,13 @@ impl Client {
     /// Handle order generation
     fn handle_generate_order(&mut self) -> Vec<(Box<dyn Event>, u64)> {
         let mut new_events: Vec<(Box<dyn Event>, u64)> = Vec::new();
-        
+
         // Only generate a new order if no order is pending
         if self.pending_order.is_some() {
-            log::warn!("[Client {}] Cannot generate new order - order already pending", self.id);
+            log::warn!(
+                "[Client {}] Cannot generate new order - order already pending",
+                self.id
+            );
             return new_events;
         }
 
@@ -102,21 +103,27 @@ impl Client {
         let quantity = if self.min_order_quantity == self.max_order_quantity {
             self.min_order_quantity
         } else {
-            self.rng.gen_range(self.min_order_quantity..=self.max_order_quantity)
+            self.rng
+                .gen_range(self.min_order_quantity..=self.max_order_quantity)
         };
 
         let order_id = format!("order_{}", Uuid::new_v4());
-        
+
         // Create pending order
         self.pending_order = Some(PendingOrder {
             order_id: order_id.clone(),
             original_quantity: quantity,
             remaining_quantity: quantity,
         });
-        
+
         self.stats.total_generated += 1;
-        
-        log::info!("[CLIENT {}] Generated order {} for {} burgers", self.id, order_id, quantity);
+
+        log::info!(
+            "[CLIENT {}] Generated order {} for {} burgers",
+            self.id,
+            order_id,
+            quantity
+        );
 
         // In OrderBased mode, send PlaceOrderEvent to trigger production
         if self.production_mode == ProductionMode::OrderBased {
@@ -127,10 +134,17 @@ impl Client {
                 quantity as i32,
             );
             new_events.push((Box::new(place_order_event), 0));
-            log::info!("[Client {}] Sent PlaceOrderEvent for {} items", self.id, quantity);
+            log::info!(
+                "[Client {}] Sent PlaceOrderEvent for {} items",
+                self.id,
+                quantity
+            );
         } else if self.production_mode == ProductionMode::BufferBased {
             // In BufferBased mode, try to request available items, but also wait for ItemAddedEvent
-            log::debug!("[CLIENT {}] BufferBased mode: trying to request existing items", self.id);
+            log::debug!(
+                "[CLIENT {}] BufferBased mode: trying to request existing items",
+                self.id
+            );
             let request_event = RequestItemEvent::new(
                 self.id.clone(),
                 Some(vec![self.assembly_buffer_id.clone()]),
@@ -147,32 +161,54 @@ impl Client {
     /// Handle item added notification from assembly buffer
     fn handle_item_added(&mut self, event: &dyn Event) -> Vec<(Box<dyn Event>, u64)> {
         let mut new_events: Vec<(Box<dyn Event>, u64)> = Vec::new();
-        
-        log::debug!("[CLIENT {}] Processing ItemAddedEvent, has pending order: {}", self.id, self.pending_order.is_some());
-        
+
+        log::debug!(
+            "[CLIENT {}] Processing ItemAddedEvent, has pending order: {}",
+            self.id,
+            self.pending_order.is_some()
+        );
+
         // Only process if we have a pending order
         if self.pending_order.is_none() {
-            log::debug!("[CLIENT {}] No pending order, ignoring ItemAddedEvent", self.id);
+            log::debug!(
+                "[CLIENT {}] No pending order, ignoring ItemAddedEvent",
+                self.id
+            );
             return new_events;
         }
 
         let data = event.data();
-        let buffer_type = data.get("buffer_type")
-            .and_then(|v| if let ComponentValue::String(s) = v { Some(s.as_str()) } else { None })
+        let buffer_type = data
+            .get("buffer_type")
+            .and_then(|v| {
+                if let ComponentValue::String(s) = v {
+                    Some(s.as_str())
+                } else {
+                    None
+                }
+            })
             .unwrap_or("unknown");
 
-        log::debug!("[CLIENT {}] ItemAddedEvent from buffer type: '{}'", self.id, buffer_type);
+        log::debug!(
+            "[CLIENT {}] ItemAddedEvent from buffer type: '{}'",
+            self.id,
+            buffer_type
+        );
 
         // Only process items from assembly buffer (burgers)
         if buffer_type != "assembly" {
-            log::debug!("[CLIENT {}] Ignoring ItemAddedEvent from buffer type: '{}'", self.id, buffer_type);
+            log::debug!(
+                "[CLIENT {}] Ignoring ItemAddedEvent from buffer type: '{}'",
+                self.id,
+                buffer_type
+            );
             return new_events;
         }
 
         // Check if we need more items
         if let Some(ref order) = self.pending_order {
             let items_needed = order.remaining_quantity;
-            
+
             // Only request if we haven't already requested all items we need
             if self.outstanding_requests >= items_needed {
                 log::info!(
@@ -194,7 +230,7 @@ impl Client {
                 "burger".to_string(),
             );
             new_events.push((Box::new(request_event), 0));
-            
+
             // Increment outstanding requests
             self.outstanding_requests += 1;
         }
@@ -205,30 +241,65 @@ impl Client {
     /// Handle item dispatched from assembly buffer
     fn handle_item_dispatched(&mut self, event: &dyn Event) -> Vec<(Box<dyn Event>, u64)> {
         let mut new_events: Vec<(Box<dyn Event>, u64)> = Vec::new();
-        
+
         log::debug!("[CLIENT {}] Processing ItemDispatchedEvent", self.id);
-        
+
         let data = event.data();
-        let item_type = data.get("item_type")
-            .and_then(|v| if let ComponentValue::String(s) = v { Some(s.as_str()) } else { None })
+        let item_type = data
+            .get("item_type")
+            .and_then(|v| {
+                if let ComponentValue::String(s) = v {
+                    Some(s.as_str())
+                } else {
+                    None
+                }
+            })
             .unwrap_or("unknown");
-        let item_id = data.get("item_id")
-            .and_then(|v| if let ComponentValue::String(s) = v { Some(s.as_str()) } else { None })
+        let item_id = data
+            .get("item_id")
+            .and_then(|v| {
+                if let ComponentValue::String(s) = v {
+                    Some(s.as_str())
+                } else {
+                    None
+                }
+            })
             .unwrap_or("unknown");
-        let success = data.get("success")
-            .and_then(|v| if let ComponentValue::Bool(b) = v { Some(*b) } else { None })
+        let success = data
+            .get("success")
+            .and_then(|v| {
+                if let ComponentValue::Bool(b) = v {
+                    Some(*b)
+                } else {
+                    None
+                }
+            })
             .unwrap_or(false);
 
-        log::debug!("[CLIENT {}] ItemDispatchedEvent: item_type='{}', item_id='{}', success={}", self.id, item_type, item_id, success);
+        log::debug!(
+            "[CLIENT {}] ItemDispatchedEvent: item_type='{}', item_id='{}', success={}",
+            self.id,
+            item_type,
+            item_id,
+            success
+        );
 
         // Only process burger items
         if item_type != "burger" {
-            log::debug!("[CLIENT {}] Ignoring non-burger item type: '{}'", self.id, item_type);
+            log::debug!(
+                "[CLIENT {}] Ignoring non-burger item type: '{}'",
+                self.id,
+                item_type
+            );
             return new_events;
         }
 
         if !success {
-            log::warn!("[CLIENT {}] Failed to receive burger {}, retrying in 2 cycles", self.id, item_id);
+            log::warn!(
+                "[CLIENT {}] Failed to receive burger {}, retrying in 2 cycles",
+                self.id,
+                item_id
+            );
             // Decrement outstanding requests since this one failed
             if self.outstanding_requests > 0 {
                 self.outstanding_requests -= 1;
@@ -250,12 +321,12 @@ impl Client {
             if order.remaining_quantity > 0 {
                 order.remaining_quantity -= 1;
                 self.stats.total_burgers_received += 1;
-                
+
                 // Decrement outstanding requests since we received an item
                 if self.outstanding_requests > 0 {
                     self.outstanding_requests -= 1;
                 }
-                
+
                 log::info!(
                     "[Client {}] Received burger {}. Order {} now has {}/{} burgers remaining ({} requests outstanding)",
                     self.id,
@@ -269,7 +340,7 @@ impl Client {
                 // Check if order is complete
                 if order.remaining_quantity == 0 {
                     let order_id = order.order_id.clone();
-                    
+
                     // Generate OrderFulfilledEvent
                     let fulfilled_event = OrderFulfilledEvent::new(
                         self.id.clone(),
@@ -277,12 +348,8 @@ impl Client {
                         order_id.clone(),
                     );
                     new_events.push((Box::new(fulfilled_event), 0));
-                    
-                    log::info!(
-                        "[Client {}] Order {} fulfilled",
-                        self.id,
-                        order_id
-                    );
+
+                    log::info!("[Client {}] Order {} fulfilled", self.id, order_id);
                 }
             }
         }
@@ -293,10 +360,17 @@ impl Client {
     /// Handle order fulfilled
     fn handle_order_fulfilled(&mut self, event: &dyn Event) -> Vec<(Box<dyn Event>, u64)> {
         let mut new_events: Vec<(Box<dyn Event>, u64)> = Vec::new();
-        
+
         let data = event.data();
-        let order_id = data.get("order_id")
-            .and_then(|v| if let ComponentValue::String(s) = v { Some(s.as_str()) } else { None })
+        let order_id = data
+            .get("order_id")
+            .and_then(|v| {
+                if let ComponentValue::String(s) = v {
+                    Some(s.as_str())
+                } else {
+                    None
+                }
+            })
             .unwrap_or("unknown");
 
         // Verify this is our order
@@ -305,41 +379,30 @@ impl Client {
                 // Clear pending order
                 self.pending_order = None;
                 self.stats.total_fulfilled += 1;
-                
+
                 // Reset outstanding requests
                 self.outstanding_requests = 0;
-                
-                log::info!("[Client {}] Order {} completed and cleared", self.id, order_id);
-                
-                // Schedule next order generation
-                let next_order_event = GenerateOrderEvent::new(
-                    self.id.clone(),
-                    Some(vec![self.id.clone()]),
+
+                log::info!(
+                    "[Client {}] Order {} completed and cleared",
+                    self.id,
+                    order_id
                 );
+
+                // Schedule next order generation
+                let next_order_event =
+                    GenerateOrderEvent::new(self.id.clone(), Some(vec![self.id.clone()]));
                 new_events.push((Box::new(next_order_event), self.order_interval));
-                
-                log::info!("[Client {}] Scheduled next order generation in {} cycles", self.id, self.order_interval);
+
+                log::info!(
+                    "[Client {}] Scheduled next order generation in {} cycles",
+                    self.id,
+                    self.order_interval
+                );
             }
         }
 
         new_events
-    }
-
-    /// Get current statistics
-    pub fn get_stats(&self) -> (u32, u32, u32) {
-        (self.stats.total_generated, self.stats.total_fulfilled, self.stats.total_burgers_received)
-    }
-
-    /// Check if client has a pending order
-    pub fn has_pending_order(&self) -> bool {
-        self.pending_order.is_some()
-    }
-
-    /// Get pending order info
-    pub fn get_pending_order_info(&self) -> Option<(String, u32, u32)> {
-        self.pending_order.as_ref().map(|order| {
-            (order.order_id.clone(), order.original_quantity, order.remaining_quantity)
-        })
     }
 }
 
@@ -370,13 +433,21 @@ impl BaseComponent for Client {
                     }
                     log::debug!("[CLIENT {}] Generating order...", self.id);
                     let mut order_events = self.handle_generate_order();
-                    log::debug!("[CLIENT {}] Generated {} events from order", self.id, order_events.len());
+                    log::debug!(
+                        "[CLIENT {}] Generated {} events from order",
+                        self.id,
+                        order_events.len()
+                    );
                     new_events.append(&mut order_events);
                 }
                 "ItemAddedEvent" => {
                     log::debug!("[CLIENT {}] Received ItemAddedEvent", self.id);
                     let mut item_events = self.handle_item_added(event.as_ref());
-                    log::debug!("[CLIENT {}] Generated {} events from ItemAddedEvent", self.id, item_events.len());
+                    log::debug!(
+                        "[CLIENT {}] Generated {} events from ItemAddedEvent",
+                        self.id,
+                        item_events.len()
+                    );
                     new_events.append(&mut item_events);
                 }
                 "ItemDispatchedEvent" => {
@@ -390,7 +461,11 @@ impl BaseComponent for Client {
                     }
                     log::debug!("[CLIENT {}] Processing ItemDispatchedEvent", self.id);
                     let mut dispatch_events = self.handle_item_dispatched(event.as_ref());
-                    log::debug!("[CLIENT {}] Generated {} events from ItemDispatchedEvent", self.id, dispatch_events.len());
+                    log::debug!(
+                        "[CLIENT {}] Generated {} events from ItemDispatchedEvent",
+                        self.id,
+                        dispatch_events.len()
+                    );
                     new_events.append(&mut dispatch_events);
                 }
                 "OrderFulfilledEvent" => {

@@ -1,11 +1,11 @@
 //! Simulation components.
 
-pub mod fryer;
-pub mod baker;
 pub mod assembler;
+pub mod baker;
 pub mod client;
+pub mod fryer;
 
-pub use fryer::*;
-pub use baker::*;
 pub use assembler::*;
-pub use client::*; 
+pub use baker::*;
+pub use client::*;
+pub use fryer::*;

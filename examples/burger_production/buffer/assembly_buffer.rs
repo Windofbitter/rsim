@@ -98,41 +98,61 @@ impl BaseComponent for AssemblyBuffer {
                     }
                 }
                 "RequestItemEvent" => {
-                    // Only respond to requests for burgers
-                    if let Some(ComponentValue::String(requester_id)) = event.data().get("requester_id") {
-                        let was_full_before = self.is_full();
-                        
-                        if let Some(item_id) = self.remove_item() {
-                            // Successfully removed item
-                            let item_dispatched = ItemDispatchedEvent::new(
-                                self.component_id.clone(),
-                                requester_id.clone(),
-                                "burger".to_string(),
-                                item_id,
-                                true,
-                            );
-                            response_events.push((Box::new(item_dispatched) as Box<dyn Event>, 0));
-
-                            // If we were full and now have space, notify assembler
-                            if was_full_before && self.has_space() {
-                                self.was_full = false;
-                                let space_available = BufferSpaceAvailableEvent::new(
-                                    self.component_id.clone(),
-                                    None, // Broadcast to all potential producers
-                                    "assembly".to_string(),
-                                );
-                                response_events.push((Box::new(space_available) as Box<dyn Event>, 0));
+                    // Check if this request is for burger items
+                    let item_type = event
+                        .data()
+                        .get("item_type")
+                        .and_then(|v| {
+                            if let ComponentValue::String(s) = v {
+                                Some(s.clone())
+                            } else {
+                                None
                             }
-                        } else {
-                            // No item available
-                            let item_dispatched = ItemDispatchedEvent::new(
-                                self.component_id.clone(),
-                                requester_id.clone(),
-                                "burger".to_string(),
-                                String::new(),
-                                false,
-                            );
-                            response_events.push((Box::new(item_dispatched) as Box<dyn Event>, 0));
+                        })
+                        .unwrap_or_else(|| String::new());
+
+                    // Only respond to burger requests
+                    if item_type == "burger" {
+                        if let Some(ComponentValue::String(requester_id)) =
+                            event.data().get("requester_id")
+                        {
+                            let was_full_before = self.is_full();
+
+                            if let Some(item_id) = self.remove_item() {
+                                // Successfully removed item
+                                let item_dispatched = ItemDispatchedEvent::new(
+                                    self.component_id.clone(),
+                                    requester_id.clone(),
+                                    "burger".to_string(),
+                                    item_id,
+                                    true,
+                                );
+                                response_events
+                                    .push((Box::new(item_dispatched) as Box<dyn Event>, 0));
+
+                                // If we were full and now have space, notify assembler
+                                if was_full_before && self.has_space() {
+                                    self.was_full = false;
+                                    let space_available = BufferSpaceAvailableEvent::new(
+                                        self.component_id.clone(),
+                                        None, // Broadcast to all potential producers
+                                        "assembly".to_string(),
+                                    );
+                                    response_events
+                                        .push((Box::new(space_available) as Box<dyn Event>, 0));
+                                }
+                            } else {
+                                // No item available
+                                let item_dispatched = ItemDispatchedEvent::new(
+                                    self.component_id.clone(),
+                                    requester_id.clone(),
+                                    "burger".to_string(),
+                                    String::new(),
+                                    false,
+                                );
+                                response_events
+                                    .push((Box::new(item_dispatched) as Box<dyn Event>, 0));
+                            }
                         }
                     }
                 }
@@ -160,16 +180,16 @@ mod tests {
     #[test]
     fn test_buffer_capacity_management() {
         let mut buffer = AssemblyBuffer::new("test_buffer".to_string(), 2);
-        
+
         // Add items up to capacity
         assert!(buffer.add_item("burger_1".to_string()));
         assert!(buffer.add_item("burger_2".to_string()));
         assert!(buffer.is_full());
         assert!(!buffer.has_space());
-        
+
         // Try to add when full
         assert!(!buffer.add_item("burger_3".to_string()));
-        
+
         // Remove an item
         let removed = buffer.remove_item();
         assert_eq!(removed, Some("burger_1".to_string()));
@@ -180,11 +200,11 @@ mod tests {
     #[test]
     fn test_fifo_ordering() {
         let mut buffer = AssemblyBuffer::new("test_buffer".to_string(), 3);
-        
+
         buffer.add_item("burger_1".to_string());
         buffer.add_item("burger_2".to_string());
         buffer.add_item("burger_3".to_string());
-        
+
         assert_eq!(buffer.remove_item(), Some("burger_1".to_string()));
         assert_eq!(buffer.remove_item(), Some("burger_2".to_string()));
         assert_eq!(buffer.remove_item(), Some("burger_3".to_string()));

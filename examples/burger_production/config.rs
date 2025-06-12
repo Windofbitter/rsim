@@ -141,7 +141,9 @@ impl BurgerSimulationConfig {
             return Err("Order interval must be greater than 0".to_string());
         }
 
-        if self.order_generation.min_quantity_per_order > self.order_generation.max_quantity_per_order {
+        if self.order_generation.min_quantity_per_order
+            > self.order_generation.max_quantity_per_order
+        {
             return Err("Min order quantity cannot be greater than max quantity".to_string());
         }
 
@@ -149,15 +151,17 @@ impl BurgerSimulationConfig {
             return Err("Order quantity must be at least 1".to_string());
         }
 
-        if self.buffer_capacities.fried_meat_capacity == 0 ||
-           self.buffer_capacities.cooked_bread_capacity == 0 ||
-           self.buffer_capacities.assembly_capacity == 0 {
+        if self.buffer_capacities.fried_meat_capacity == 0
+            || self.buffer_capacities.cooked_bread_capacity == 0
+            || self.buffer_capacities.assembly_capacity == 0
+        {
             return Err("Buffer capacities must be greater than 0".to_string());
         }
 
-        if self.processing_delays.frying_cycles == 0 ||
-           self.processing_delays.baking_cycles == 0 ||
-           self.processing_delays.assembly_cycles == 0 {
+        if self.processing_delays.frying_cycles == 0
+            || self.processing_delays.baking_cycles == 0
+            || self.processing_delays.assembly_cycles == 0
+        {
             return Err("Processing delays must be greater than 0".to_string());
         }
 

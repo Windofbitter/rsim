@@ -1,4 +1,4 @@
-use rsim::core::event::{Event, EventId, EventType};
+use rsim::core::event::{Event, EventId};
 use rsim::core::types::{ComponentId, ComponentValue};
 use std::collections::HashMap;
 
@@ -10,8 +10,6 @@ pub struct TriggerProductionEvent {
 }
 
 impl TriggerProductionEvent {
-    pub const TYPE: &'static str = "TriggerProductionEvent";
-    
     pub fn new(source_id: ComponentId, target_ids: Option<Vec<ComponentId>>) -> Self {
         Self {
             id: format!("trigger_production_{}", uuid::Uuid::new_v4()),

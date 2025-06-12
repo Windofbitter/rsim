@@ -1,4 +1,4 @@
-use rsim::core::event::{Event, EventId, EventType};
+use rsim::core::event::{Event, EventId};
 use rsim::core::types::{ComponentId, ComponentValue};
 use std::collections::HashMap;
 
@@ -11,17 +11,17 @@ pub struct MeatReadyEvent {
 }
 
 impl MeatReadyEvent {
-    pub fn new(source_id: ComponentId, target_ids: Option<Vec<ComponentId>>, item_id: String) -> Self {
+    pub fn new(
+        source_id: ComponentId,
+        target_ids: Option<Vec<ComponentId>>,
+        item_id: String,
+    ) -> Self {
         Self {
             id: format!("meat_ready_{}", uuid::Uuid::new_v4()),
             source_id,
             target_ids,
             item_id,
         }
-    }
-
-    pub fn item_id(&self) -> &str {
-        &self.item_id
     }
 }
 
@@ -44,7 +44,10 @@ impl Event for MeatReadyEvent {
 
     fn data(&self) -> HashMap<String, ComponentValue> {
         let mut data = HashMap::new();
-        data.insert("item_id".to_string(), ComponentValue::String(self.item_id.clone()));
+        data.insert(
+            "item_id".to_string(),
+            ComponentValue::String(self.item_id.clone()),
+        );
         data
     }
 
