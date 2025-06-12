@@ -231,7 +231,7 @@ impl BaseComponent for Assembler {
     fn react_atomic(&mut self, events: Vec<Box<dyn Event>>) -> Vec<(Box<dyn Event>, u64)> {
         let mut new_events: Vec<(Box<dyn Event>, u64)> = Vec::new();
         
-        println!("[ASSEMBLER {}] Processing {} events, state: {:?}", self.id, events.len(), self.state);
+        log::debug!("[ASSEMBLER {}] Processing {} events, state: {:?}", self.id, events.len(), self.state);
 
         for event in events {
             match event.event_type() {

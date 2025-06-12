@@ -97,7 +97,7 @@ impl BaseComponent for Baker {
     fn react_atomic(&mut self, events: Vec<Box<dyn Event>>) -> Vec<(Box<dyn Event>, u64)> {
         let mut new_events: Vec<(Box<dyn Event>, u64)> = Vec::new();
         
-        println!("[BAKER {}] Processing {} events", self.id, events.len());
+        log::debug!("[BAKER {}] Processing {} events", self.id, events.len());
 
         for event in events {
             match event.event_type() {

@@ -18,6 +18,9 @@ use burger_production::{
 };
 
 fn main() {
+    // Initialize logger
+    env_logger::init();
+    
     // Create configuration
     let config = BurgerSimulationConfig::new()
         .with_production_mode(ProductionMode::BufferBased)
@@ -31,21 +34,20 @@ fn main() {
 
     // Validate configuration
     if let Err(e) = config.validate() {
-        eprintln!("Invalid configuration: {}", e);
+        log::error!("Invalid configuration: {}", e);
         return;
     }
 
-    println!("🍔 Burger Production Simulation");
-    println!("================================");
-    println!("Mode: {:?}", config.production_mode);
-    println!("Duration: {} cycles", config.simulation_duration_cycles);
-    println!("Buffer Capacities: {}", config.buffer_capacities.fried_meat_capacity);
-    println!("Order Interval: {} cycles", config.order_generation.order_interval_cycles);
-    println!("Order Quantity: {}-{}", 
+    log::info!("🍔 Burger Production Simulation");
+    log::info!("================================");
+    log::info!("Mode: {:?}", config.production_mode);
+    log::info!("Duration: {} cycles", config.simulation_duration_cycles);
+    log::info!("Buffer Capacities: {}", config.buffer_capacities.fried_meat_capacity);
+    log::info!("Order Interval: {} cycles", config.order_generation.order_interval_cycles);
+    log::info!("Order Quantity: {}-{}", 
         config.order_generation.min_quantity_per_order,
         config.order_generation.max_quantity_per_order
     );
-    println!();
 
     // Create simulation engine with max cycles
     let mut engine = SimulationEngine::new(Some(config.simulation_duration_cycles));
@@ -127,46 +129,44 @@ fn main() {
     // Note: Event logging not available in this SimulationEngine version
 
     // Run simulation with detailed logging
-    println!("Starting simulation...\n");
+    log::info!("Starting simulation...");
     let start_time = std::time::Instant::now();
     
-    println!("Initial events scheduled:");
-    println!("- Production triggers at cycle 1");
-    println!("- First order generation at cycle {}", config.order_generation.order_interval_cycles);
-    println!();
+    log::info!("Initial events scheduled:");
+    log::info!("- Production triggers at cycle 1");
+    log::info!("- First order generation at cycle {}", config.order_generation.order_interval_cycles);
     
     // Run simulation step by step for first 20 cycles to see what happens
     let mut cycle_count = 0;
-    println!("=== DETAILED SIMULATION TRACE ===");
+    log::debug!("=== DETAILED SIMULATION TRACE ===");
     
     while engine.has_pending_events() && cycle_count < 150 {
         let current_cycle = engine.current_cycle();
         let has_events_before = engine.has_pending_events();
         
-        println!("Before step {}: Cycle {}, Has events: {}", cycle_count + 1, current_cycle, has_events_before);
+        log::debug!("Before step {}: Cycle {}, Has events: {}", cycle_count + 1, current_cycle, has_events_before);
         
         if !engine.step().unwrap() {
-            println!("Step returned false - no more events");
+            log::debug!("Step returned false - no more events");
             break;
         }
         
         let new_cycle = engine.current_cycle();
         let has_events_after = engine.has_pending_events();
         
-        println!("After step {}: Cycle {}, Has events: {}", cycle_count + 1, new_cycle, has_events_after);
-        println!();
+        log::debug!("After step {}: Cycle {}, Has events: {}", cycle_count + 1, new_cycle, has_events_after);
         
         cycle_count += 1;
         
         if new_cycle >= config.simulation_duration_cycles {
-            println!("Reached max cycles: {}", config.simulation_duration_cycles);
+            log::info!("Reached max cycles: {}", config.simulation_duration_cycles);
             break;
         }
     }
     
     // Finish remaining simulation
     let final_cycle = if engine.has_pending_events() {
-        println!("Continuing simulation to completion...");
+        log::info!("Continuing simulation to completion...");
         engine.run().unwrap()
     } else {
         engine.current_cycle()
@@ -175,11 +175,11 @@ fn main() {
     let elapsed = start_time.elapsed();
     
     // Print results
-    println!("\n================================");
-    println!("Simulation Complete!");
-    println!("================================");
-    println!("Total cycles simulated: {}", final_cycle);
-    println!("Real time elapsed: {:.2?}", elapsed);
+    log::info!("================================");
+    log::info!("Simulation Complete!");
+    log::info!("================================");
+    log::info!("Total cycles simulated: {}", final_cycle);
+    log::info!("Real time elapsed: {:.2?}", elapsed);
     
     // Note: Component metrics not available in this SimulationEngine version
 }
