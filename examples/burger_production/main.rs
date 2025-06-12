@@ -7,14 +7,45 @@ use burger_production::{
     CookedBreadBuffer, CycleUpdateEvent, FriedMeatBuffer, Fryer, GenerateOrderEvent, MetricsCollector, TriggerProductionEvent,
 };
 use rsim::core::simulation_engine::SimulationEngine;
+use std::fs::{File, OpenOptions};
+use std::io::Write;
+use std::sync::{Arc, Mutex};
 
-fn main() {
-    // Initialize logger
-    env_logger::init();
+// Custom logger that writes to both console and file
+struct FileLogger {
+    file: Arc<Mutex<File>>,
+}
+
+impl FileLogger {
+    fn new(filename: &str) -> std::io::Result<Self> {
+        let file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(filename)?;
+        Ok(FileLogger {
+            file: Arc::new(Mutex::new(file)),
+        })
+    }
+
+    fn write_line(&self, line: &str) -> std::io::Result<()> {
+        if let Ok(mut file) = self.file.lock() {
+            writeln!(file, "{}", line)?;
+            file.flush()?;
+        }
+        Ok(())
+    }
+}
+
+fn run_simulation(mode: ProductionMode, logger: &FileLogger) -> Result<(), Box<dyn std::error::Error>> {
+    // Write mode header to log file
+    logger.write_line(&format!("\n{}", "=".repeat(80)))?;
+    logger.write_line(&format!("SIMULATION MODE: {:?}", mode))?;
+    logger.write_line(&format!("{}\n", "=".repeat(80)))?;
 
     // Create configuration
     let config = BurgerSimulationConfig::new()
-        .with_production_mode(ProductionMode::BufferBased)
+        .with_production_mode(mode)
         .with_simulation_duration(200) // Shorter test
         .with_buffer_capacities(5)
         .with_order_quantity_range(1, 2) // Smaller orders
@@ -26,7 +57,8 @@ fn main() {
     // Validate configuration
     if let Err(e) = config.validate() {
         log::error!("Invalid configuration: {}", e);
-        return;
+        logger.write_line(&format!("ERROR: Invalid configuration: {}", e))?;
+        return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, e)));
     }
 
     log::info!("🍔 Burger Production Simulation");
@@ -46,6 +78,17 @@ fn main() {
         config.order_generation.min_quantity_per_order,
         config.order_generation.max_quantity_per_order
     );
+
+    // Write config to log file
+    logger.write_line("Configuration:")?;
+    logger.write_line(&format!("  Mode: {:?}", config.production_mode))?;
+    logger.write_line(&format!("  Duration: {} cycles", config.simulation_duration_cycles))?;
+    logger.write_line(&format!("  Buffer Capacities: {}", config.buffer_capacities.fried_meat_capacity))?;
+    logger.write_line(&format!("  Order Interval: {} cycles", config.order_generation.order_interval_cycles))?;
+    logger.write_line(&format!("  Order Quantity: {}-{}", 
+        config.order_generation.min_quantity_per_order,
+        config.order_generation.max_quantity_per_order))?;
+    logger.write_line("")?;
 
     // Create simulation engine with max cycles
     let mut engine = SimulationEngine::new(Some(config.simulation_duration_cycles));
@@ -144,20 +187,13 @@ fn main() {
         config.order_generation.order_interval_cycles
     );
 
-    // Run simulation step by step for first 20 cycles to see what happens
+    // Run simulation step by step with continuous cycle tracking
     let mut cycle_count = 0;
     log::debug!("=== DETAILED SIMULATION TRACE ===");
 
-    while engine.has_pending_events() && cycle_count < 150 {
+    while engine.has_pending_events() {
         let current_cycle = engine.current_cycle();
         let has_events_before = engine.has_pending_events();
-
-        log::debug!(
-            "Before step {}: Cycle {}, Has events: {}",
-            cycle_count + 1,
-            current_cycle,
-            has_events_before
-        );
 
         if !engine.step().unwrap() {
             log::debug!("Step returned false - no more events");
@@ -165,7 +201,6 @@ fn main() {
         }
 
         let new_cycle = engine.current_cycle();
-        let has_events_after = engine.has_pending_events();
 
         // Send cycle update to metrics collector
         if new_cycle != current_cycle {
@@ -177,13 +212,6 @@ fn main() {
             engine.schedule_initial_event(Box::new(cycle_update), 0);
         }
 
-        log::debug!(
-            "After step {}: Cycle {}, Has events: {}",
-            cycle_count + 1,
-            new_cycle,
-            has_events_after
-        );
-
         cycle_count += 1;
 
         if new_cycle >= config.simulation_duration_cycles {
@@ -192,13 +220,8 @@ fn main() {
         }
     }
 
-    // Finish remaining simulation
-    let final_cycle = if engine.has_pending_events() {
-        log::info!("Continuing simulation to completion...");
-        engine.run().unwrap()
-    } else {
-        engine.current_cycle()
-    };
+    // Simulation completed
+    let final_cycle = engine.current_cycle();
 
     let elapsed = start_time.elapsed();
 
@@ -209,5 +232,87 @@ fn main() {
     log::info!("Total cycles simulated: {}", final_cycle);
     log::info!("Real time elapsed: {:.2?}", elapsed);
 
+    // Write results to log file
+    logger.write_line("Simulation Results:")?;
+    logger.write_line(&format!("  Total cycles simulated: {}", final_cycle))?;
+    logger.write_line(&format!("  Real time elapsed: {:.2?}", elapsed))?;
+    logger.write_line("")?;
+
     // Note: Component metrics not available in this SimulationEngine version
+    // The metrics will be written by the MetricsCollector's Drop implementation
+    
+    Ok(())
+}
+
+fn main() {
+    // Generate a unique timestamp for the log file
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    
+    let log_filename = format!("burger_simulation_{}.log", timestamp);
+    
+    // Create file logger
+    let file_logger = match FileLogger::new(&log_filename) {
+        Ok(logger) => logger,
+        Err(e) => {
+            eprintln!("Failed to create log file: {}", e);
+            return;
+        }
+    };
+    
+    let logger_clone = file_logger.file.clone();
+    
+    // Initialize logger with custom format that writes to both console and file
+    env_logger::Builder::from_default_env()
+        .format(move |buf, record| {
+            let formatted = format!(
+                "[{} {}] {}",
+                record.level(),
+                record.target(),
+                record.args()
+            );
+            
+            // Write to console
+            writeln!(buf, "{}", formatted)?;
+            
+            // Also write to file
+            if let Ok(mut file) = logger_clone.lock() {
+                writeln!(file, "{}", formatted).ok();
+                file.flush().ok();
+            }
+            
+            Ok(())
+        })
+        .init();
+
+    println!("📝 Logging simulation results to: {}", log_filename);
+    
+    // Write header to log file
+    file_logger.write_line("Burger Production Simulation Log").ok();
+    file_logger.write_line(&"=".repeat(80)).ok();
+
+    // Run order-based simulation
+    println!("\n🍔 Running ORDER-BASED simulation...");
+    if let Err(e) = run_simulation(ProductionMode::OrderBased, &file_logger) {
+        eprintln!("Order-based simulation failed: {}", e);
+        file_logger.write_line(&format!("Order-based simulation failed: {}", e)).ok();
+    }
+
+    // Add separator
+    file_logger.write_line(&format!("\n\n{}\n\n", "*".repeat(80))).ok();
+
+    // Run buffer-based simulation
+    println!("\n🍔 Running BUFFER-BASED simulation...");
+    if let Err(e) = run_simulation(ProductionMode::BufferBased, &file_logger) {
+        eprintln!("Buffer-based simulation failed: {}", e);
+        file_logger.write_line(&format!("Buffer-based simulation failed: {}", e)).ok();
+    }
+
+    // Final summary
+    file_logger.write_line(&format!("\n{}", "=".repeat(80))).ok();
+    file_logger.write_line("Simulation batch completed").ok();
+    
+    println!("\n✅ Both simulations completed. Results saved to: {}", log_filename);
 }
