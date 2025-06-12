@@ -10,16 +10,11 @@ use uuid::Uuid;
 use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
 
-use crate::events::{
+use super::super::events::{
     GenerateOrderEvent, PlaceOrderEvent, OrderFulfilledEvent, ItemAddedEvent,
     RequestItemEvent, ItemDispatchedEvent,
 };
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum ProductionMode {
-    BufferBased,
-    OrderBased,
-}
+use super::super::config::ProductionMode;
 
 /// Represents a pending order
 #[derive(Debug, Clone)]
@@ -95,7 +90,7 @@ impl Client {
 
     /// Handle order generation
     fn handle_generate_order(&mut self) -> Vec<(Box<dyn Event>, u64)> {
-        let mut new_events = Vec::new();
+        let mut new_events: Vec<(Box<dyn Event>, u64)> = Vec::new();
         
         // Only generate a new order if no order is pending
         if self.pending_order.is_some() {
@@ -145,7 +140,7 @@ impl Client {
 
     /// Handle item added notification from assembly buffer
     fn handle_item_added(&mut self, event: &dyn Event) -> Vec<(Box<dyn Event>, u64)> {
-        let mut new_events = Vec::new();
+        let mut new_events: Vec<(Box<dyn Event>, u64)> = Vec::new();
         
         // Only process if we have a pending order
         if self.pending_order.is_none() {
@@ -202,7 +197,7 @@ impl Client {
 
     /// Handle item dispatched from assembly buffer
     fn handle_item_dispatched(&mut self, event: &dyn Event) -> Vec<(Box<dyn Event>, u64)> {
-        let mut new_events = Vec::new();
+        let mut new_events: Vec<(Box<dyn Event>, u64)> = Vec::new();
         
         let data = event.data();
         let item_type = data.get("item_type")
@@ -272,7 +267,7 @@ impl Client {
 
     /// Handle order fulfilled
     fn handle_order_fulfilled(&mut self, event: &dyn Event) -> Vec<(Box<dyn Event>, u64)> {
-        let mut new_events = Vec::new();
+        let mut new_events: Vec<(Box<dyn Event>, u64)> = Vec::new();
         
         let data = event.data();
         let order_id = data.get("order_id")
@@ -333,7 +328,7 @@ impl BaseComponent for Client {
     }
 
     fn react_atomic(&mut self, events: Vec<Box<dyn Event>>) -> Vec<(Box<dyn Event>, u64)> {
-        let mut new_events = Vec::new();
+        let mut new_events: Vec<(Box<dyn Event>, u64)> = Vec::new();
 
         for event in events {
             match event.event_type() {

@@ -10,6 +10,8 @@ pub struct GenerateOrderEvent {
 }
 
 impl GenerateOrderEvent {
+    pub const TYPE: &'static str = "GenerateOrderEvent";
+    
     pub fn new(source_id: ComponentId, target_ids: Option<Vec<ComponentId>>) -> Self {
         Self {
             id: format!("generate_order_{}", uuid::Uuid::new_v4()),

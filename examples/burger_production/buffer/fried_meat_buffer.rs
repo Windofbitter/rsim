@@ -3,7 +3,7 @@ use rsim::core::event::Event;
 use rsim::core::types::ComponentId;
 use std::collections::VecDeque;
 
-use crate::events::{
+use super::super::events::{
     BufferFullEvent, BufferSpaceAvailableEvent, ItemAddedEvent, ItemDispatchedEvent,
     ItemDroppedEvent, MeatReadyEvent, RequestItemEvent,
 };
@@ -58,7 +58,7 @@ impl BaseComponent for FriedMeatBuffer {
     }
 
     fn react_atomic(&mut self, events: Vec<Box<dyn Event>>) -> Vec<(Box<dyn Event>, u64)> {
-        let mut output_events = Vec::new();
+        let mut output_events: Vec<(Box<dyn Event>, u64)> = Vec::new();
 
         for event in events {
             match event.event_type() {
@@ -104,8 +104,8 @@ impl BaseComponent for FriedMeatBuffer {
                 "RequestItemEvent" => {
                     // Check if this request is for meat items
                     let item_type = event.data().get("item_type")
-                        .and_then(|v| if let rsim::core::types::ComponentValue::String(s) = v { Some(s.as_str()) } else { None })
-                        .unwrap_or("");
+                        .and_then(|v| if let rsim::core::types::ComponentValue::String(s) = v { Some(s.clone()) } else { None })
+                        .unwrap_or_else(|| String::new());
                     
                     // Only respond to meat requests
                     if item_type == "meat" {

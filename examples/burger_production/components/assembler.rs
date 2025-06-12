@@ -8,11 +8,11 @@ use rsim::core::{
 use std::collections::HashMap;
 use uuid::Uuid;
 
-use crate::events::{
+use super::super::events::{
     BurgerReadyEvent, TriggerProductionEvent, ItemAddedEvent, RequestItemEvent,
     ItemDispatchedEvent, ItemDroppedEvent, BufferFullEvent, BufferSpaceAvailableEvent,
 };
-use crate::ProductionMode;
+use super::super::config::ProductionMode;
 
 /// Simplified assembly state
 #[derive(Debug, Clone, PartialEq)]
@@ -71,7 +71,7 @@ impl Assembler {
     }
 
     fn handle_trigger_production(&mut self) -> Vec<(Box<dyn Event>, u64)> {
-        let mut new_events = Vec::new();
+        let mut new_events: Vec<(Box<dyn Event>, u64)> = Vec::new();
 
         match self.state {
             AssemblerState::Idle => {
@@ -138,7 +138,7 @@ impl Assembler {
     }
 
     fn handle_item_dispatched(&mut self, event: &dyn Event) -> Vec<(Box<dyn Event>, u64)> {
-        let mut new_events = Vec::new();
+        let mut new_events: Vec<(Box<dyn Event>, u64)> = Vec::new();
         let data = event.data();
 
         let item_type = data.get("item_type")
@@ -193,7 +193,7 @@ impl Assembler {
     }
 
     fn handle_item_added(&mut self, event: &dyn Event) -> Vec<(Box<dyn Event>, u64)> {
-        let mut new_events = Vec::new();
+        let mut new_events: Vec<(Box<dyn Event>, u64)> = Vec::new();
 
         // Trigger production when idle or waiting for ingredients
         if !self.is_production_stopped && 
@@ -229,7 +229,7 @@ impl BaseComponent for Assembler {
     }
 
     fn react_atomic(&mut self, events: Vec<Box<dyn Event>>) -> Vec<(Box<dyn Event>, u64)> {
-        let mut new_events = Vec::new();
+        let mut new_events: Vec<(Box<dyn Event>, u64)> = Vec::new();
 
         for event in events {
             match event.event_type() {

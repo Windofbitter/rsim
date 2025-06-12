@@ -8,10 +8,10 @@ use rsim::core::{
 use std::collections::HashMap;
 use uuid::Uuid;
 
-use crate::events::{
+use super::super::events::{
     BreadReadyEvent, TriggerProductionEvent, PlaceOrderEvent, ItemDroppedEvent,
 };
-use crate::ProductionMode;
+use super::super::config::ProductionMode;
 
 /// The Baker component, responsible for converting raw bread into cooked buns.
 pub struct Baker {
@@ -95,7 +95,7 @@ impl BaseComponent for Baker {
     }
 
     fn react_atomic(&mut self, events: Vec<Box<dyn Event>>) -> Vec<(Box<dyn Event>, u64)> {
-        let mut new_events = Vec::new();
+        let mut new_events: Vec<(Box<dyn Event>, u64)> = Vec::new();
 
         for event in events {
             match event.event_type() {

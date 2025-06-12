@@ -8,10 +8,10 @@ use rsim::core::{
 use std::collections::HashMap;
 use uuid::Uuid;
 
-use crate::events::{
+use super::super::events::{
     MeatReadyEvent, TriggerProductionEvent, PlaceOrderEvent, ItemDroppedEvent,
 };
-use crate::ProductionMode;
+use super::super::config::ProductionMode;
 
 /// The Fryer component, responsible for converting raw meat into fried patties.
 pub struct Fryer {
@@ -95,7 +95,7 @@ impl BaseComponent for Fryer {
     }
 
     fn react_atomic(&mut self, events: Vec<Box<dyn Event>>) -> Vec<(Box<dyn Event>, u64)> {
-        let mut new_events = Vec::new();
+        let mut new_events: Vec<(Box<dyn Event>, u64)> = Vec::new();
 
         for event in events {
             match event.event_type() {

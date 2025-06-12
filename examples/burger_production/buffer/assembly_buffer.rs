@@ -3,7 +3,7 @@ use rsim::core::event::Event;
 use rsim::core::types::ComponentValue;
 use std::collections::VecDeque;
 
-use crate::events::{
+use super::super::events::{
     BufferFullEvent, BufferSpaceAvailableEvent, ItemAddedEvent, ItemDispatchedEvent,
     ItemDroppedEvent,
 };
@@ -48,7 +48,7 @@ impl AssemblyBuffer {
 }
 
 impl BaseComponent for AssemblyBuffer {
-    fn component_id(&self) -> &str {
+    fn component_id(&self) -> &String {
         &self.component_id
     }
 
@@ -57,7 +57,7 @@ impl BaseComponent for AssemblyBuffer {
     }
 
     fn react_atomic(&mut self, events: Vec<Box<dyn Event>>) -> Vec<(Box<dyn Event>, u64)> {
-        let mut response_events = Vec::new();
+        let mut response_events: Vec<(Box<dyn Event>, u64)> = Vec::new();
 
         for event in events {
             match event.event_type() {
