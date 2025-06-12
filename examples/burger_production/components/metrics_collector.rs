@@ -10,9 +10,7 @@ use rsim::core::{
 /// Tracks timing for individual orders
 #[derive(Debug, Clone)]
 struct OrderTiming {
-    order_id: String,
     placement_cycle: u64,
-    generation_cycle: Option<u64>,
 }
 
 /// Summary metrics for the simulation
@@ -86,7 +84,7 @@ impl MetricsCollector {
     }
     
     /// Handle order generation event
-    fn handle_generate_order(&mut self, event: &dyn Event) {
+    fn handle_generate_order(&mut self, _event: &dyn Event) {
         self.total_orders_generated += 1;
         self.last_activity_cycle = self.current_cycle;
         
@@ -94,9 +92,7 @@ impl MetricsCollector {
         // Generate a synthetic order ID for tracking
         let order_id = format!("generated_order_{}_cycle_{}", self.total_orders_generated, self.current_cycle);
         let timing = OrderTiming {
-            order_id: order_id.clone(),
             placement_cycle: self.current_cycle,
-            generation_cycle: Some(self.current_cycle),
         };
         
         self.pending_orders.insert(order_id.clone(), timing);
@@ -126,9 +122,7 @@ impl MetricsCollector {
             
         // Record when this order was placed
         let timing = OrderTiming {
-            order_id: order_id.clone(),
             placement_cycle: self.current_cycle,
-            generation_cycle: None,
         };
         
         self.pending_orders.insert(order_id.clone(), timing);
@@ -230,14 +224,6 @@ impl MetricsCollector {
         }
     }
     
-    /// Update the current cycle (called during each simulation step)
-    pub fn update_cycle(&mut self, cycle: u64) {
-        if cycle > self.current_cycle {
-            // Reset per-cycle counters
-            self.orders_fulfilled_this_cycle = 0;
-        }
-        self.current_cycle = cycle;
-    }
     
     /// Calculate final metrics for the simulation
     pub fn calculate_final_metrics(&self) -> SimulationMetrics {
@@ -255,9 +241,9 @@ impl MetricsCollector {
         
         let max_fulfillment_time = self.fulfillment_times.iter().max().copied().unwrap_or(0);
         let min_fulfillment_time = if !self.fulfillment_times.is_empty() {
-            self.fulfillment_times.iter().min().copied().unwrap_or(0)
+            self.fulfillment_times.iter().min().copied().unwrap_or(u64::MAX)
         } else {
-            0
+            u64::MAX
         };
         
         SimulationMetrics {
@@ -295,7 +281,12 @@ impl MetricsCollector {
         log::info!("Total Orders Fulfilled: {}", metrics.total_orders_fulfilled);
         log::info!("Orders Fulfilled Per Cycle: {:.3}", metrics.orders_fulfilled_per_cycle);
         log::info!("Average Fulfillment Time: {:.2} cycles", metrics.average_fulfillment_time);
-        log::info!("Min Fulfillment Time: {} cycles", metrics.min_fulfillment_time);
+        log::info!("Min Fulfillment Time: {}", 
+            if metrics.min_fulfillment_time == u64::MAX { 
+                "N/A".to_string() 
+            } else { 
+                format!("{} cycles", metrics.min_fulfillment_time) 
+            });
         log::info!("Max Fulfillment Time: {} cycles", metrics.max_fulfillment_time);
         log::info!("Simulation Duration: {} cycles", metrics.simulation_duration);
         log::info!("═══════════════════════════════════════");
