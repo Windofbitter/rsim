@@ -267,7 +267,7 @@ Item Consumed → Buffer has space → BufferSpaceAvailableEvent
 
 #### OrderFulfilledEvent
 - **Purpose**: Notifies that an order has been completed
-- **Data**: `order_id: String`, `fulfillment_time: u64`
+- **Data**: `order_id: String`
 - **Source**: Client
 - **Target**: Client (self)
 - **Usage**: Signals to the Client that its own pending order is complete. This is a self-targeted event used to update statistics and trigger the next `GenerateOrderEvent`.
