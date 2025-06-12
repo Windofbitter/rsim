@@ -17,6 +17,9 @@ pub mod generate_order_event;
 pub mod order_fulfilled_event;
 pub mod place_order_event;
 
+// System Events
+pub mod cycle_update_event;
+
 // Re-exports
 pub use bread_ready_event::BreadReadyEvent;
 pub use burger_ready_event::BurgerReadyEvent;
@@ -33,3 +36,5 @@ pub use request_item_event::RequestItemEvent;
 pub use generate_order_event::GenerateOrderEvent;
 pub use order_fulfilled_event::OrderFulfilledEvent;
 pub use place_order_event::PlaceOrderEvent;
+
+pub use cycle_update_event::CycleUpdateEvent;

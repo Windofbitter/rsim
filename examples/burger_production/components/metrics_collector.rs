@@ -72,6 +72,7 @@ impl MetricsCollector {
                 "PlaceOrderEvent", 
                 "OrderFulfilledEvent",
                 "ItemDispatchedEvent", // To track when burgers are delivered to client
+                "CycleUpdateEvent", // To synchronize with SimulationEngine cycle
             ],
             pending_orders: HashMap::new(),
             fulfilled_orders: Vec::new(),
@@ -161,7 +162,11 @@ impl MetricsCollector {
             timing
         } else if !self.pending_orders.is_empty() {
             // Use oldest pending order (FIFO assumption for order fulfillment)
-            let oldest_key = self.pending_orders.keys().min().cloned();
+            // Find order with minimum placement_cycle (truly oldest)
+            let oldest_key = self.pending_orders
+                .iter()
+                .min_by_key(|(_, timing)| timing.placement_cycle)
+                .map(|(key, _)| key.clone());
             if let Some(key) = oldest_key {
                 self.pending_orders.remove(&key).unwrap()
             } else {
@@ -208,6 +213,20 @@ impl MetricsCollector {
         // Print periodic summary every 5 fulfilled orders
         if self.total_orders_fulfilled % 5 == 0 {
             self.print_periodic_summary();
+        }
+    }
+    
+    /// Handle cycle update event
+    fn handle_cycle_update(&mut self, event: &dyn Event) {
+        let data = event.data();
+        if let Some(ComponentValue::Int(cycle)) = data.get("cycle") {
+            let new_cycle = *cycle as u64;
+            if new_cycle > self.current_cycle {
+                // Reset per-cycle counters when cycle advances
+                self.orders_fulfilled_this_cycle = 0;
+            }
+            self.current_cycle = new_cycle;
+            log::debug!("[MetricsCollector {}] Cycle updated to {}", self.id, self.current_cycle);
         }
     }
     
@@ -293,21 +312,10 @@ impl BaseComponent for MetricsCollector {
     }
     
     fn react_atomic(&mut self, events: Vec<Box<dyn Event>>) -> Vec<(Box<dyn Event>, u64)> {
-        // Simple cycle estimation - increment on each event batch processing
-        // This is a rough approximation since we don't have direct access to simulation cycle
+        // Cycle tracking is now handled via CycleUpdateEvent
         if !events.is_empty() {
-            self.current_cycle += 1;
-            log::debug!("[MetricsCollector {}] Processing {} events at estimated cycle {}", 
+            log::debug!("[MetricsCollector {}] Processing {} events at cycle {}", 
                 self.id, events.len(), self.current_cycle);
-        } else {
-            // Increment cycle even with no events to track simulation progress
-            self.current_cycle += 1;
-            
-            // Print status every 20 cycles if we haven't seen events
-            if self.current_cycle % 20 == 0 {
-                log::info!("📊 [MetricsCollector {}] Status at cycle {}: No events received yet. Orders generated: {}, fulfilled: {}", 
-                    self.id, self.current_cycle, self.total_orders_generated, self.total_orders_fulfilled);
-            }
         }
         
         for event in events {
@@ -328,6 +336,10 @@ impl BaseComponent for MetricsCollector {
                 "ItemDispatchedEvent" => {
                     log::debug!("[MetricsCollector {}] Received ItemDispatchedEvent (ignoring)", self.id);
                     // Just track that we received it but don't process
+                }
+                "CycleUpdateEvent" => {
+                    log::debug!("[MetricsCollector {}] Received CycleUpdateEvent", self.id);
+                    self.handle_cycle_update(event.as_ref());
                 }
                 _ => {
                     // Ignore other event types

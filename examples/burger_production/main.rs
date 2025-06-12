@@ -4,7 +4,7 @@ mod burger_production;
 
 use burger_production::{
     config::ProductionMode, Assembler, AssemblyBuffer, Baker, BurgerSimulationConfig, Client,
-    CookedBreadBuffer, FriedMeatBuffer, Fryer, GenerateOrderEvent, MetricsCollector, TriggerProductionEvent,
+    CookedBreadBuffer, CycleUpdateEvent, FriedMeatBuffer, Fryer, GenerateOrderEvent, MetricsCollector, TriggerProductionEvent,
 };
 use rsim::core::simulation_engine::SimulationEngine;
 
@@ -166,6 +166,16 @@ fn main() {
 
         let new_cycle = engine.current_cycle();
         let has_events_after = engine.has_pending_events();
+
+        // Send cycle update to metrics collector
+        if new_cycle != current_cycle {
+            let cycle_update = CycleUpdateEvent::new(
+                "system".to_string(),
+                Some(vec!["metrics_collector".to_string()]),
+                new_cycle,
+            );
+            engine.schedule_initial_event(Box::new(cycle_update), 0);
+        }
 
         log::debug!(
             "After step {}: Cycle {}, Has events: {}",
