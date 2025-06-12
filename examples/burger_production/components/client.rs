@@ -50,6 +50,7 @@ pub struct Client {
     
     // Order management
     pending_order: Option<PendingOrder>,
+    outstanding_requests: u32,
     
     // Statistics
     stats: OrderStats,
@@ -86,6 +87,7 @@ impl Client {
                 "OrderFulfilledEvent",
             ],
             pending_order: None,
+            outstanding_requests: 0,
             stats: OrderStats {
                 total_generated: 0,
                 total_fulfilled: 0,
@@ -167,16 +169,40 @@ impl Client {
             return new_events;
         }
 
-        log::info!("[Client {}] Burger available in assembly buffer, requesting item", self.id);
+        // Check if we need more items
+        if let Some(ref order) = self.pending_order {
+            let items_needed = order.remaining_quantity;
+            
+            // Only request if we haven't already requested all items we need
+            if self.outstanding_requests >= items_needed {
+                log::info!(
+                    "[Client {}] Already have {} outstanding requests for {} remaining items, skipping",
+                    self.id,
+                    self.outstanding_requests,
+                    items_needed
+                );
+                return new_events;
+            }
 
-        // Send request for burger
-        let request_event = RequestItemEvent::new(
-            self.id.clone(),
-            Some(vec![self.assembly_buffer_id.clone()]),
-            self.id.clone(),
-            "burger".to_string(),
-        );
-        new_events.push((Box::new(request_event), 0));
+            log::info!(
+                "[Client {}] Burger available in assembly buffer, requesting item ({} outstanding, {} needed)",
+                self.id,
+                self.outstanding_requests,
+                items_needed
+            );
+
+            // Send request for burger
+            let request_event = RequestItemEvent::new(
+                self.id.clone(),
+                Some(vec![self.assembly_buffer_id.clone()]),
+                self.id.clone(),
+                "burger".to_string(),
+            );
+            new_events.push((Box::new(request_event), 0));
+            
+            // Increment outstanding requests
+            self.outstanding_requests += 1;
+        }
 
         new_events
     }
@@ -212,13 +238,19 @@ impl Client {
                 order.remaining_quantity -= 1;
                 self.stats.total_burgers_received += 1;
                 
+                // Decrement outstanding requests since we received an item
+                if self.outstanding_requests > 0 {
+                    self.outstanding_requests -= 1;
+                }
+                
                 log::info!(
-                    "[Client {}] Received burger {}. Order {} now has {}/{} burgers remaining",
+                    "[Client {}] Received burger {}. Order {} now has {}/{} burgers remaining ({} requests outstanding)",
                     self.id,
                     item_id,
                     order.order_id,
                     order.remaining_quantity,
-                    order.original_quantity
+                    order.original_quantity,
+                    self.outstanding_requests
                 );
 
                 // Check if order is complete
@@ -263,6 +295,9 @@ impl Client {
                 // Clear pending order
                 self.pending_order = None;
                 self.stats.total_fulfilled += 1;
+                
+                // Reset outstanding requests
+                self.outstanding_requests = 0;
                 
                 log::info!("[Client {}] Order {} completed and cleared", self.id, order_id);
                 
