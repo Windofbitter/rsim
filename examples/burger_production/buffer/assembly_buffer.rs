@@ -1,6 +1,12 @@
-use crate::core::component::{BaseComponent, ComponentState};
-use crate::core::event::{ComponentValue, Event, EventType};
-use std::collections::{HashMap, VecDeque};
+use rsim::core::component::BaseComponent;
+use rsim::core::event::Event;
+use rsim::core::types::ComponentValue;
+use std::collections::VecDeque;
+
+use crate::events::{
+    BufferFullEvent, BufferSpaceAvailableEvent, ItemAddedEvent, ItemDispatchedEvent,
+    ItemDroppedEvent,
+};
 
 pub struct AssemblyBuffer {
     component_id: String,
@@ -42,146 +48,96 @@ impl AssemblyBuffer {
 }
 
 impl BaseComponent for AssemblyBuffer {
-    fn get_id(&self) -> &str {
+    fn component_id(&self) -> &str {
         &self.component_id
     }
 
-    fn get_state(&self) -> ComponentState {
-        let mut state_data = HashMap::new();
-        state_data.insert("capacity".to_string(), ComponentValue::Int(self.capacity as i64));
-        state_data.insert("current_count".to_string(), ComponentValue::Int(self.items.len() as i64));
-        state_data.insert("is_full".to_string(), ComponentValue::Bool(self.is_full()));
-        
-        let items_list = self.items.iter()
-            .map(|id| id.clone())
-            .collect::<Vec<String>>()
-            .join(", ");
-        state_data.insert("items".to_string(), ComponentValue::String(items_list));
-
-        ComponentState {
-            component_id: self.component_id.clone(),
-            state_data,
-        }
+    fn subscriptions(&self) -> &[&'static str] {
+        &["BurgerReadyEvent", "RequestItemEvent"]
     }
 
-    fn get_subscribed_events(&self) -> Vec<EventType> {
-        vec![
-            "BurgerReadyEvent".to_string(),
-            "RequestItemEvent".to_string(),
-        ]
-    }
-
-    fn react_atomic(&mut self, event: &Event) -> Vec<Event> {
+    fn react_atomic(&mut self, events: Vec<Box<dyn Event>>) -> Vec<(Box<dyn Event>, u64)> {
         let mut response_events = Vec::new();
-        let current_time = event.get_scheduled_time();
 
-        match event.get_event_type() {
-            "BurgerReadyEvent" => {
-                if let Some(ComponentValue::String(item_id)) = event.get_data().get("item_id") {
-                    if self.add_item(item_id.clone()) {
-                        // Successfully added burger
-                        let mut event_data = HashMap::new();
-                        event_data.insert("buffer_type".to_string(), ComponentValue::String("assembly".to_string()));
-                        event_data.insert("item_id".to_string(), ComponentValue::String(item_id.clone()));
-                        event_data.insert("current_count".to_string(), ComponentValue::Int(self.items.len() as i64));
-
-                        let item_added_event = Event::new(
-                            "ItemAddedEvent".to_string(),
-                            event_data,
-                            current_time,
-                            self.component_id.clone(),
-                            None, // Broadcast to all subscribers
-                        );
-                        response_events.push(item_added_event);
-
-                        // Check if we just became full
-                        if self.is_full() && !self.was_full {
-                            self.was_full = true;
-                            let mut full_data = HashMap::new();
-                            full_data.insert("buffer_type".to_string(), ComponentValue::String("assembly".to_string()));
-
-                            let buffer_full_event = Event::new(
-                                "BufferFullEvent".to_string(),
-                                full_data,
-                                current_time,
+        for event in events {
+            match event.event_type() {
+                "BurgerReadyEvent" => {
+                    if let Some(ComponentValue::String(item_id)) = event.data().get("item_id") {
+                        if self.add_item(item_id.clone()) {
+                            // Successfully added burger
+                            let item_added = ItemAddedEvent::new(
                                 self.component_id.clone(),
-                                Some(event.get_source_id().to_string()), // Send to assembler
+                                None, // Broadcast
+                                "assembly".to_string(),
+                                item_id.clone(),
+                                self.items.len() as i32,
                             );
-                            response_events.push(buffer_full_event);
-                        }
-                    } else {
-                        // Buffer is full, drop the item
-                        let mut drop_data = HashMap::new();
-                        drop_data.insert("item_type".to_string(), ComponentValue::String("burger".to_string()));
-                        drop_data.insert("item_id".to_string(), ComponentValue::String(item_id.clone()));
-                        drop_data.insert("reason".to_string(), ComponentValue::String("assembly_buffer_full".to_string()));
+                            response_events.push((Box::new(item_added) as Box<dyn Event>, 0));
 
-                        let item_dropped_event = Event::new(
-                            "ItemDroppedEvent".to_string(),
-                            drop_data,
-                            current_time,
-                            self.component_id.clone(),
-                            Some(event.get_source_id().to_string()), // Send to assembler
-                        );
-                        response_events.push(item_dropped_event);
+                            // Check if we just became full
+                            if self.is_full() && !self.was_full {
+                                self.was_full = true;
+                                let buffer_full = BufferFullEvent::new(
+                                    self.component_id.clone(),
+                                    Some(vec![event.source_id().to_string()]), // Send to assembler
+                                    "assembly".to_string(),
+                                );
+                                response_events.push((Box::new(buffer_full) as Box<dyn Event>, 0));
+                            }
+                        } else {
+                            // Buffer is full, drop the item
+                            let item_dropped = ItemDroppedEvent::new(
+                                self.component_id.clone(),
+                                Some(vec![event.source_id().to_string()]), // Send to assembler
+                                "burger".to_string(),
+                                item_id.clone(),
+                                "assembly_buffer_full".to_string(),
+                            );
+                            response_events.push((Box::new(item_dropped) as Box<dyn Event>, 0));
+                        }
                     }
                 }
-            }
-            "RequestItemEvent" => {
-                // Only respond to requests for burgers
-                if let Some(ComponentValue::String(requester_id)) = event.get_data().get("requester_id") {
-                    let was_full_before = self.is_full();
-                    
-                    if let Some(item_id) = self.remove_item() {
-                        // Successfully removed item
-                        let mut dispatch_data = HashMap::new();
-                        dispatch_data.insert("item_type".to_string(), ComponentValue::String("burger".to_string()));
-                        dispatch_data.insert("item_id".to_string(), ComponentValue::String(item_id));
-                        dispatch_data.insert("success".to_string(), ComponentValue::Bool(true));
-
-                        let item_dispatched_event = Event::new(
-                            "ItemDispatchedEvent".to_string(),
-                            dispatch_data,
-                            current_time,
-                            self.component_id.clone(),
-                            Some(requester_id.clone()),
-                        );
-                        response_events.push(item_dispatched_event);
-
-                        // If we were full and now have space, notify assembler
-                        if was_full_before && self.has_space() {
-                            self.was_full = false;
-                            let mut space_data = HashMap::new();
-                            space_data.insert("buffer_type".to_string(), ComponentValue::String("assembly".to_string()));
-
-                            let space_available_event = Event::new(
-                                "BufferSpaceAvailableEvent".to_string(),
-                                space_data,
-                                current_time,
+                "RequestItemEvent" => {
+                    // Only respond to requests for burgers
+                    if let Some(ComponentValue::String(requester_id)) = event.data().get("requester_id") {
+                        let was_full_before = self.is_full();
+                        
+                        if let Some(item_id) = self.remove_item() {
+                            // Successfully removed item
+                            let item_dispatched = ItemDispatchedEvent::new(
                                 self.component_id.clone(),
-                                None, // Broadcast to all potential producers
+                                requester_id.clone(),
+                                "burger".to_string(),
+                                item_id,
+                                true,
                             );
-                            response_events.push(space_available_event);
-                        }
-                    } else {
-                        // No item available
-                        let mut dispatch_data = HashMap::new();
-                        dispatch_data.insert("item_type".to_string(), ComponentValue::String("burger".to_string()));
-                        dispatch_data.insert("item_id".to_string(), ComponentValue::String("".to_string()));
-                        dispatch_data.insert("success".to_string(), ComponentValue::Bool(false));
+                            response_events.push((Box::new(item_dispatched) as Box<dyn Event>, 0));
 
-                        let item_dispatched_event = Event::new(
-                            "ItemDispatchedEvent".to_string(),
-                            dispatch_data,
-                            current_time,
-                            self.component_id.clone(),
-                            Some(requester_id.clone()),
-                        );
-                        response_events.push(item_dispatched_event);
+                            // If we were full and now have space, notify assembler
+                            if was_full_before && self.has_space() {
+                                self.was_full = false;
+                                let space_available = BufferSpaceAvailableEvent::new(
+                                    self.component_id.clone(),
+                                    None, // Broadcast to all potential producers
+                                    "assembly".to_string(),
+                                );
+                                response_events.push((Box::new(space_available) as Box<dyn Event>, 0));
+                            }
+                        } else {
+                            // No item available
+                            let item_dispatched = ItemDispatchedEvent::new(
+                                self.component_id.clone(),
+                                requester_id.clone(),
+                                "burger".to_string(),
+                                String::new(),
+                                false,
+                            );
+                            response_events.push((Box::new(item_dispatched) as Box<dyn Event>, 0));
+                        }
                     }
                 }
+                _ => {}
             }
-            _ => {}
         }
 
         response_events
