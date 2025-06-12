@@ -125,7 +125,7 @@ fn main() {
 
     // Schedule first order generation
     let first_order =
-        GenerateOrderEvent::new("system".to_string(), Some(vec!["client".to_string()]));
+        GenerateOrderEvent::new("system".to_string(), None); // Broadcast to all subscribed components
     engine.schedule_initial_event(
         Box::new(first_order),
         config.order_generation.order_interval_cycles,

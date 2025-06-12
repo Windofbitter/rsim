@@ -344,7 +344,7 @@ impl Client {
                     // Generate OrderFulfilledEvent
                     let fulfilled_event = OrderFulfilledEvent::new(
                         self.id.clone(),
-                        Some(vec![self.id.clone()]), // Self-targeted
+                        None, // Broadcast to all subscribed components
                         order_id.clone(),
                     );
                     new_events.push((Box::new(fulfilled_event), 0));
@@ -391,7 +391,7 @@ impl Client {
 
                 // Schedule next order generation
                 let next_order_event =
-                    GenerateOrderEvent::new(self.id.clone(), Some(vec![self.id.clone()]));
+                    GenerateOrderEvent::new(self.id.clone(), None); // Broadcast to all subscribed components
                 new_events.push((Box::new(next_order_event), self.order_interval));
 
                 log::info!(
