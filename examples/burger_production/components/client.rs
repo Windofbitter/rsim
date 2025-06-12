@@ -27,7 +27,6 @@ struct PendingOrder {
     order_id: String,
     original_quantity: u32,
     remaining_quantity: u32,
-    created_at: u64,
 }
 
 /// Order statistics
@@ -57,9 +56,6 @@ pub struct Client {
     
     // RNG for reproducible simulations
     rng: StdRng,
-    
-    // Simulation time tracking
-    current_time: u64,
 }
 
 impl Client {
@@ -94,12 +90,11 @@ impl Client {
                 total_burgers_received: 0,
             },
             rng: StdRng::seed_from_u64(seed),
-            current_time: 0,
         }
     }
 
     /// Handle order generation
-    fn handle_generate_order(&mut self, current_time: u64) -> Vec<(Box<dyn Event>, u64)> {
+    fn handle_generate_order(&mut self) -> Vec<(Box<dyn Event>, u64)> {
         let mut new_events = Vec::new();
         
         // Only generate a new order if no order is pending
@@ -122,17 +117,15 @@ impl Client {
             order_id: order_id.clone(),
             original_quantity: quantity,
             remaining_quantity: quantity,
-            created_at: current_time,
         });
         
         self.stats.total_generated += 1;
         
         log::info!(
-            "[Client {}] Generated order {} for {} burgers at time {}",
+            "[Client {}] Generated order {} for {} burgers",
             self.id,
             order_id,
-            quantity,
-            current_time
+            quantity
         );
 
         // In OrderBased mode, send PlaceOrderEvent to trigger production
@@ -255,7 +248,6 @@ impl Client {
 
                 // Check if order is complete
                 if order.remaining_quantity == 0 {
-                    let fulfillment_time = self.current_time - order.created_at;
                     let order_id = order.order_id.clone();
                     
                     // Generate OrderFulfilledEvent
@@ -263,15 +255,13 @@ impl Client {
                         self.id.clone(),
                         Some(vec![self.id.clone()]), // Self-targeted
                         order_id.clone(),
-                        fulfillment_time,
                     );
                     new_events.push((Box::new(fulfilled_event), 0));
                     
                     log::info!(
-                        "[Client {}] Order {} fulfilled in {} cycles",
+                        "[Client {}] Order {} fulfilled",
                         self.id,
-                        order_id,
-                        fulfillment_time
+                        order_id
                     );
                 }
             }
@@ -346,9 +336,6 @@ impl BaseComponent for Client {
         let mut new_events = Vec::new();
 
         for event in events {
-            // Update current time based on event timing (approximation)
-            self.current_time += 1;
-
             match event.event_type() {
                 "GenerateOrderEvent" => {
                     // Check if this event is for us
@@ -357,7 +344,7 @@ impl BaseComponent for Client {
                             continue;
                         }
                     }
-                    let mut order_events = self.handle_generate_order(self.current_time);
+                    let mut order_events = self.handle_generate_order();
                     new_events.append(&mut order_events);
                 }
                 "ItemAddedEvent" => {

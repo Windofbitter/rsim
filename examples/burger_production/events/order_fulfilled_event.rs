@@ -8,7 +8,6 @@ pub struct OrderFulfilledEvent {
     source_id: ComponentId,
     target_ids: Option<Vec<ComponentId>>,
     order_id: String,
-    fulfillment_time: u64,
 }
 
 impl OrderFulfilledEvent {
@@ -16,14 +15,12 @@ impl OrderFulfilledEvent {
         source_id: ComponentId,
         target_ids: Option<Vec<ComponentId>>,
         order_id: String,
-        fulfillment_time: u64,
     ) -> Self {
         Self {
             id: format!("order_fulfilled_{}", uuid::Uuid::new_v4()),
             source_id,
             target_ids,
             order_id,
-            fulfillment_time,
         }
     }
 
@@ -31,9 +28,6 @@ impl OrderFulfilledEvent {
         &self.order_id
     }
 
-    pub fn fulfillment_time(&self) -> u64 {
-        self.fulfillment_time
-    }
 }
 
 impl Event for OrderFulfilledEvent {
@@ -56,7 +50,6 @@ impl Event for OrderFulfilledEvent {
     fn data(&self) -> HashMap<String, ComponentValue> {
         let mut data = HashMap::new();
         data.insert("order_id".to_string(), ComponentValue::String(self.order_id.clone()));
-        data.insert("fulfillment_time".to_string(), ComponentValue::Int(self.fulfillment_time as i64));
         data
     }
 
