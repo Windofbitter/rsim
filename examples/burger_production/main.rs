@@ -126,11 +126,51 @@ fn main() {
 
     // Note: Event logging not available in this SimulationEngine version
 
-    // Run simulation
+    // Run simulation with detailed logging
     println!("Starting simulation...\n");
     let start_time = std::time::Instant::now();
     
-    let final_cycle = engine.run().unwrap();
+    println!("Initial events scheduled:");
+    println!("- Production triggers at cycle 1");
+    println!("- First order generation at cycle {}", config.order_generation.order_interval_cycles);
+    println!();
+    
+    // Run simulation step by step for first 20 cycles to see what happens
+    let mut cycle_count = 0;
+    println!("=== DETAILED SIMULATION TRACE ===");
+    
+    while engine.has_pending_events() && cycle_count < 150 {
+        let current_cycle = engine.current_cycle();
+        let has_events_before = engine.has_pending_events();
+        
+        println!("Before step {}: Cycle {}, Has events: {}", cycle_count + 1, current_cycle, has_events_before);
+        
+        if !engine.step().unwrap() {
+            println!("Step returned false - no more events");
+            break;
+        }
+        
+        let new_cycle = engine.current_cycle();
+        let has_events_after = engine.has_pending_events();
+        
+        println!("After step {}: Cycle {}, Has events: {}", cycle_count + 1, new_cycle, has_events_after);
+        println!();
+        
+        cycle_count += 1;
+        
+        if new_cycle >= config.simulation_duration_cycles {
+            println!("Reached max cycles: {}", config.simulation_duration_cycles);
+            break;
+        }
+    }
+    
+    // Finish remaining simulation
+    let final_cycle = if engine.has_pending_events() {
+        println!("Continuing simulation to completion...");
+        engine.run().unwrap()
+    } else {
+        engine.current_cycle()
+    };
     
     let elapsed = start_time.elapsed();
     

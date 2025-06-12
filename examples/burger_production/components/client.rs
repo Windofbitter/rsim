@@ -116,12 +116,7 @@ impl Client {
         
         self.stats.total_generated += 1;
         
-        log::info!(
-            "[Client {}] Generated order {} for {} burgers",
-            self.id,
-            order_id,
-            quantity
-        );
+        println!("[CLIENT {}] Generated order {} for {} burgers", self.id, order_id, quantity);
 
         // In OrderBased mode, send PlaceOrderEvent to trigger production
         if self.production_mode == ProductionMode::OrderBased {
@@ -133,6 +128,17 @@ impl Client {
             );
             new_events.push((Box::new(place_order_event), 0));
             log::info!("[Client {}] Sent PlaceOrderEvent for {} items", self.id, quantity);
+        } else if self.production_mode == ProductionMode::BufferBased {
+            // In BufferBased mode, try to request available items, but also wait for ItemAddedEvent
+            println!("[CLIENT {}] BufferBased mode: trying to request existing items", self.id);
+            let request_event = RequestItemEvent::new(
+                self.id.clone(),
+                Some(vec![self.assembly_buffer_id.clone()]),
+                self.id.clone(),
+                "burger".to_string(),
+            );
+            new_events.push((Box::new(request_event), 0));
+            self.outstanding_requests += 1;
         }
 
         new_events
@@ -142,8 +148,11 @@ impl Client {
     fn handle_item_added(&mut self, event: &dyn Event) -> Vec<(Box<dyn Event>, u64)> {
         let mut new_events: Vec<(Box<dyn Event>, u64)> = Vec::new();
         
+        println!("[CLIENT {}] Processing ItemAddedEvent, has pending order: {}", self.id, self.pending_order.is_some());
+        
         // Only process if we have a pending order
         if self.pending_order.is_none() {
+            println!("[CLIENT {}] No pending order, ignoring ItemAddedEvent", self.id);
             return new_events;
         }
 
@@ -152,8 +161,11 @@ impl Client {
             .and_then(|v| if let ComponentValue::String(s) = v { Some(s.as_str()) } else { None })
             .unwrap_or("unknown");
 
+        println!("[CLIENT {}] ItemAddedEvent from buffer type: '{}'", self.id, buffer_type);
+
         // Only process items from assembly buffer (burgers)
         if buffer_type != "assembly" {
+            println!("[CLIENT {}] Ignoring ItemAddedEvent from buffer type: '{}'", self.id, buffer_type);
             return new_events;
         }
 
@@ -172,12 +184,7 @@ impl Client {
                 return new_events;
             }
 
-            log::info!(
-                "[Client {}] Burger available in assembly buffer, requesting item ({} outstanding, {} needed)",
-                self.id,
-                self.outstanding_requests,
-                items_needed
-            );
+            println!("[CLIENT {}] Burger available in assembly buffer, requesting item ({} outstanding, {} needed)", self.id, self.outstanding_requests, items_needed);
 
             // Send request for burger
             let request_event = RequestItemEvent::new(
@@ -199,6 +206,8 @@ impl Client {
     fn handle_item_dispatched(&mut self, event: &dyn Event) -> Vec<(Box<dyn Event>, u64)> {
         let mut new_events: Vec<(Box<dyn Event>, u64)> = Vec::new();
         
+        println!("[CLIENT {}] Processing ItemDispatchedEvent", self.id);
+        
         let data = event.data();
         let item_type = data.get("item_type")
             .and_then(|v| if let ComponentValue::String(s) = v { Some(s.as_str()) } else { None })
@@ -210,13 +219,29 @@ impl Client {
             .and_then(|v| if let ComponentValue::Bool(b) = v { Some(*b) } else { None })
             .unwrap_or(false);
 
+        println!("[CLIENT {}] ItemDispatchedEvent: item_type='{}', item_id='{}', success={}", self.id, item_type, item_id, success);
+
         // Only process burger items
         if item_type != "burger" {
+            println!("[CLIENT {}] Ignoring non-burger item type: '{}'", self.id, item_type);
             return new_events;
         }
 
         if !success {
-            log::warn!("[Client {}] Failed to receive burger {}", self.id, item_id);
+            println!("[CLIENT {}] Failed to receive burger {}, retrying in 2 cycles", self.id, item_id);
+            // Decrement outstanding requests since this one failed
+            if self.outstanding_requests > 0 {
+                self.outstanding_requests -= 1;
+            }
+            // Retry requesting an item in 2 cycles
+            let retry_request = RequestItemEvent::new(
+                self.id.clone(),
+                Some(vec![self.assembly_buffer_id.clone()]),
+                self.id.clone(),
+                "burger".to_string(),
+            );
+            new_events.push((Box::new(retry_request), 2));
+            self.outstanding_requests += 1;
             return new_events;
         }
 
@@ -330,30 +355,42 @@ impl BaseComponent for Client {
     fn react_atomic(&mut self, events: Vec<Box<dyn Event>>) -> Vec<(Box<dyn Event>, u64)> {
         let mut new_events: Vec<(Box<dyn Event>, u64)> = Vec::new();
 
+        println!("[CLIENT {}] Processing {} events", self.id, events.len());
+
         for event in events {
             match event.event_type() {
                 "GenerateOrderEvent" => {
+                    println!("[CLIENT {}] Received GenerateOrderEvent", self.id);
                     // Check if this event is for us
                     if let Some(target_ids) = event.target_ids() {
                         if !target_ids.contains(&self.id) {
+                            println!("[CLIENT {}] GenerateOrderEvent not for us", self.id);
                             continue;
                         }
                     }
+                    println!("[CLIENT {}] Generating order...", self.id);
                     let mut order_events = self.handle_generate_order();
+                    println!("[CLIENT {}] Generated {} events from order", self.id, order_events.len());
                     new_events.append(&mut order_events);
                 }
                 "ItemAddedEvent" => {
+                    println!("[CLIENT {}] Received ItemAddedEvent", self.id);
                     let mut item_events = self.handle_item_added(event.as_ref());
+                    println!("[CLIENT {}] Generated {} events from ItemAddedEvent", self.id, item_events.len());
                     new_events.append(&mut item_events);
                 }
                 "ItemDispatchedEvent" => {
+                    println!("[CLIENT {}] Received ItemDispatchedEvent", self.id);
                     // Check if this event is for us
                     if let Some(target_ids) = event.target_ids() {
                         if !target_ids.contains(&self.id) {
+                            println!("[CLIENT {}] ItemDispatchedEvent not for us", self.id);
                             continue;
                         }
                     }
+                    println!("[CLIENT {}] Processing ItemDispatchedEvent", self.id);
                     let mut dispatch_events = self.handle_item_dispatched(event.as_ref());
+                    println!("[CLIENT {}] Generated {} events from ItemDispatchedEvent", self.id, dispatch_events.len());
                     new_events.append(&mut dispatch_events);
                 }
                 "OrderFulfilledEvent" => {

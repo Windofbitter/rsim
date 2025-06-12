@@ -96,6 +96,8 @@ impl BaseComponent for Fryer {
 
     fn react_atomic(&mut self, events: Vec<Box<dyn Event>>) -> Vec<(Box<dyn Event>, u64)> {
         let mut new_events: Vec<(Box<dyn Event>, u64)> = Vec::new();
+        
+        println!("[FRYER {}] Processing {} events", self.id, events.len());
 
         for event in events {
             match event.event_type() {
