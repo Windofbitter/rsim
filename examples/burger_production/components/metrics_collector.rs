@@ -70,7 +70,7 @@ impl MetricsCollector {
                 "PlaceOrderEvent", 
                 "OrderFulfilledEvent",
                 "ItemDispatchedEvent", // To track when burgers are delivered to client
-                "CycleUpdateEvent", // To synchronize with SimulationEngine cycle
+                // Note: CycleUpdateEvent removed - now using observer pattern
             ],
             pending_orders: HashMap::new(),
             fulfilled_orders: Vec::new(),
@@ -223,6 +223,16 @@ impl MetricsCollector {
             log::debug!("[MetricsCollector {}] Cycle updated to {}", self.id, self.current_cycle);
         }
     }
+
+    /// Update cycle directly (used by observer pattern)
+    pub fn update_cycle(&mut self, new_cycle: u64) {
+        if new_cycle > self.current_cycle {
+            // Reset per-cycle counters when cycle advances
+            self.orders_fulfilled_this_cycle = 0;
+        }
+        self.current_cycle = new_cycle;
+        log::debug!("[MetricsCollector {}] Cycle updated to {} (observer)", self.id, self.current_cycle);
+    }
     
     
     /// Calculate final metrics for the simulation
@@ -335,10 +345,7 @@ impl BaseComponent for MetricsCollector {
                     log::debug!("[MetricsCollector {}] Received ItemDispatchedEvent (ignoring)", self.id);
                     // Just track that we received it but don't process
                 }
-                "CycleUpdateEvent" => {
-                    log::debug!("[MetricsCollector {}] Received CycleUpdateEvent", self.id);
-                    self.handle_cycle_update(event.as_ref());
-                }
+                // Note: CycleUpdateEvent handling removed - now using observer pattern
                 _ => {
                     // Ignore other event types
                     log::debug!("[MetricsCollector {}] Ignoring event type: {}", self.id, event.event_type());

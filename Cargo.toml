@@ -14,7 +14,3 @@ serde = { version = "1.0", features = ["derive"] }
 [[bin]]
 name = "burger_simulation"
 path = "examples/burger_production/main.rs"
-
-[[bin]]
-name = "burger_comparison"
-path = "examples/burger_production/compare_modes.rs"
