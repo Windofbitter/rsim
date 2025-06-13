@@ -70,7 +70,7 @@ impl MetricsCollector {
                 "PlaceOrderEvent", 
                 "OrderFulfilledEvent",
                 "ItemDispatchedEvent", // To track when burgers are delivered to client
-                // Note: CycleUpdateEvent removed - now using observer pattern
+                "CycleAdvancedEvent", // To track simulation cycle progression
             ],
             pending_orders: HashMap::new(),
             fulfilled_orders: Vec::new(),
@@ -134,6 +134,29 @@ impl MetricsCollector {
             order_id,
             self.current_cycle
         );
+    }
+    
+    /// Handle cycle advancement event  
+    fn handle_cycle_advanced(&mut self, event: &dyn Event) {
+        let data = event.data();
+        let new_cycle = data
+            .get("new_cycle")
+            .and_then(|v| {
+                if let ComponentValue::Int(cycle) = v {
+                    Some(*cycle as u64)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(self.current_cycle);
+            
+        if new_cycle > self.current_cycle {
+            // Reset per-cycle counters when cycle advances
+            self.orders_fulfilled_this_cycle = 0;
+        }
+        
+        self.current_cycle = new_cycle;
+        log::debug!("[MetricsCollector {}] Cycle updated to {} (via event)", self.id, self.current_cycle);
     }
     
     /// Handle order fulfillment event
@@ -210,29 +233,7 @@ impl MetricsCollector {
         }
     }
     
-    /// Handle cycle update event
-    fn handle_cycle_update(&mut self, event: &dyn Event) {
-        let data = event.data();
-        if let Some(ComponentValue::Int(cycle)) = data.get("cycle") {
-            let new_cycle = *cycle as u64;
-            if new_cycle > self.current_cycle {
-                // Reset per-cycle counters when cycle advances
-                self.orders_fulfilled_this_cycle = 0;
-            }
-            self.current_cycle = new_cycle;
-            log::debug!("[MetricsCollector {}] Cycle updated to {}", self.id, self.current_cycle);
-        }
-    }
 
-    /// Update cycle directly (used by observer pattern)
-    pub fn update_cycle(&mut self, new_cycle: u64) {
-        if new_cycle > self.current_cycle {
-            // Reset per-cycle counters when cycle advances
-            self.orders_fulfilled_this_cycle = 0;
-        }
-        self.current_cycle = new_cycle;
-        log::debug!("[MetricsCollector {}] Cycle updated to {} (observer)", self.id, self.current_cycle);
-    }
     
     
     /// Calculate final metrics for the simulation
@@ -320,7 +321,7 @@ impl BaseComponent for MetricsCollector {
     }
     
     fn react_atomic(&mut self, events: Vec<Box<dyn Event>>) -> Vec<(Box<dyn Event>, u64)> {
-        // Cycle tracking is now handled via CycleUpdateEvent
+        // Cycle tracking is now handled via Observer pattern
         if !events.is_empty() {
             log::debug!("[MetricsCollector {}] Processing {} events at cycle {}", 
                 self.id, events.len(), self.current_cycle);
@@ -345,7 +346,10 @@ impl BaseComponent for MetricsCollector {
                     log::debug!("[MetricsCollector {}] Received ItemDispatchedEvent (ignoring)", self.id);
                     // Just track that we received it but don't process
                 }
-                // Note: CycleUpdateEvent handling removed - now using observer pattern
+                "CycleAdvancedEvent" => {
+                    log::debug!("[MetricsCollector {}] Received CycleAdvancedEvent", self.id);
+                    self.handle_cycle_advanced(event.as_ref());
+                }
                 _ => {
                     // Ignore other event types
                     log::debug!("[MetricsCollector {}] Ignoring event type: {}", self.id, event.event_type());

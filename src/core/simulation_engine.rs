@@ -1,24 +1,14 @@
 use super::component::BaseComponent;
-use super::event::Event;
+use super::event::{Event, CycleAdvancedEvent};
 use super::event_manager::EventManager;
 use super::event_scheduler::EventScheduler;
 use log::debug;
 use std::collections::HashMap;
-
-/// Observer trait for simulation events
-pub trait SimulationObserver {
-    /// Called when the simulation cycle advances
-    fn on_cycle_advance(&mut self, old_cycle: u64, new_cycle: u64);
-    
-    /// Called when a simulation step completes
-    fn on_step_complete(&mut self, cycle: u64, events_processed: usize);
-}
 pub struct SimulationEngine {
     event_manager: EventManager,
     scheduler: EventScheduler,
     current_cycle: u64,
     max_cycles: Option<u64>,
-    observers: Vec<Box<dyn SimulationObserver>>,
 }
 
 impl SimulationEngine {
@@ -29,32 +19,12 @@ impl SimulationEngine {
             scheduler: EventScheduler::new(),
             current_cycle: 0,
             max_cycles,
-            observers: Vec::new(),
         }
     }
 
     /// Register a component with the EventManager
     pub fn register_component(&mut self, component: Box<dyn BaseComponent>) -> Result<(), String> {
         self.event_manager.register_component(component)
-    }
-
-    /// Add an observer to the simulation
-    pub fn add_observer(&mut self, observer: Box<dyn SimulationObserver>) {
-        self.observers.push(observer);
-    }
-
-    /// Notify all observers of a cycle advance
-    fn notify_cycle_advance(&mut self, old_cycle: u64, new_cycle: u64) {
-        for observer in &mut self.observers {
-            observer.on_cycle_advance(old_cycle, new_cycle);
-        }
-    }
-
-    /// Notify all observers of step completion
-    fn notify_step_complete(&mut self, cycle: u64, events_processed: usize) {
-        for observer in &mut self.observers {
-            observer.on_step_complete(cycle, events_processed);
-        }
     }
 
     /// Schedule an initial event to start the simulation
@@ -89,15 +59,20 @@ impl SimulationEngine {
         let old_cycle = self.current_cycle;
         self.current_cycle += next_delay;
 
-        // Notify observers of cycle advance
+        // Emit cycle advance event
         if old_cycle != self.current_cycle {
-            self.notify_cycle_advance(old_cycle, self.current_cycle);
+            let cycle_event = CycleAdvancedEvent::new(
+                "simulation_engine".to_string(),
+                None, // Broadcast to all subscribers
+                old_cycle,
+                self.current_cycle,
+            );
+            self.scheduler.schedule_event(Box::new(cycle_event), 0);
         }
 
         debug!("=== Simulation Cycle {} ===", self.current_cycle);
 
         let events = self.scheduler.get_next_time_events();
-        let events_count = events.len();
 
         let mut events_by_component = HashMap::new();
 
@@ -121,9 +96,6 @@ impl SimulationEngine {
                 }
             }
         }
-
-        // Notify observers of step completion
-        self.notify_step_complete(self.current_cycle, events_count);
 
         Ok(self.has_pending_events())
     }

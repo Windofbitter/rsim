@@ -6,33 +6,11 @@ use burger_production::{
     config::ProductionMode, Assembler, AssemblyBuffer, Baker, BurgerSimulationConfig, Client,
     CookedBreadBuffer, FriedMeatBuffer, Fryer, GenerateOrderEvent, MetricsCollector, TriggerProductionEvent,
 };
-use rsim::core::simulation_engine::{SimulationEngine, SimulationObserver};
+use rsim::core::simulation_engine::SimulationEngine;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::sync::{Arc, Mutex};
 
-// Observer that bridges SimulationEngine to MetricsCollector
-struct MetricsObserver {
-    metrics_collector: Arc<Mutex<MetricsCollector>>,
-}
-
-impl MetricsObserver {
-    fn new(metrics_collector: Arc<Mutex<MetricsCollector>>) -> Self {
-        Self { metrics_collector }
-    }
-}
-
-impl SimulationObserver for MetricsObserver {
-    fn on_cycle_advance(&mut self, _old_cycle: u64, new_cycle: u64) {
-        if let Ok(mut collector) = self.metrics_collector.lock() {
-            collector.update_cycle(new_cycle);
-        }
-    }
-    
-    fn on_step_complete(&mut self, _cycle: u64, _events_processed: usize) {
-        // Not needed for current metrics tracking
-    }
-}
 
 // Custom logger that writes to both console and file
 struct FileLogger {
@@ -158,8 +136,8 @@ fn run_simulation(mode: ProductionMode, logger: &FileLogger) -> Result<(), Box<d
         config.random_seed.unwrap_or(42),
     );
 
-    // Create metrics collector wrapped in Arc<Mutex<>>
-    let metrics_collector = Arc::new(Mutex::new(MetricsCollector::new("metrics_collector".to_string())));
+    // Create metrics collector 
+    let metrics_collector = MetricsCollector::new("metrics_collector".to_string());
 
     // Register all components
     engine.register_component(Box::new(fryer)).unwrap();
@@ -175,19 +153,7 @@ fn run_simulation(mode: ProductionMode, logger: &FileLogger) -> Result<(), Box<d
         .register_component(Box::new(assembly_buffer))
         .unwrap();
     engine.register_component(Box::new(client)).unwrap();
-    
-    // Register metrics collector - need to extract from Arc<Mutex<>> 
-    // We'll handle this differently with the observer pattern
-    let metrics_collector_component = {
-        // We need to clone the metrics collector to register it as a component
-        // For now, let's create a separate one for the component registration
-        MetricsCollector::new("metrics_collector".to_string())
-    };
-    engine.register_component(Box::new(metrics_collector_component)).unwrap();
-    
-    // Create and register the metrics observer
-    let metrics_observer = MetricsObserver::new(metrics_collector.clone());
-    engine.add_observer(Box::new(metrics_observer));
+    engine.register_component(Box::new(metrics_collector)).unwrap();
 
     // Schedule initial events
     if config.production_mode == ProductionMode::BufferBased {
@@ -241,10 +207,7 @@ fn run_simulation(mode: ProductionMode, logger: &FileLogger) -> Result<(), Box<d
     logger.write_line(&format!("  Real time elapsed: {:.2?}", elapsed))?;
     logger.write_line("")?;
 
-    // Print final metrics from our observer-tracked metrics collector
-    if let Ok(collector) = metrics_collector.lock() {
-        collector.print_metrics_summary();
-    }
+    // Final metrics will be printed automatically when MetricsCollector is dropped
     
     Ok(())
 }
