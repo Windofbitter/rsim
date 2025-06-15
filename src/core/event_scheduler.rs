@@ -6,7 +6,7 @@ use std::collections::BinaryHeap;
 pub struct ScheduledEvent {
     pub delay_cycles: u64,
     pub sequence_num: u64,
-    pub event: Box<dyn Event>,
+    pub event: Box<dyn Event + Send + Sync>,
 }
 
 impl PartialEq for ScheduledEvent {
@@ -48,7 +48,7 @@ impl EventScheduler {
     }
 
     /// Schedule an event to execute after the specified delay
-    pub fn schedule_event(&mut self, event: Box<dyn Event>, delay_cycles: u64) {
+    pub fn schedule_event(&mut self, event: Box<dyn Event + Send + Sync>, delay_cycles: u64) {
         let scheduled_event = ScheduledEvent {
             delay_cycles,
             sequence_num: self.sequence_counter,
@@ -60,7 +60,7 @@ impl EventScheduler {
     }
 
     /// Get all events scheduled for the next time step (minimum delay)
-    pub fn get_next_time_events(&mut self) -> Vec<Box<dyn Event>> {
+    pub fn get_next_time_events(&mut self) -> Vec<Box<dyn Event + Send + Sync>> {
         let mut events = Vec::new();
 
         if let Some(next_delay) = self.peek_next_delay() {
@@ -99,5 +99,21 @@ impl EventScheduler {
         for event in temp_events {
             self.event_queue.push(event);
         }
+    }
+    
+    /// Get all events scheduled for the current time (delay = 0)
+    pub fn get_current_time_events(&mut self) -> Vec<Box<dyn Event + Send + Sync>> {
+        let mut events = Vec::new();
+
+        while let Some(scheduled_event) = self.event_queue.peek() {
+            if scheduled_event.delay_cycles == 0 {
+                let scheduled_event = self.event_queue.pop().unwrap();
+                events.push(scheduled_event.event);
+            } else {
+                break;
+            }
+        }
+
+        events
     }
 }

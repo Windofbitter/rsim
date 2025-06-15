@@ -68,4 +68,14 @@ impl EventManager {
     ) -> Option<&mut Box<dyn BaseComponent>> {
         self.components.get_mut(component_id)
     }
+    
+    /// Check if a component is registered
+    pub fn has_component(&self, component_id: &ComponentId) -> bool {
+        self.components.contains_key(component_id)
+    }
+    
+    /// Get the number of registered components
+    pub fn component_count(&self) -> usize {
+        self.components.len()
+    }
 }

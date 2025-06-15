@@ -6,13 +6,13 @@ pub type EventId = String;
 
 pub type EventType = String;
 
-pub trait Event: Debug {
+pub trait Event: Debug + Send + Sync {
     fn id(&self) -> &EventId;
     fn event_type(&self) -> &str;
     fn source_id(&self) -> &ComponentId;
     fn target_ids(&self) -> Option<Vec<ComponentId>>;
     fn data(&self) -> HashMap<String, ComponentValue>;
-    fn clone_event(&self) -> Box<dyn Event>;
+    fn clone_event(&self) -> Box<dyn Event + Send + Sync>;
 }
 
 /// Core simulation lifecycle event for cycle advancement
@@ -72,7 +72,7 @@ impl Event for CycleAdvancedEvent {
         data
     }
 
-    fn clone_event(&self) -> Box<dyn Event> {
+    fn clone_event(&self) -> Box<dyn Event + Send + Sync> {
         Box::new(self.clone())
     }
 }
