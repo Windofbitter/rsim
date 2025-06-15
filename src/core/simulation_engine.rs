@@ -2,6 +2,7 @@ use super::component::BaseComponent;
 use super::event::{Event, CycleAdvancedEvent};
 use super::event_manager::EventManager;
 use super::event_scheduler::EventScheduler;
+use crate::analysis::ProfilingCollector;
 use log::debug;
 use std::collections::HashMap;
 pub struct SimulationEngine {
@@ -9,6 +10,7 @@ pub struct SimulationEngine {
     scheduler: EventScheduler,
     current_cycle: u64,
     max_cycles: Option<u64>,
+    profiler: Option<ProfilingCollector>,
 }
 
 impl SimulationEngine {
@@ -19,7 +21,49 @@ impl SimulationEngine {
             scheduler: EventScheduler::new(),
             current_cycle: 0,
             max_cycles,
+            profiler: None,
         }
+    }
+    
+    /// Create a new SimulationEngine with profiling enabled
+    pub fn with_profiling(max_cycles: Option<u64>) -> Self {
+        let mut profiler = ProfilingCollector::new();
+        profiler.enable();
+        
+        Self {
+            event_manager: EventManager::new(),
+            scheduler: EventScheduler::new(),
+            current_cycle: 0,
+            max_cycles,
+            profiler: Some(profiler),
+        }
+    }
+    
+    /// Enable profiling on this engine
+    pub fn enable_profiling(&mut self) {
+        if self.profiler.is_none() {
+            self.profiler = Some(ProfilingCollector::new());
+        }
+        if let Some(ref mut profiler) = self.profiler {
+            profiler.enable();
+        }
+    }
+    
+    /// Disable profiling on this engine
+    pub fn disable_profiling(&mut self) {
+        if let Some(ref mut profiler) = self.profiler {
+            profiler.disable();
+        }
+    }
+    
+    /// Get access to the profiling collector (if enabled)
+    pub fn profiler(&self) -> Option<&ProfilingCollector> {
+        self.profiler.as_ref()
+    }
+    
+    /// Get mutable access to the profiling collector (if enabled)
+    pub fn profiler_mut(&mut self) -> Option<&mut ProfilingCollector> {
+        self.profiler.as_mut()
     }
 
     /// Register a component with the EventManager
@@ -78,8 +122,14 @@ impl SimulationEngine {
 
         for event in events {
             let target_ids = self.event_manager.route_event(event.as_ref());
+            let source_id = event.source_id();
 
             for target_id in target_ids {
+                // Record event flow for profiling
+                if let Some(ref mut profiler) = self.profiler {
+                    profiler.record_event_flow(source_id, &target_id, event.event_type());
+                }
+                
                 events_by_component
                     .entry(target_id)
                     .or_insert_with(Vec::new)
