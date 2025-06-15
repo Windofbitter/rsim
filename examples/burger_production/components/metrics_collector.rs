@@ -320,6 +320,10 @@ impl BaseComponent for MetricsCollector {
         &self.subscriptions
     }
     
+    fn emitted_events(&self) -> &[&'static str] {
+        &[]
+    }
+
     fn react_atomic(&mut self, events: Vec<Box<dyn Event>>) -> Vec<(Box<dyn Event>, u64)> {
         // Cycle tracking is now handled via Observer pattern
         if !events.is_empty() {

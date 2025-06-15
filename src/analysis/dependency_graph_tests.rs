@@ -44,6 +44,7 @@ mod tests {
     struct TestComponent {
         id: ComponentId,
         subscriptions: Vec<&'static str>,
+        emitted_events: Vec<&'static str>,
     }
     
     impl TestComponent {
@@ -51,6 +52,15 @@ mod tests {
             Self {
                 id: id.to_string(),
                 subscriptions,
+                emitted_events: vec![],
+            }
+        }
+        
+        fn new_with_events(id: &str, subscriptions: Vec<&'static str>, emitted_events: Vec<&'static str>) -> Self {
+            Self {
+                id: id.to_string(),
+                subscriptions,
+                emitted_events,
             }
         }
     }
@@ -62,6 +72,10 @@ mod tests {
         
         fn subscriptions(&self) -> &[&'static str] {
             &self.subscriptions
+        }
+        
+        fn emitted_events(&self) -> &[&'static str] {
+            &self.emitted_events
         }
         
         fn react_atomic(&mut self, _events: Vec<Box<dyn Event>>) -> Vec<(Box<dyn Event>, u64)> {
@@ -193,5 +207,61 @@ mod tests {
         assert!(mermaid.contains("X[X]"));
         assert!(mermaid.contains("Y[Y]"));
         assert!(mermaid.contains("X -->|data (42)| Y"));
+    }
+    
+    #[test]
+    fn test_build_from_components() {
+        let mut graph = DependencyGraph::new();
+        
+        // Create test components with emitted events and subscriptions
+        let producer = Box::new(TestComponent::new_with_events(
+            "producer",
+            vec![],
+            vec!["data_ready", "status_update"]
+        )) as Box<dyn BaseComponent>;
+        
+        let consumer = Box::new(TestComponent::new_with_events(
+            "consumer",
+            vec!["data_ready"],
+            vec!["processing_complete"]
+        )) as Box<dyn BaseComponent>;
+        
+        let monitor = Box::new(TestComponent::new_with_events(
+            "monitor",
+            vec!["status_update", "processing_complete"],
+            vec![]
+        )) as Box<dyn BaseComponent>;
+        
+        let components = vec![&producer, &consumer, &monitor];
+        
+        // Build graph from components
+        graph.build_from_components(components.into_iter());
+        
+        // Verify components were added
+        assert_eq!(graph.get_component_count(), 3);
+        
+        // Verify edges were created automatically
+        // producer emits "data_ready" -> consumer subscribes to "data_ready"
+        // producer emits "status_update" -> monitor subscribes to "status_update"  
+        // consumer emits "processing_complete" -> monitor subscribes to "processing_complete"
+        assert_eq!(graph.get_edge_count(), 3);
+        
+        // Verify specific edges
+        let producer_edges = graph.get_outgoing_edges(&"producer".to_string());
+        assert_eq!(producer_edges.len(), 2);
+        
+        let consumer_edges = graph.get_outgoing_edges(&"consumer".to_string());
+        assert_eq!(consumer_edges.len(), 1);
+        
+        let monitor_edges = graph.get_outgoing_edges(&"monitor".to_string());
+        assert_eq!(monitor_edges.len(), 0);
+        
+        // Verify edge details
+        let producer_targets: Vec<&String> = producer_edges.iter().map(|e| e.0).collect();
+        assert!(producer_targets.contains(&&"consumer".to_string()));
+        assert!(producer_targets.contains(&&"monitor".to_string()));
+        
+        let consumer_targets: Vec<&String> = consumer_edges.iter().map(|e| e.0).collect();
+        assert!(consumer_targets.contains(&&"monitor".to_string()));
     }
 }

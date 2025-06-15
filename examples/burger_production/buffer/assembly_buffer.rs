@@ -56,6 +56,10 @@ impl BaseComponent for AssemblyBuffer {
         &["BurgerReadyEvent", "RequestItemEvent"]
     }
 
+    fn emitted_events(&self) -> &[&'static str] {
+        &["ItemAddedEvent", "BufferFullEvent", "ItemDroppedEvent", "ItemDispatchedEvent", "BufferSpaceAvailableEvent"]
+    }
+
     fn react_atomic(&mut self, events: Vec<Box<dyn Event>>) -> Vec<(Box<dyn Event>, u64)> {
         let mut response_events: Vec<(Box<dyn Event>, u64)> = Vec::new();
 
@@ -171,7 +175,7 @@ mod tests {
     #[test]
     fn test_assembly_buffer_creation() {
         let buffer = AssemblyBuffer::new("assembly_buffer_1".to_string(), 5);
-        assert_eq!(buffer.get_id(), "assembly_buffer_1");
+        assert_eq!(buffer.component_id(), "assembly_buffer_1");
         assert_eq!(buffer.capacity, 5);
         assert!(!buffer.is_full());
         assert!(buffer.has_space());

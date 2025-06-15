@@ -269,6 +269,10 @@ impl BaseComponent for Assembler {
         &self.subscriptions
     }
 
+    fn emitted_events(&self) -> &[&'static str] {
+        &["RequestItemEvent", "BurgerReadyEvent", "TriggerProductionEvent"]
+    }
+
     fn react_atomic(&mut self, events: Vec<Box<dyn Event>>) -> Vec<(Box<dyn Event>, u64)> {
         let mut new_events: Vec<(Box<dyn Event>, u64)> = Vec::new();
 
