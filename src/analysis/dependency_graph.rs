@@ -82,8 +82,8 @@ impl DependencyGraph {
         }
     }
     
-    fn infer_emitted_events(_component: &dyn BaseComponent) -> Vec<EventType> {
-        Vec::new()
+    fn infer_emitted_events(component: &dyn BaseComponent) -> Vec<EventType> {
+        component.emitted_events().iter().map(|s| s.to_string()).collect()
     }
     
     pub fn add_edge(&mut self, source: &ComponentId, target: &ComponentId, event_type: EventType) {
@@ -101,10 +101,17 @@ impl DependencyGraph {
         if let (Some(&source_idx), Some(&target_idx)) = 
             (self.node_map.get(source), self.node_map.get(target)) {
             
-            if let Some(edge_idx) = self.graph.find_edge(source_idx, target_idx) {
-                if let Some(edge) = self.graph.edge_weight_mut(edge_idx) {
+            // Find all outgoing edges from source that target the specified target node
+            let edge_ids: Vec<_> = self.graph.edges_directed(source_idx, Direction::Outgoing)
+                .filter(|edge_ref| edge_ref.target() == target_idx)
+                .map(|edge_ref| edge_ref.id())
+                .collect();
+            
+            for edge_id in edge_ids {
+                if let Some(edge) = self.graph.edge_weight_mut(edge_id) {
                     if edge.event_type == *event_type {
                         edge.weight = weight;
+                        return; // Found and updated the correct edge
                     }
                 }
             }
