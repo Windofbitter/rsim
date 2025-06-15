@@ -1,4 +1,5 @@
 pub mod core;
+pub mod analysis;
 
 // Re-export commonly used types
 pub use crate::core::component::BaseComponent;
