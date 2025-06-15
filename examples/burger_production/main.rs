@@ -4,13 +4,13 @@ mod burger_production;
 
 use burger_production::{
     config::ProductionMode, Assembler, AssemblyBuffer, Baker, BurgerSimulationConfig, Client,
-    CookedBreadBuffer, FriedMeatBuffer, Fryer, GenerateOrderEvent, MetricsCollector, TriggerProductionEvent,
+    CookedBreadBuffer, FriedMeatBuffer, Fryer, GenerateOrderEvent, MetricsCollector,
+    TriggerProductionEvent,
 };
 use rsim::core::simulation_engine::SimulationEngine;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::sync::{Arc, Mutex};
-
 
 // Custom logger that writes to both console and file
 struct FileLogger {
@@ -38,7 +38,10 @@ impl FileLogger {
     }
 }
 
-fn run_simulation(mode: ProductionMode, logger: &FileLogger) -> Result<(), Box<dyn std::error::Error>> {
+fn run_simulation(
+    mode: ProductionMode,
+    logger: &FileLogger,
+) -> Result<(), Box<dyn std::error::Error>> {
     // Write mode header to log file
     logger.write_line(&format!("\n{}", "=".repeat(80)))?;
     logger.write_line(&format!("SIMULATION MODE: {:?}", mode))?;
@@ -83,12 +86,23 @@ fn run_simulation(mode: ProductionMode, logger: &FileLogger) -> Result<(), Box<d
     // Write config to log file
     logger.write_line("Configuration:")?;
     logger.write_line(&format!("  Mode: {:?}", config.production_mode))?;
-    logger.write_line(&format!("  Duration: {} cycles", config.simulation_duration_cycles))?;
-    logger.write_line(&format!("  Buffer Capacities: {}", config.buffer_capacities.fried_meat_capacity))?;
-    logger.write_line(&format!("  Order Interval: {} cycles", config.order_generation.order_interval_cycles))?;
-    logger.write_line(&format!("  Order Quantity: {}-{}", 
+    logger.write_line(&format!(
+        "  Duration: {} cycles",
+        config.simulation_duration_cycles
+    ))?;
+    logger.write_line(&format!(
+        "  Buffer Capacities: {}",
+        config.buffer_capacities.fried_meat_capacity
+    ))?;
+    logger.write_line(&format!(
+        "  Order Interval: {} cycles",
+        config.order_generation.order_interval_cycles
+    ))?;
+    logger.write_line(&format!(
+        "  Order Quantity: {}-{}",
         config.order_generation.min_quantity_per_order,
-        config.order_generation.max_quantity_per_order))?;
+        config.order_generation.max_quantity_per_order
+    ))?;
     logger.write_line("")?;
 
     // Create simulation engine with max cycles
@@ -136,7 +150,7 @@ fn run_simulation(mode: ProductionMode, logger: &FileLogger) -> Result<(), Box<d
         config.random_seed.unwrap_or(42),
     );
 
-    // Create metrics collector 
+    // Create metrics collector
     let metrics_collector = MetricsCollector::new("metrics_collector".to_string());
 
     // Register all components
@@ -153,7 +167,9 @@ fn run_simulation(mode: ProductionMode, logger: &FileLogger) -> Result<(), Box<d
         .register_component(Box::new(assembly_buffer))
         .unwrap();
     engine.register_component(Box::new(client)).unwrap();
-    engine.register_component(Box::new(metrics_collector)).unwrap();
+    engine
+        .register_component(Box::new(metrics_collector))
+        .unwrap();
 
     // Schedule initial events
     if config.production_mode == ProductionMode::BufferBased {
@@ -168,8 +184,7 @@ fn run_simulation(mode: ProductionMode, logger: &FileLogger) -> Result<(), Box<d
     }
 
     // Schedule first order generation
-    let first_order =
-        GenerateOrderEvent::new("system".to_string(), None); // Broadcast to all subscribed components
+    let first_order = GenerateOrderEvent::new("system".to_string(), None); // Broadcast to all subscribed components
     engine.schedule_initial_event(
         Box::new(first_order),
         config.order_generation.order_interval_cycles,
@@ -208,7 +223,7 @@ fn run_simulation(mode: ProductionMode, logger: &FileLogger) -> Result<(), Box<d
     logger.write_line("")?;
 
     // Final metrics will be printed automatically when MetricsCollector is dropped
-    
+
     Ok(())
 }
 
@@ -218,9 +233,9 @@ fn main() {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs();
-    
+
     let log_filename = format!("burger_simulation_{}.log", timestamp);
-    
+
     // Create file logger
     let file_logger = match FileLogger::new(&log_filename) {
         Ok(logger) => logger,
@@ -229,58 +244,66 @@ fn main() {
             return;
         }
     };
-    
+
     let logger_clone = file_logger.file.clone();
-    
+
     // Initialize logger with custom format that writes to both console and file
     env_logger::Builder::from_default_env()
         .format(move |buf, record| {
-            let formatted = format!(
-                "[{} {}] {}",
-                record.level(),
-                record.target(),
-                record.args()
-            );
-            
+            let formatted = format!("[{} {}] {}", record.level(), record.target(), record.args());
+
             // Write to console
             writeln!(buf, "{}", formatted)?;
-            
+
             // Also write to file
             if let Ok(mut file) = logger_clone.lock() {
                 writeln!(file, "{}", formatted).ok();
                 file.flush().ok();
             }
-            
+
             Ok(())
         })
         .init();
 
     println!("📝 Logging simulation results to: {}", log_filename);
-    
+
     // Write header to log file
-    file_logger.write_line("Burger Production Simulation Log").ok();
+    file_logger
+        .write_line("Burger Production Simulation Log")
+        .ok();
     file_logger.write_line(&"=".repeat(80)).ok();
 
     // Run order-based simulation
     println!("\n🍔 Running ORDER-BASED simulation...");
     if let Err(e) = run_simulation(ProductionMode::OrderBased, &file_logger) {
         eprintln!("Order-based simulation failed: {}", e);
-        file_logger.write_line(&format!("Order-based simulation failed: {}", e)).ok();
+        file_logger
+            .write_line(&format!("Order-based simulation failed: {}", e))
+            .ok();
     }
 
     // Add separator
-    file_logger.write_line(&format!("\n\n{}\n\n", "*".repeat(80))).ok();
+    file_logger
+        .write_line(&format!("\n\n{}\n\n", "*".repeat(80)))
+        .ok();
 
     // Run buffer-based simulation
     println!("\n🍔 Running BUFFER-BASED simulation...");
     if let Err(e) = run_simulation(ProductionMode::BufferBased, &file_logger) {
         eprintln!("Buffer-based simulation failed: {}", e);
-        file_logger.write_line(&format!("Buffer-based simulation failed: {}", e)).ok();
+        file_logger
+            .write_line(&format!("Buffer-based simulation failed: {}", e))
+            .ok();
     }
 
     // Final summary
-    file_logger.write_line(&format!("\n{}", "=".repeat(80))).ok();
+    file_logger
+        .write_line(&format!("\n{}", "=".repeat(80)))
+        .ok();
     file_logger.write_line("Simulation batch completed").ok();
-    
-    println!("\n✅ Both simulations completed. Results saved to: {}", log_filename);
+
+    println!(
+        "\n✅ Both simulations completed. Results saved to: {}",
+        log_filename
+    );
 }

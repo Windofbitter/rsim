@@ -270,7 +270,11 @@ impl BaseComponent for Assembler {
     }
 
     fn emitted_events(&self) -> &[&'static str] {
-        &["RequestItemEvent", "BurgerReadyEvent", "TriggerProductionEvent"]
+        &[
+            "RequestItemEvent",
+            "BurgerReadyEvent",
+            "TriggerProductionEvent",
+        ]
     }
 
     fn react_atomic(&mut self, events: Vec<Box<dyn Event>>) -> Vec<(Box<dyn Event>, u64)> {

@@ -390,8 +390,7 @@ impl Client {
                 );
 
                 // Schedule next order generation
-                let next_order_event =
-                    GenerateOrderEvent::new(self.id.clone(), None); // Broadcast to all subscribed components
+                let next_order_event = GenerateOrderEvent::new(self.id.clone(), None); // Broadcast to all subscribed components
                 new_events.push((Box::new(next_order_event), self.order_interval));
 
                 log::info!(
@@ -416,7 +415,12 @@ impl BaseComponent for Client {
     }
 
     fn emitted_events(&self) -> &[&'static str] {
-        &["PlaceOrderEvent", "RequestItemEvent", "OrderFulfilledEvent", "GenerateOrderEvent"]
+        &[
+            "PlaceOrderEvent",
+            "RequestItemEvent",
+            "OrderFulfilledEvent",
+            "GenerateOrderEvent",
+        ]
     }
 
     fn react_atomic(&mut self, events: Vec<Box<dyn Event>>) -> Vec<(Box<dyn Event>, u64)> {

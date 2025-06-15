@@ -58,7 +58,13 @@ impl BaseComponent for FriedMeatBuffer {
     }
 
     fn emitted_events(&self) -> &[&'static str] {
-        &["ItemAddedEvent", "BufferFullEvent", "ItemDroppedEvent", "ItemDispatchedEvent", "BufferSpaceAvailableEvent"]
+        &[
+            "ItemAddedEvent",
+            "BufferFullEvent",
+            "ItemDroppedEvent",
+            "ItemDispatchedEvent",
+            "BufferSpaceAvailableEvent",
+        ]
     }
 
     fn react_atomic(&mut self, events: Vec<Box<dyn Event>>) -> Vec<(Box<dyn Event>, u64)> {

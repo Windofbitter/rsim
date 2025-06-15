@@ -26,7 +26,12 @@ pub struct CycleAdvancedEvent {
 }
 
 impl CycleAdvancedEvent {
-    pub fn new(source_id: ComponentId, target_ids: Option<Vec<ComponentId>>, old_cycle: u64, new_cycle: u64) -> Self {
+    pub fn new(
+        source_id: ComponentId,
+        target_ids: Option<Vec<ComponentId>>,
+        old_cycle: u64,
+        new_cycle: u64,
+    ) -> Self {
         Self {
             id: format!("cycle_advanced_{}_to_{}", old_cycle, new_cycle),
             source_id,
@@ -56,8 +61,14 @@ impl Event for CycleAdvancedEvent {
 
     fn data(&self) -> HashMap<String, ComponentValue> {
         let mut data = HashMap::new();
-        data.insert("old_cycle".to_string(), ComponentValue::Int(self.old_cycle as i64));
-        data.insert("new_cycle".to_string(), ComponentValue::Int(self.new_cycle as i64));
+        data.insert(
+            "old_cycle".to_string(),
+            ComponentValue::Int(self.old_cycle as i64),
+        );
+        data.insert(
+            "new_cycle".to_string(),
+            ComponentValue::Int(self.new_cycle as i64),
+        );
         data
     }
 

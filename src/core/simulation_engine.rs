@@ -1,5 +1,5 @@
 use super::component::BaseComponent;
-use super::event::{Event, CycleAdvancedEvent};
+use super::event::{CycleAdvancedEvent, Event};
 use super::event_manager::EventManager;
 use super::event_scheduler::EventScheduler;
 use crate::analysis::ProfilingCollector;
@@ -24,12 +24,12 @@ impl SimulationEngine {
             profiler: None,
         }
     }
-    
+
     /// Create a new SimulationEngine with profiling enabled
     pub fn with_profiling(max_cycles: Option<u64>) -> Self {
         let mut profiler = ProfilingCollector::new();
         profiler.enable();
-        
+
         Self {
             event_manager: EventManager::new(),
             scheduler: EventScheduler::new(),
@@ -38,7 +38,7 @@ impl SimulationEngine {
             profiler: Some(profiler),
         }
     }
-    
+
     /// Enable profiling on this engine
     pub fn enable_profiling(&mut self) {
         if self.profiler.is_none() {
@@ -48,19 +48,19 @@ impl SimulationEngine {
             profiler.enable();
         }
     }
-    
+
     /// Disable profiling on this engine
     pub fn disable_profiling(&mut self) {
         if let Some(ref mut profiler) = self.profiler {
             profiler.disable();
         }
     }
-    
+
     /// Get access to the profiling collector (if enabled)
     pub fn profiler(&self) -> Option<&ProfilingCollector> {
         self.profiler.as_ref()
     }
-    
+
     /// Get mutable access to the profiling collector (if enabled)
     pub fn profiler_mut(&mut self) -> Option<&mut ProfilingCollector> {
         self.profiler.as_mut()
@@ -129,7 +129,7 @@ impl SimulationEngine {
                 if let Some(ref mut profiler) = self.profiler {
                     profiler.record_event_flow(source_id, &target_id, event.event_type());
                 }
-                
+
                 events_by_component
                     .entry(target_id)
                     .or_insert_with(Vec::new)
