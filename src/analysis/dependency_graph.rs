@@ -257,6 +257,30 @@ impl DependencyGraph {
             heaviest_edges,
         }
     }
+    
+    /// Get all component IDs in the graph
+    pub fn get_all_component_ids(&self) -> Vec<ComponentId> {
+        self.node_map.keys().cloned().collect()
+    }
+    
+    /// Get all edges in the graph as a map from source to list of (target, edge) pairs
+    pub fn get_all_edges(&self) -> HashMap<ComponentId, Vec<(ComponentId, CommunicationEdge)>> {
+        let mut all_edges = HashMap::new();
+        
+        for node_idx in self.graph.node_indices() {
+            let source_id = &self.graph[node_idx].id;
+            let mut edges = Vec::new();
+            
+            for edge_ref in self.graph.edges_directed(node_idx, Direction::Outgoing) {
+                let target_id = &self.graph[edge_ref.target()].id;
+                edges.push((target_id.clone(), edge_ref.weight().clone()));
+            }
+            
+            all_edges.insert(source_id.clone(), edges);
+        }
+        
+        all_edges
+    }
 }
 
 #[derive(Debug)]

@@ -1,7 +1,7 @@
 use crate::core::simulation_engine::SimulationEngine;
 use crate::core::component::BaseComponent;
 use crate::core::event::Event;
-use crate::analysis::{DependencyGraph, ProfilingReport};
+use crate::analysis::{DependencyGraph, ProfilingReport, ComponentPartition, GraphPartitioner, PartitionerFactory};
 
 /// Orchestrates a profiling run to weight the dependency graph
 pub struct ProfiledSimulationRun {
@@ -73,6 +73,7 @@ impl ProfiledSimulationRun {
             weighted_graph: dependency_graph,
             profiling_report,
             final_cycle,
+            partition: None,
         })
     }
     
@@ -121,6 +122,8 @@ pub struct ProfiledSimulationResult {
     pub profiling_report: Option<ProfilingReport>,
     /// Final cycle reached during profiling
     pub final_cycle: u64,
+    /// Component partition assignments (if partitioning was performed)
+    pub partition: Option<ComponentPartition>,
 }
 
 impl ProfiledSimulationResult {
@@ -142,6 +145,17 @@ impl ProfiledSimulationResult {
         println!("Max edge weight: {}", analysis.max_weight);
         println!("Average edge weight: {:.2}", 
             analysis.total_weight as f64 / analysis.edge_count as f64);
+        
+        if let Some(ref partition) = self.partition {
+            println!("\n=== Partition Summary ===");
+            println!("Partitioned into {} threads", partition.num_threads());
+            println!("Cut weight: {}", partition.quality_metrics().cut_weight);
+            println!("Load balance score: {:.3}", partition.quality_metrics().load_balance_score);
+            println!("Overall quality score: {:.3}", partition.quality_metrics().overall_score);
+        } else {
+            println!("\n=== Partition Status ===");
+            println!("No partitioning performed yet. Use partition_components() to create thread assignments.");
+        }
     }
     
     /// Export the weighted dependency graph to DOT format
@@ -152,6 +166,57 @@ impl ProfiledSimulationResult {
     /// Export the weighted dependency graph to Mermaid format
     pub fn export_mermaid(&self) -> String {
         self.weighted_graph.to_mermaid()
+    }
+    
+    /// Partition components into threads using the specified algorithm
+    /// 
+    /// # Arguments
+    /// * `num_threads` - Target number of threads
+    /// * `algorithm` - Partitioning algorithm name ("greedy" is supported)
+    /// 
+    /// # Returns
+    /// * `Ok(())` - Partitioning successful, results stored in self.partition
+    /// * `Err(String)` - Partitioning failed with error message
+    pub fn partition_components(&mut self, num_threads: usize, algorithm: &str) -> Result<(), String> {
+        let partitioner = PartitionerFactory::create_by_name(algorithm)?;
+        let partition = partitioner.partition(&self.weighted_graph, num_threads)?;
+        
+        println!("Partitioned {} components into {} threads using {} algorithm",
+                 partition.num_components(), partition.num_threads(), algorithm);
+        println!("Partition quality - Cut weight: {}, Load balance score: {:.3}",
+                 partition.quality_metrics().cut_weight,
+                 partition.quality_metrics().load_balance_score);
+        
+        self.partition = Some(partition);
+        Ok(())
+    }
+    
+    /// Partition components using a custom partitioner
+    pub fn partition_components_with_partitioner(&mut self, partitioner: Box<dyn GraphPartitioner>, num_threads: usize) -> Result<(), String> {
+        let partition = partitioner.partition(&self.weighted_graph, num_threads)?;
+        
+        println!("Partitioned {} components into {} threads using {} algorithm",
+                 partition.num_components(), partition.num_threads(), partitioner.algorithm_name());
+        println!("Partition quality - Cut weight: {}, Load balance score: {:.3}",
+                 partition.quality_metrics().cut_weight,
+                 partition.quality_metrics().load_balance_score);
+        
+        self.partition = Some(partition);
+        Ok(())
+    }
+    
+    /// Get the component partition (if partitioning was performed)
+    pub fn get_partition(&self) -> Option<&ComponentPartition> {
+        self.partition.as_ref()
+    }
+    
+    /// Print partition summary (if partitioning was performed)
+    pub fn print_partition_summary(&self) {
+        if let Some(ref partition) = self.partition {
+            partition.print_summary();
+        } else {
+            println!("No partitioning has been performed yet. Call partition_components() first.");
+        }
     }
 }
 
