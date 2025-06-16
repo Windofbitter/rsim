@@ -4,3 +4,4 @@ pub mod core;
 pub use crate::core::component::BaseComponent;
 pub use crate::core::event::{Event, EventId, EventType};
 pub use crate::core::types::ComponentId;
+pub use crate::core::dependency_graph::DependencyGraph;

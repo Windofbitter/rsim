@@ -68,4 +68,11 @@ impl EventManager {
     ) -> Option<&mut Box<dyn BaseComponent>> {
         self.components.get_mut(component_id)
     }
+    
+    /// Get immutable references to all registered components
+    pub fn get_all_components(&self) -> Vec<&dyn BaseComponent> {
+        self.components.values()
+            .map(|boxed| boxed.as_ref())
+            .collect()
+    }
 }

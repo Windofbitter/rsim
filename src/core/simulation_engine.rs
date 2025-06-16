@@ -2,13 +2,16 @@ use super::component::BaseComponent;
 use super::event::{Event, CycleAdvancedEvent};
 use super::event_manager::EventManager;
 use super::event_scheduler::EventScheduler;
-use log::debug;
+use super::dependency_graph::DependencyGraph;
+use log::{debug, info};
 use std::collections::HashMap;
+
 pub struct SimulationEngine {
     event_manager: EventManager,
     scheduler: EventScheduler,
     current_cycle: u64,
     max_cycles: Option<u64>,
+    dependency_graph: Option<DependencyGraph>,
 }
 
 impl SimulationEngine {
@@ -19,6 +22,7 @@ impl SimulationEngine {
             scheduler: EventScheduler::new(),
             current_cycle: 0,
             max_cycles,
+            dependency_graph: None,
         }
     }
 
@@ -30,6 +34,19 @@ impl SimulationEngine {
     /// Schedule an initial event to start the simulation
     pub fn schedule_initial_event(&mut self, event: Box<dyn Event>, delay_cycles: u64) {
         self.scheduler.schedule_event(event, delay_cycles);
+    }
+
+    /// Build a dependency graph of all registered components
+    /// This analyzes which components can send events to which other components
+    pub fn build_dependency_graph(&mut self) {
+        info!("Building component dependency graph");
+        let components = self.event_manager.get_all_components();
+        self.dependency_graph = Some(DependencyGraph::build(components));
+    }
+
+    /// Get a reference to the dependency graph, if it has been built
+    pub fn dependency_graph(&self) -> Option<&DependencyGraph> {
+        self.dependency_graph.as_ref()
     }
 
     /// Run the complete simulation, returns final cycle count
