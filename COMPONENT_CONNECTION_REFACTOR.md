@@ -20,8 +20,11 @@ Refactor the simulation from event-subscription model to direct component-to-com
 pub trait BaseComponent {
     fn component_id(&self) -> &ComponentId;
     
-    // NEW: Get list of connected component IDs
-    fn connected_components(&self) -> &[ComponentId];
+    // NEW: Define input port names (e.g., ["A", "B"] for NAND gate)
+    fn input_ports(&self) -> Vec<&'static str>;
+    
+    // NEW: Single output port name (e.g., "Y" for NAND gate)
+    fn output_port(&self) -> &'static str;
     
     // NEW: Specify compatible component types for validation
     fn compatible_component_types(&self) -> Vec<&'static str>;
@@ -29,10 +32,12 @@ pub trait BaseComponent {
     // NEW: The single event type this component outputs
     fn output_event_type(&self) -> &'static str;
     
-    // MODIFIED: Returns single event or None (no delay - per-cycle evaluation)
-    fn react_atomic(&mut self, events: Vec<Box<dyn Event>>) -> Option<Box<dyn Event>>;
+    // MODIFIED: Receives events by port name, returns single event or None
+    fn react_atomic(&mut self, port_events: HashMap<String, Box<dyn Event>>) 
+        -> Option<Box<dyn Event>>;
     
     // REMOVED: subscriptions() method
+    // REMOVED: connected_components() method (handled by ConnectionManager)
 }
 ```
 
@@ -40,14 +45,16 @@ pub trait BaseComponent {
 ```rust
 pub struct ConnectionManager {
     components: HashMap<ComponentId, Box<dyn BaseComponent>>,
-    connections: HashMap<ComponentId, Vec<ComponentId>>, // source -> targets
+    // (source_comp, source_port) -> Vec<(target_comp, target_port)>
+    connections: HashMap<(ComponentId, String), Vec<(ComponentId, String)>>,
 }
 ```
 
 Key methods:
 - `register_component(component)` - Add component
-- `connect(source_id, target_id)` - Create connection (validates compatibility)
-- `get_connected_components(source_id)` - Get targets for routing
+- `connect_ports(source_id, source_port, target_id, target_port)` - Create port-to-port connection
+- `get_port_connections(source_id, source_port)` - Get targets for specific output port
+- `route_event_to_ports(event, source_id, source_port)` - Route event through connections
 
 ### 3. Replace SimulationEngine with Per-Cycle Evaluation
 - Remove EventScheduler entirely - no priority queue needed
@@ -66,11 +73,12 @@ Key methods:
    - Implement component registration and connection methods
 
 2. **Update BaseComponent trait**
-   - Add `connected_components()` method
+   - Add `input_ports()` method to define input port names
+   - Add `output_port()` method to define single output port name
    - Add `compatible_component_types()` method
    - Add `output_event_type()` method
    - Remove `subscriptions()` method
-   - Update `react_atomic()` to remove delay
+   - Update `react_atomic()` to receive port-based events
 
 3. **Replace SimulationEngine with CycleEngine**
    - Remove EventScheduler dependency
@@ -96,24 +104,24 @@ Key methods:
 ## Example Usage
 ```rust
 // Create components
-let nand1 = Box::new(NandGate::new("nand1"));
-let nand2 = Box::new(NandGate::new("nand2"));
+let nand1 = Box::new(NandGate::new("nand1")); // input_ports: ["A", "B"], output_port: "Y"
+let nand2 = Box::new(NandGate::new("nand2")); // input_ports: ["A", "B"], output_port: "Y"
 
 // Register components
 connection_manager.register_component(nand1);
 connection_manager.register_component(nand2);
 
-// Connect them
-connection_manager.connect("nand1", "nand2");
+// Connect ports: nand1's output Y to nand2's input A
+connection_manager.connect_ports("nand1", "Y", "nand2", "A");
 
 // Per-cycle evaluation loop
 for cycle in 0..max_cycles {
-    // All components evaluate simultaneously
+    // All components evaluate simultaneously with port-specific inputs
     let events: Vec<_> = components.iter_mut()
-        .filter_map(|comp| comp.react_atomic(current_inputs))
+        .filter_map(|comp| comp.react_atomic(port_events_for_component))
         .collect();
     
-    // Route events to connected components for next cycle
-    route_events_to_connected_components(events);
+    // Route events through port connections for next cycle
+    route_events_through_port_connections(events);
 }
 ```
