@@ -1,7 +1,21 @@
 # Component Connection Refactoring Plan
 
 ## Overview
-Refactor to port-to-port connections with separate combinational and sequential component types.
+Replace event-based messaging with direct port-to-port connections and typed signals. Remove complex Event trait from core framework.
+
+## Signal Model
+```rust
+// Core provides minimal signal abstraction
+pub type Signal = Box<dyn std::any::Any + Send>;
+
+// Users define concrete signal types
+#[derive(Debug, Clone)]
+enum UserSignal {
+    Trigger,
+    DataReady { value: i32 },
+    Error { message: String },
+}
+```
 
 ## Component Model
 
@@ -11,20 +25,18 @@ pub trait BaseComponent: Send {
     fn component_id(&self) -> &ComponentId;
     fn input_ports(&self) -> Vec<&'static str>;
     fn output_port(&self) -> &'static str;
-    fn output_event_type(&self) -> &'static str;
 }
 ```
 
 ### Specialized Component Traits
 ```rust
 pub trait CombinationalComponent: BaseComponent {
-    fn evaluate(&self, port_events: HashMap<String, Box<dyn Event>>) 
-        -> Option<Box<dyn Event>>;
+    fn evaluate(&self, port_signals: HashMap<String, Signal>) -> Option<Signal>;
 }
 
 pub trait SequentialComponent: BaseComponent {
-    fn current_output(&self) -> Option<Box<dyn Event>>;
-    fn prepare_next_state(&mut self, port_events: &HashMap<String, Box<dyn Event>>);
+    fn current_output(&self) -> Option<Signal>;
+    fn prepare_next_state(&mut self, port_signals: &HashMap<String, Signal>);
     fn commit_state_change(&mut self);
 }
 ```
@@ -37,48 +49,55 @@ pub enum Component {
 }
 ```
 
-## Connection Management
+## Core Architecture Changes
+
+### Replace Files
+- `event.rs` → Remove entirely
+- `event_manager.rs` → `connection_manager.rs`
+- `event_scheduler.rs` → `cycle_engine.rs`
+- `simulation_engine.rs` → Simplified to use CycleEngine
+
+### Connection Manager
 ```rust
 pub struct ConnectionManager {
     components: HashMap<ComponentId, Component>,
     connections: HashMap<(ComponentId, String), Vec<(ComponentId, String)>>,
-    combinational_order: Vec<ComponentId>,  // Topologically sorted
+    combinational_order: Vec<ComponentId>,
     sequential_ids: Vec<ComponentId>,
+}
+
+impl ConnectionManager {
+    fn connect(&mut self, source: (ComponentId, String), target: (ComponentId, String));
+    fn build_evaluation_order(&mut self) -> Result<(), String>;
 }
 ```
 
-## Cycle Evaluation
+### Cycle Engine
 ```rust
+pub struct CycleEngine {
+    connection_manager: ConnectionManager,
+    current_cycle: u64,
+}
+
 impl CycleEngine {
     fn run_cycle(&mut self) {
-        // Phase 1: Combinational propagation (single pass)
-        for comp_id in &self.combinational_order {
-            // Evaluate and route outputs
-        }
-        
+        // Phase 1: Combinational propagation (topological order)
         // Phase 2: Sequential state preparation
-        for comp_id in &self.sequential_ids {
-            // Prepare next state based on inputs
-        }
-        
         // Phase 3: Sequential state commit (atomic)
-        for comp_id in &self.sequential_ids {
-            // Update all states simultaneously
-        }
     }
 }
 ```
 
 ## Implementation Steps
-1. Create base and specialized component traits
-2. Update ConnectionManager with Component enum
-3. Implement topological sorting for combinational components
-4. Create CycleEngine with three-phase evaluation
-5. Update existing components to new trait structure
+1. Remove Event trait and dynamic routing system
+2. Create Signal type and ConnectionManager
+3. Implement CycleEngine with three-phase evaluation
+4. Update SimulationEngine to use cycles instead of events
+5. Migrate components to new trait structure
 
 ## Benefits
-- Type-safe component handling
-- Single-pass combinational evaluation
-- Atomic sequential state updates
-- Hardware-accurate timing model
-- Parallelization ready
+- **Simplicity**: No complex event routing or subscriptions
+- **Performance**: Direct connections, no dynamic dispatch
+- **Type Safety**: Users control signal types at compile time
+- **Hardware Accuracy**: Matches real circuit evaluation
+- **User Control**: Framework provides structure, users define semantics
