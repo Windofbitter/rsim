@@ -29,8 +29,8 @@ pub trait BaseComponent {
     // NEW: The single event type this component outputs
     fn output_event_type(&self) -> &'static str;
     
-    // MODIFIED: Returns single event or None
-    fn react_atomic(&mut self, events: Vec<Box<dyn Event>>) -> Option<(Box<dyn Event>, u64)>;
+    // MODIFIED: Returns single event or None (no delay - per-cycle evaluation)
+    fn react_atomic(&mut self, events: Vec<Box<dyn Event>>) -> Option<Box<dyn Event>>;
     
     // REMOVED: subscriptions() method
 }
@@ -49,10 +49,11 @@ Key methods:
 - `connect(source_id, target_id)` - Create connection (validates compatibility)
 - `get_connected_components(source_id)` - Get targets for routing
 
-### 3. Update Event Routing in SimulationEngine
-- Remove subscription-based routing
-- Components output single event or None per reaction
-- Event is cloned and sent to all connected components
+### 3. Replace SimulationEngine with Per-Cycle Evaluation
+- Remove EventScheduler entirely - no priority queue needed
+- Evaluate all components every cycle synchronously
+- Components maintain internal state between cycles
+- Events flow to connected components for next cycle
 
 ### 4. Simplify Event Structure
 - Remove `target_ids` field (no longer needed)
@@ -66,25 +67,31 @@ Key methods:
 
 2. **Update BaseComponent trait**
    - Add `connected_components()` method
+   - Add `compatible_component_types()` method
+   - Add `output_event_type()` method
    - Remove `subscriptions()` method
+   - Update `react_atomic()` to remove delay
 
-3. **Modify SimulationEngine**
-   - Replace EventManager with ConnectionManager
-   - Update event routing logic to use connections
+3. **Replace SimulationEngine with CycleEngine**
+   - Remove EventScheduler dependency
+   - Implement per-cycle evaluation loop
+   - Use ConnectionManager for event routing
 
 4. **Update Event trait**
    - Remove `target_ids()` method
    - Simplify event structure
 
 5. **Create example components**
-   - Implement basic logic gates (NAND, NOR, etc.)
-   - Show how connections work in practice
+   - Implement basic logic gates with internal state
+   - Show how per-cycle evaluation works in practice
 
 ## Benefits
 - Clearer component relationships
-- More intuitive for hardware modeling
-- Simpler event routing
-- No need to manage subscriptions
+- More intuitive for hardware modeling (synchronous circuits)
+- Enables true parallelization - all components evaluated simultaneously
+- Eliminates complex event scheduling and priority queues
+- Simpler event routing through direct connections
+- Matches real digital circuit behavior (clock-driven)
 
 ## Example Usage
 ```rust
@@ -99,5 +106,14 @@ connection_manager.register_component(nand2);
 // Connect them
 connection_manager.connect("nand1", "nand2");
 
-// Events from nand1 automatically flow to nand2
+// Per-cycle evaluation loop
+for cycle in 0..max_cycles {
+    // All components evaluate simultaneously
+    let events: Vec<_> = components.iter_mut()
+        .filter_map(|comp| comp.react_atomic(current_inputs))
+        .collect();
+    
+    // Route events to connected components for next cycle
+    route_events_to_connected_components(events);
+}
 ```
