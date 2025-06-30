@@ -23,8 +23,14 @@ pub trait BaseComponent {
     // NEW: Get list of connected component IDs
     fn connected_components(&self) -> &[ComponentId];
     
-    // MODIFIED: Remove events parameter, returns events with target info
-    fn react_atomic(&mut self, events: Vec<Box<dyn Event>>) -> Vec<(Box<dyn Event>, u64)>;
+    // NEW: Specify compatible component types for validation
+    fn compatible_component_types(&self) -> Vec<&'static str>;
+    
+    // NEW: The single event type this component outputs
+    fn output_event_type(&self) -> &'static str;
+    
+    // MODIFIED: Returns single event or None
+    fn react_atomic(&mut self, events: Vec<Box<dyn Event>>) -> Option<(Box<dyn Event>, u64)>;
     
     // REMOVED: subscriptions() method
 }
@@ -40,13 +46,13 @@ pub struct ConnectionManager {
 
 Key methods:
 - `register_component(component)` - Add component
-- `connect(source_id, target_id)` - Create connection
+- `connect(source_id, target_id)` - Create connection (validates compatibility)
 - `get_connected_components(source_id)` - Get targets for routing
 
 ### 3. Update Event Routing in SimulationEngine
 - Remove subscription-based routing
-- When component generates events, send to all its connected components
-- Each event is cloned and sent to each connected component
+- Components output single event or None per reaction
+- Event is cloned and sent to all connected components
 
 ### 4. Simplify Event Structure
 - Remove `target_ids` field (no longer needed)
