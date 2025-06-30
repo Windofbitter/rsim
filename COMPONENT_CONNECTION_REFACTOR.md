@@ -1,127 +1,84 @@
-# Component-to-Component Connection Refactoring Plan
+# Component Connection Refactoring Plan
 
 ## Overview
-Refactor the simulation from event-subscription model to direct component-to-component connections, similar to how chips are wired.
+Refactor to port-to-port connections with separate combinational and sequential component types.
 
-## Current Architecture
-- Components subscribe to event types
-- EventManager routes events based on subscriptions
-- Events can be broadcast or targeted
+## Component Model
 
-## New Architecture
-- Components connect directly to other components
-- Events broadcast to all connected components
-- No event type subscriptions needed
-
-## Key Changes
-
-### 1. Update BaseComponent Trait
+### Base Component Trait
 ```rust
-pub trait BaseComponent {
+pub trait BaseComponent: Send {
     fn component_id(&self) -> &ComponentId;
-    
-    // NEW: Define input port names (e.g., ["A", "B"] for NAND gate)
     fn input_ports(&self) -> Vec<&'static str>;
-    
-    // NEW: Single output port name (e.g., "Y" for NAND gate)
     fn output_port(&self) -> &'static str;
-    
-    // NEW: Specify compatible component types for validation
-    fn compatible_component_types(&self) -> Vec<&'static str>;
-    
-    // NEW: The single event type this component outputs
     fn output_event_type(&self) -> &'static str;
-    
-    // MODIFIED: Receives events by port name, returns single event or None
-    fn react_atomic(&mut self, port_events: HashMap<String, Box<dyn Event>>) 
-        -> Option<Box<dyn Event>>;
-    
-    // REMOVED: subscriptions() method
-    // REMOVED: connected_components() method (handled by ConnectionManager)
 }
 ```
 
-### 2. Replace EventManager with ConnectionManager
+### Specialized Component Traits
+```rust
+pub trait CombinationalComponent: BaseComponent {
+    fn evaluate(&self, port_events: HashMap<String, Box<dyn Event>>) 
+        -> Option<Box<dyn Event>>;
+}
+
+pub trait SequentialComponent: BaseComponent {
+    fn current_output(&self) -> Option<Box<dyn Event>>;
+    fn prepare_next_state(&mut self, port_events: &HashMap<String, Box<dyn Event>>);
+    fn commit_state_change(&mut self);
+}
+```
+
+### Component Storage
+```rust
+pub enum Component {
+    Combinational(Box<dyn CombinationalComponent>),
+    Sequential(Box<dyn SequentialComponent>),
+}
+```
+
+## Connection Management
 ```rust
 pub struct ConnectionManager {
-    components: HashMap<ComponentId, Box<dyn BaseComponent>>,
-    // (source_comp, source_port) -> Vec<(target_comp, target_port)>
+    components: HashMap<ComponentId, Component>,
     connections: HashMap<(ComponentId, String), Vec<(ComponentId, String)>>,
+    combinational_order: Vec<ComponentId>,  // Topologically sorted
+    sequential_ids: Vec<ComponentId>,
 }
 ```
 
-Key methods:
-- `register_component(component)` - Add component
-- `connect_ports(source_id, source_port, target_id, target_port)` - Create port-to-port connection
-- `get_port_connections(source_id, source_port)` - Get targets for specific output port
-- `route_event_to_ports(event, source_id, source_port)` - Route event through connections
-
-### 3. Replace SimulationEngine with Per-Cycle Evaluation
-- Remove EventScheduler entirely - no priority queue needed
-- Evaluate all components every cycle synchronously
-- Components maintain internal state between cycles
-- Events flow to connected components for next cycle
-
-### 4. Simplify Event Structure
-- Remove `target_ids` field (no longer needed)
-- Events always flow through connections
+## Cycle Evaluation
+```rust
+impl CycleEngine {
+    fn run_cycle(&mut self) {
+        // Phase 1: Combinational propagation (single pass)
+        for comp_id in &self.combinational_order {
+            // Evaluate and route outputs
+        }
+        
+        // Phase 2: Sequential state preparation
+        for comp_id in &self.sequential_ids {
+            // Prepare next state based on inputs
+        }
+        
+        // Phase 3: Sequential state commit (atomic)
+        for comp_id in &self.sequential_ids {
+            // Update all states simultaneously
+        }
+    }
+}
+```
 
 ## Implementation Steps
-
-1. **Create ConnectionManager**
-   - New module `src/core/connection_manager.rs`
-   - Implement component registration and connection methods
-
-2. **Update BaseComponent trait**
-   - Add `input_ports()` method to define input port names
-   - Add `output_port()` method to define single output port name
-   - Add `compatible_component_types()` method
-   - Add `output_event_type()` method
-   - Remove `subscriptions()` method
-   - Update `react_atomic()` to receive port-based events
-
-3. **Replace SimulationEngine with CycleEngine**
-   - Remove EventScheduler dependency
-   - Implement per-cycle evaluation loop
-   - Use ConnectionManager for event routing
-
-4. **Update Event trait**
-   - Remove `target_ids()` method
-   - Simplify event structure
-
-5. **Create example components**
-   - Implement basic logic gates with internal state
-   - Show how per-cycle evaluation works in practice
+1. Create base and specialized component traits
+2. Update ConnectionManager with Component enum
+3. Implement topological sorting for combinational components
+4. Create CycleEngine with three-phase evaluation
+5. Update existing components to new trait structure
 
 ## Benefits
-- Clearer component relationships
-- More intuitive for hardware modeling (synchronous circuits)
-- Enables true parallelization - all components evaluated simultaneously
-- Eliminates complex event scheduling and priority queues
-- Simpler event routing through direct connections
-- Matches real digital circuit behavior (clock-driven)
-
-## Example Usage
-```rust
-// Create components
-let nand1 = Box::new(NandGate::new("nand1")); // input_ports: ["A", "B"], output_port: "Y"
-let nand2 = Box::new(NandGate::new("nand2")); // input_ports: ["A", "B"], output_port: "Y"
-
-// Register components
-connection_manager.register_component(nand1);
-connection_manager.register_component(nand2);
-
-// Connect ports: nand1's output Y to nand2's input A
-connection_manager.connect_ports("nand1", "Y", "nand2", "A");
-
-// Per-cycle evaluation loop
-for cycle in 0..max_cycles {
-    // All components evaluate simultaneously with port-specific inputs
-    let events: Vec<_> = components.iter_mut()
-        .filter_map(|comp| comp.react_atomic(port_events_for_component))
-        .collect();
-    
-    // Route events through port connections for next cycle
-    route_events_through_port_connections(events);
-}
-```
+- Type-safe component handling
+- Single-pass combinational evaluation
+- Atomic sequential state updates
+- Hardware-accurate timing model
+- Parallelization ready
