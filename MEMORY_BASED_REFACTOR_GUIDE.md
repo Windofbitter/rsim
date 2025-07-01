@@ -13,15 +13,15 @@ This guide refactors the simulation engine to a simplified memory-based architec
 
 ### Simplified Memory Access Model
 - **Memory components** have one input port and one output port (for connection knowledge)
-- **Memory proxy** provides read/write interface to connected components
+- **Engine-level memory proxy** provides centralized memory access control
 - **Reads** return previous cycle's state (no contention)
 - **Writes** are buffered and applied at cycle end
-- **Components** access memory via `get_memory_by_port()`
+- **Components** access memory via engine proxy: `proxy.read(port, address)`
 
 ### Component Separation
-- **Processing Components**: Pure combinational logic, no internal state
+- **Processing Components**: Pure combinational logic, no internal state, no proxy management
 - **Memory Components**: Hold all system state (registers, FIFOs, caches, etc.)
-- **Memory Proxy**: Simple interface controlling when state changes occur
+- **Engine Memory Proxy**: Centralized interface controlling memory access timing
 
 ---
 
@@ -45,22 +45,22 @@ pub trait BaseComponent: Send {
     fn component_id(&self) -> &ComponentId;
 }
 
-// Simple memory proxy interface - controls read/write timing
-pub trait MemoryProxy {
-    fn read(&self, address: &str) -> Option<Event>;  // Returns previous cycle state
-    fn write(&mut self, address: &str, data: Event); // Buffered until cycle end
+// Engine-level memory proxy interface - centralized memory access
+pub trait EngineMemoryProxy {
+    fn read(&self, component_id: &ComponentId, port: &str, address: &str) -> Option<Event>;
+    fn write(&mut self, component_id: &ComponentId, port: &str, address: &str, data: Event);
 }
 
 // Stateless processing components
 pub trait ProcessingComponent: BaseComponent {
     fn input_ports(&self) -> Vec<&'static str>;
     fn output_ports(&self) -> Vec<&'static str>;
+    fn memory_ports(&self) -> Vec<&'static str> { vec![] }
     
-    // Get memory proxy for connected memory component
-    fn get_memory_by_port(&mut self, port: &str) -> Option<&mut dyn MemoryProxy>;
-    
-    // Evaluate based on inputs (memory accessed via proxy during evaluation)
-    fn evaluate(&mut self, inputs: &HashMap<String, Event>) -> HashMap<String, Event>;
+    // Evaluate with access to engine memory proxy
+    fn evaluate(&self, 
+                inputs: &HashMap<String, Event>,
+                memory_proxy: &mut dyn EngineMemoryProxy) -> HashMap<String, Event>;
 }
 
 // Stateful memory components
@@ -69,10 +69,13 @@ pub trait MemoryComponent: BaseComponent {
     fn input_port(&self) -> &'static str { "in" }
     fn output_port(&self) -> &'static str { "out" }
     
-    // Create proxy for this memory component
-    fn create_proxy(&mut self) -> Box<dyn MemoryProxy>;
+    // Read from previous cycle's state snapshot
+    fn read_snapshot(&self, address: &str) -> Option<Event>;
     
-    // Called at end of cycle to apply buffered writes
+    // Write operation (applied immediately to current state)
+    fn write(&mut self, address: &str, data: Event) -> bool;
+    
+    // Called at end of cycle to create snapshot for next cycle
     fn end_cycle(&mut self);
 }
 
@@ -87,7 +90,7 @@ pub trait ProbeComponent: BaseComponent {
 **Action:** Create new file `src/core/cycle_engine.rs`:
 
 ```rust
-use super::component::{ProcessingComponent, MemoryComponent, ProbeComponent};
+use super::component::{ProcessingComponent, MemoryComponent, ProbeComponent, EngineMemoryProxy, Event};
 use super::types::ComponentId;
 use std::collections::HashMap;
 
@@ -96,13 +99,34 @@ pub struct CycleEngine {
     memory_components: HashMap<ComponentId, Box<dyn MemoryComponent>>,
     probe_components: HashMap<ComponentId, Box<dyn ProbeComponent>>,
     
-    // Memory connections: processing_component_id -> (port, memory_component_id)
-    memory_connections: HashMap<ComponentId, HashMap<String, ComponentId>>,
+    // Memory connections: (component_id, port) -> memory_component_id
+    memory_connections: HashMap<(ComponentId, String), ComponentId>,
     
     // Port connections: (source_id, port) -> Vec<(target_id, port)>
     connections: HashMap<(ComponentId, String), Vec<(ComponentId, String)>>,
     
     current_cycle: u64,
+}
+
+// Engine's centralized memory proxy
+pub struct CentralMemoryProxy<'a> {
+    memory_components: &'a mut HashMap<ComponentId, Box<dyn MemoryComponent>>,
+    memory_connections: &'a HashMap<(ComponentId, String), ComponentId>,
+}
+
+impl<'a> EngineMemoryProxy for CentralMemoryProxy<'a> {
+    fn read(&self, component_id: &ComponentId, port: &str, address: &str) -> Option<Event> {
+        let mem_id = self.memory_connections.get(&(component_id.clone(), port.to_string()))?;
+        self.memory_components.get(mem_id)?.read_snapshot(address)
+    }
+    
+    fn write(&mut self, component_id: &ComponentId, port: &str, address: &str, data: Event) {
+        if let Some(mem_id) = self.memory_connections.get(&(component_id.clone(), port.to_string())) {
+            if let Some(memory) = self.memory_components.get_mut(mem_id) {
+                memory.write(address, data);
+            }
+        }
+    }
 }
 
 impl CycleEngine {
@@ -128,7 +152,7 @@ impl CycleEngine {
     }
     
     pub fn connect_memory(&mut self, proc_id: ComponentId, port: String, mem_id: ComponentId) {
-        self.memory_connections.entry(proc_id).or_default().insert(port, mem_id);
+        self.memory_connections.insert((proc_id, port), mem_id);
     }
     
     pub fn connect(&mut self, source: (ComponentId, String), target: (ComponentId, String)) {
@@ -136,10 +160,19 @@ impl CycleEngine {
     }
     
     pub fn run_cycle(&mut self) {
-        // 1. Create memory proxies for processing components
-        // 2. Execute all processing components 
+        // 1. Execute all processing components with centralized memory proxy
+        let mut proxy = CentralMemoryProxy {
+            memory_components: &mut self.memory_components,
+            memory_connections: &self.memory_connections,
+        };
+        
+        // 2. Collect component inputs and execute
         // 3. Route outputs to connected components
-        // 4. End cycle on all memory components (apply writes)
+        // 4. End cycle on all memory components (create next snapshot)
+        
+        for memory in self.memory_components.values_mut() {
+            memory.end_cycle();
+        }
         
         self.current_cycle += 1;
     }
@@ -159,7 +192,7 @@ impl CycleEngine {
 **Action:** Create new file `src/core/memory_components/fifo.rs`:
 
 ```rust
-use crate::core::component::{MemoryComponent, MemoryProxy, Event, BaseComponent};
+use crate::core::component::{MemoryComponent, Event, BaseComponent};
 use crate::core::types::ComponentId;
 use std::collections::VecDeque;
 use std::sync::Arc;
@@ -168,9 +201,10 @@ pub struct FifoMemory {
     component_id: ComponentId,
     memory_id: String,
     capacity: usize,
+    // Current state (written to during cycle)
     data: VecDeque<Event>,
-    // Previous cycle snapshot for reads
-    prev_data: VecDeque<Event>,
+    // Previous cycle snapshot (read from during cycle)
+    snapshot: VecDeque<Event>,
 }
 
 impl FifoMemory {
@@ -180,33 +214,7 @@ impl FifoMemory {
             memory_id,
             capacity,
             data: VecDeque::new(),
-            prev_data: VecDeque::new(),
-        }
-    }
-}
-
-pub struct FifoProxy {
-    prev_data: VecDeque<Event>,
-    write_buffer: VecDeque<Event>,
-    capacity: usize,
-}
-
-impl MemoryProxy for FifoProxy {
-    fn read(&self, address: &str) -> Option<Event> {
-        match address {
-            "pop" => self.prev_data.front().cloned(),
-            _ => None,
-        }
-    }
-    
-    fn write(&mut self, address: &str, data: Event) {
-        match address {
-            "push" => {
-                if self.write_buffer.len() < self.capacity {
-                    self.write_buffer.push_back(data);
-                }
-            }
-            _ => {}
+            snapshot: VecDeque::new(),
         }
     }
 }
@@ -216,17 +224,40 @@ impl MemoryComponent for FifoMemory {
         &self.memory_id
     }
     
-    fn create_proxy(&mut self) -> Box<dyn MemoryProxy> {
-        Box::new(FifoProxy {
-            prev_data: self.prev_data.clone(),
-            write_buffer: VecDeque::new(),
-            capacity: self.capacity,
-        })
+    fn read_snapshot(&self, address: &str) -> Option<Event> {
+        match address {
+            "pop" => self.snapshot.front().cloned(),
+            "can_read" => Some(Arc::new(!self.snapshot.is_empty())),
+            "length" => Some(Arc::new(self.snapshot.len())),
+            _ => None,
+        }
+    }
+    
+    fn write(&mut self, address: &str, data: Event) -> bool {
+        match address {
+            "push" => {
+                if self.data.len() < self.capacity {
+                    self.data.push_back(data);
+                    true
+                } else {
+                    false
+                }
+            }
+            "pop" => {
+                if !self.data.is_empty() {
+                    self.data.pop_front();
+                    true
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        }
     }
     
     fn end_cycle(&mut self) {
-        self.prev_data = self.data.clone();
-        // Apply writes from proxy would need to be implemented
+        // Create snapshot for next cycle's reads
+        self.snapshot = self.data.clone();
     }
 }
 
@@ -242,9 +273,9 @@ impl BaseComponent for FifoMemory {
 ## Key Benefits
 
 ### 1. **Simplicity**
-- Direct memory access via simple read/write interface
-- No complex REQ/ACK protocol to implement
-- Components get memory via `get_memory_by_port()`
+- Direct memory access via engine proxy: `proxy.read(component_id, port, address)`
+- No complex REQ/ACK protocol or multiple proxy management
+- Centralized memory access control in engine
 
 ### 2. **Correct Timing**
 - Reads return previous cycle state (no contention)
@@ -252,23 +283,23 @@ impl BaseComponent for FifoMemory {
 - Maintains flip-flop timing model automatically
 
 ### 3. **Clean Architecture**
-- Processing components stay stateless
-- Memory components handle all state
-- Simple proxy controls when changes occur
+- Processing components stay truly stateless (no proxy management)
+- Memory components handle all state with clear snapshot/write separation
+- Engine provides centralized memory coordination
 
 ### 4. **Easy Implementation**
-- Much simpler than original guide's approach
-- Fewer abstractions and interfaces
-- Direct and intuitive API
+- Single engine-level proxy vs multiple proxy instances
+- Clear connection mapping: `(component_id, port) -> memory_id`
+- Components just call `proxy.read()`/`proxy.write()` during evaluation
 
 ---
 
 ## Implementation Plan
 
-1. **Update component traits** with simplified interfaces
-2. **Create cycle engine** with memory proxy management  
+1. **Update component traits** with engine-level proxy interfaces
+2. **Create cycle engine** with centralized memory proxy
 3. **Implement example memory** components (FIFO, register)
-4. **Convert existing components** to use memory proxy pattern
+4. **Convert existing components** to use engine proxy pattern
 5. **Update simulation engine** to use new cycle engine
 
-This approach achieves the same architectural goals with significantly less complexity!
+This centralized approach is much cleaner than distributed proxy management!
