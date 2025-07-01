@@ -1,4 +1,4 @@
-use super::component::{Component, Signal};
+use super::component::{Component, Event};
 use super::types::ComponentId;
 use std::collections::{HashMap, HashSet, VecDeque};
 
@@ -17,8 +17,11 @@ pub struct ConnectionManager {
     // Maps (target_component, input_port) -> (source_component, source_port)
     input_sources: HashMap<(ComponentId, String), (ComponentId, String)>,
     
-    // NEW: Signal storage for current cycle
-    pub current_signals: HashMap<(ComponentId, String), Signal>,
+    // Double buffering for event integrity
+    // Active events: read-only map containing previous cycle's outputs (current cycle's inputs)
+    active_events: HashMap<(ComponentId, String), Event>,
+    // Next events: write-only map for current cycle's new outputs
+    next_events: HashMap<(ComponentId, String), Event>,
 }
 
 impl ConnectionManager {
@@ -30,7 +33,8 @@ impl ConnectionManager {
             combinational_order: Vec::new(),
             sequential_ids: Vec::new(),
             input_sources: HashMap::new(),
-            current_signals: HashMap::new(),
+            active_events: HashMap::new(),
+            next_events: HashMap::new(),
         }
     }
 
@@ -158,18 +162,18 @@ impl ConnectionManager {
         }
     }
     
-    /// Gathers input signals for a component based on its input ports
+    /// Gathers input events for a component based on its input ports
     pub fn gather_inputs(&self, component_id: &ComponentId, input_ports: &[&str]) 
-        -> HashMap<String, Signal> {
+        -> HashMap<String, Event> {
         let mut inputs = HashMap::new();
         
         for port in input_ports {
             if let Some((source_id, source_port)) = 
                 self.input_sources.get(&(component_id.clone(), port.to_string())) {
                 
-                if let Some(signal) = self.current_signals.get(&(source_id.clone(), source_port.clone())) {
-                    // Clone the signal for this component
-                    inputs.insert(port.to_string(), signal.clone());
+                if let Some(event) = self.active_events.get(&(source_id.clone(), source_port.clone())) {
+                    // Clone the Arc - cheap operation
+                    inputs.insert(port.to_string(), event.clone());
                 }
             }
         }
@@ -177,16 +181,21 @@ impl ConnectionManager {
         inputs
     }
     
-    /// Publishes a signal and triggers all associated probes
-    pub fn publish_signal(&mut self, source: (ComponentId, String), signal: Signal) {
-        // Store signal for input gathering
-        self.current_signals.insert(source.clone(), signal.clone());
+    /// Swaps event buffers at end of cycle (atomic state transition)
+    pub fn swap_event_buffers(&mut self) {
+        self.active_events = std::mem::take(&mut self.next_events);
+    }
+    
+    /// Publishes an event and triggers all associated probes
+    pub fn publish_event(&mut self, source: (ComponentId, String), event: Event) {
+        // Store event in next_events buffer for next cycle
+        self.next_events.insert(source.clone(), event.clone());
         
         // Trigger all probes for this output port
         if let Some(probe_ids) = self.probes.get(&source) {
             for probe_id in probe_ids {
                 if let Some(Component::Probe(probe)) = self.components.get_mut(probe_id) {
-                    probe.probe(&signal);
+                    probe.probe(&event);
                 }
             }
         }
