@@ -42,12 +42,40 @@ impl ConnectionManager {
         self.components.insert(id, component);
     }
 
-    pub fn connect(&mut self, source: (ComponentId, String), target: (ComponentId, String)) {
-        self.connections.entry(source).or_default().push(target);
+    pub fn connect(&mut self, source: (ComponentId, String), target: (ComponentId, String)) -> Result<(), String> {
+        // Validate that input port doesn't already have a source
+        if self.input_sources.contains_key(&target) {
+            return Err(format!("Input port {:?} already connected to a source", target));
+        }
+        
+        // Validate that both components exist
+        if !self.components.contains_key(&source.0) {
+            return Err(format!("Source component {} does not exist", source.0));
+        }
+        if !self.components.contains_key(&target.0) {
+            return Err(format!("Target component {} does not exist", target.0));
+        }
+        
+        self.connections.entry(source.clone()).or_default().push(target.clone());
+        self.input_sources.insert(target, source);
+        Ok(())
     }
 
-    pub fn add_probe(&mut self, source_port: (ComponentId, String), probe_id: ComponentId) {
+    pub fn add_probe(&mut self, source_port: (ComponentId, String), probe_id: ComponentId) -> Result<(), String> {
+        // Validate that source component exists
+        if !self.components.contains_key(&source_port.0) {
+            return Err(format!("Source component {} does not exist", source_port.0));
+        }
+        
+        // Validate that probe component exists and is a probe
+        match self.components.get(&probe_id) {
+            Some(Component::Probe(_)) => {},
+            Some(_) => return Err(format!("Component {} is not a probe component", probe_id)),
+            None => return Err(format!("Probe component {} does not exist", probe_id)),
+        }
+        
         self.probes.entry(source_port).or_default().push(probe_id);
+        Ok(())
     }
 
     /// Analyzes the graph of combinational components to find a safe execution order.
@@ -109,11 +137,19 @@ impl ConnectionManager {
     }
     
     /// Builds reverse mapping for efficient input signal gathering
+    /// Note: This method is only needed if connections were made before the mapping was built
+    /// Normally, input_sources is maintained by the connect() method
     pub fn build_input_mapping(&mut self) {
         self.input_sources.clear();
         
         for ((source_id, source_port), targets) in &self.connections {
             for (target_id, target_port) in targets {
+                // Check for duplicate input mappings (should not happen with new validation)
+                if let Some(existing) = self.input_sources.get(&(target_id.clone(), target_port.clone())) {
+                    panic!("Duplicate input mapping found: ({}, {}) already connected to {:?}, cannot also connect to ({}, {})", 
+                           target_id, target_port, existing, source_id, source_port);
+                }
+                
                 self.input_sources.insert(
                     (target_id.clone(), target_port.clone()),
                     (source_id.clone(), source_port.clone())

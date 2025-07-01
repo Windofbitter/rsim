@@ -409,13 +409,13 @@ pub mod types;
 
 The implementation contains several critical issues that must be fixed:
 
-#### **1. Signal Type Inconsistency** (`component.rs:9`)
+#### **1. Signal Type Inconsistency** (`component.rs:9`) ✅ **FIXED**
 - **Bug**: Uses `Rc<dyn Any>` instead of `Box<dyn Any + Send>`
-- **Fix**: Change to `pub type Signal = Box<dyn Any + Send>;`
+- **Fix**: Changed to `pub type Signal = Box<dyn Any + Send>;`
 
-#### **2. Input Mapping Overwrite** (`connection_manager.rs:115-122`)
+#### **2. Input Mapping Overwrite** (`connection_manager.rs:115-122`) ✅ **FIXED**
 - **Bug**: Multiple sources to same input port overwrite each other
-- **Fix**: Change input mapping to support multiple sources or validate single-source constraint
+- **Fix**: Added validation in `connect()` method to prevent multiple sources to same input port, and component existence validation
 
 #### **3. Borrow Checker Violation** (`cycle_engine.rs:44-62`)
 - **Bug**: Sequential processing has immutable/mutable borrow conflict

@@ -3,10 +3,7 @@ use std::any::Any;
 use std::collections::HashMap;
 
 // The universal message type passed between components.
-// We use Rc for efficient cloning in single-threaded simulation
-use std::rc::Rc;
-
-pub type Signal = Rc<dyn Any>;
+pub type Signal = Box<dyn Any + Send>;
 
 // The foundational trait for all components.
 pub trait BaseComponent {
