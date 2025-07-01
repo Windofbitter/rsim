@@ -413,13 +413,19 @@ Should detect and handle as error or combine values.
 - **Error propagation:** SimulationEngine now handles validation errors during construction
 - **Result:** Invalid connections caught at setup time, preventing runtime panics
 
-### Bug 5: Incomplete Probe Integration
+### ✅ Bug 5: Incomplete Probe Integration - FIXED
 
-**Location:** `cycle_engine.rs:124-128`
+**Location:** `cycle_engine.rs:330-343` (previously 292-297)
 
-**Problem:** ConnectionManager tracks probe connections (`probes` field), but CycleEngine ignores this and probes all components instead of just connected ones.
+**Problem:** ConnectionManager tracked probe connections (`probes` field), but CycleEngine ignored this and probed all components instead of just connected ones.
 
-**Fix Required:** Transfer and respect probe connection mapping from ConnectionManager.
+**Fix Applied:** Implemented complete probe connection handling:
+- **Added field:** `probes: HashMap<(ComponentId, String), Vec<ComponentId>>` to CycleEngine
+- **Added method:** `connect_probe()` with comprehensive validation
+- **Connection transfer:** SimulationEngine now transfers probe connections with validation
+- **Selective triggering:** `run_cycle()` only triggers probes connected to specific source ports
+- **Tests added:** `test_probe_connection_validation()` and `test_selective_probe_triggering()`
+- **Result:** Probes now only receive events from their connected source ports
 
 ### Bug 6: Cycle 0 Cold Start Issue
 

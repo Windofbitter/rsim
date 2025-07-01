@@ -33,4 +33,3 @@ pub use request_item_event::RequestItemEvent;
 pub use generate_order_event::GenerateOrderEvent;
 pub use order_fulfilled_event::OrderFulfilledEvent;
 pub use place_order_event::PlaceOrderEvent;
-

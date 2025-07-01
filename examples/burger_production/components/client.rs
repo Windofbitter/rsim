@@ -390,8 +390,7 @@ impl Client {
                 );
 
                 // Schedule next order generation
-                let next_order_event =
-                    GenerateOrderEvent::new(self.id.clone(), None); // Broadcast to all subscribed components
+                let next_order_event = GenerateOrderEvent::new(self.id.clone(), None); // Broadcast to all subscribed components
                 new_events.push((Box::new(next_order_event), self.order_interval));
 
                 log::info!(
