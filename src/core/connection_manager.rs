@@ -1,4 +1,4 @@
-use super::component::{ProcessingComponent, MemoryComponent, ProbeComponent, Event};
+use super::component::{ProcessingComponent, MemoryComponent, ProbeComponent};
 use super::types::ComponentId;
 use std::collections::HashMap;
 

@@ -36,6 +36,9 @@ impl SimulationEngine {
             cycle_engine.connect_memory(proc_id, port, mem_id);
         }
         
+        // Build topological execution order for deterministic simulation
+        cycle_engine.build_execution_order()?;
+        
         let engine = Self {
             cycle_engine,
             max_cycles,

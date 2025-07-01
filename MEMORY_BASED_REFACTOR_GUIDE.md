@@ -356,54 +356,78 @@ This centralized approach is much cleaner than distributed proxy management!
 
 ## Critical Logic Bugs Found in Implementation
 
-### ✅ Bug 1: Circular Dependency in Component Execution - FIXED
+### ✅ Bug 1: Borrow Checker Violation in Memory Proxy - FIXED
 
-**Location:** `cycle_engine.rs:86-112`
+**Location:** `cycle_engine.rs:106-109`
 
-**Problem:** Components try to gather inputs from other components' outputs in the same cycle, but outputs are only stored AFTER all components have been evaluated. This creates a circular dependency where:
+**Problem:** The memory proxy held a mutable borrow of `memory_components` for the entire component evaluation loop, preventing components from accessing memory through the proxy.
 
-1. Component A needs Component B's output as input
-2. Component B's output isn't available until Component B evaluates  
-3. Component B can't evaluate until all components have gathered inputs
-4. Result: All components get empty inputs (except from memory)
+**Fix Applied:** Implemented interior mutability using `RefCell`:
+- **Changed:** `HashMap<ComponentId, Box<dyn MemoryComponent>>` → `HashMap<ComponentId, RefCell<Box<dyn MemoryComponent>>>`
+- **Memory reads:** `memory_ref.borrow().read_snapshot(address)`
+- **Memory writes:** `memory_ref.borrow_mut().write(address, data)`
+- **Proxy creation:** No longer requires `&mut` reference
+- **Result:** Components can now successfully access memory during evaluation
 
-**Fix Applied:** Added previous cycle output storage with proper timing:
-- **Added field:** `previous_cycle_outputs: HashMap<(ComponentId, String), Event>`
-- **Input gathering:** Uses previous cycle's outputs as current cycle's inputs
-- **Output storage:** Current cycle outputs stored for next cycle's inputs
-- **Hardware timing:** Matches flip-flop behavior where inputs come from previous clock cycle
+### ✅ Bug 2: Non-Deterministic Execution Order - FIXED
 
-### Bug 2: Borrow Conflict in Memory Proxy Scope
+**Location:** `cycle_engine.rs:163-164`
 
-**Location:** `cycle_engine.rs:80-113`
+**Problem:** Components were processed in HashMap key order, which was non-deterministic and made simulations non-reproducible.
 
-**Problem:** The memory proxy holds a mutable borrow of `memory_components` for the entire component evaluation loop. This prevents components from actually accessing memory through the proxy because:
+**Fix Applied:** Implemented topological sorting using Kahn's algorithm:
+- **Added field:** `execution_order: Vec<ComponentId>` for sorted execution order
+- **Added method:** `build_execution_order()` with Kahn's algorithm implementation
+- **Dependency analysis:** Builds adjacency list from component connections
+- **Cycle detection:** Returns error if circular dependencies detected
+- **Deterministic ordering:** Sorts components at each step for reproducible results
+- **Integration:** SimulationEngine calls `build_execution_order()` after component registration
+- **Result:** Components now execute in dependency-aware, deterministic order
 
-1. Proxy creation takes `&mut memory_components` 
-2. Component evaluation happens inside this borrow scope
-3. Any memory access attempts would require additional borrows of already-borrowed data
-4. Rust prevents this at compile time
+### Bug 3: Input Port Collision Handling
 
-**Fix Required:** Restructure to separate memory proxy creation from component evaluation, or use interior mutability patterns.
+**Location:** `cycle_engine.rs:97-99`
 
-### ✅ Bug 3: Missing Component State Persistence - FIXED
+**Problem:** Multiple sources to same input port silently overwrite each other:
+```rust
+inputs.insert(input_port.to_string(), event.clone());  // Overwrites previous value
+```
+Should detect and handle as error or combine values.
 
-**Problem:** The current implementation doesn't store component outputs between cycles. Components can only access:
-- Memory snapshots (previous cycle)
-- Empty component inputs (due to Bug 1)
+**Fix Required:** Detect multiple drivers and either error or implement proper fan-in logic.
 
-**Fix Applied:** Added cycle-to-cycle component output storage in Bug 1 fix:
-- **Field added:** `previous_cycle_outputs: HashMap<(ComponentId, String), Event>`
-- **Storage:** Current cycle outputs are stored at cycle end for next cycle
-- **Access:** Components can now receive inputs from other components
+### Bug 4: Missing Connection Validation
 
-### ✅ Bug 4: Incomplete Input Routing Logic - FIXED
+**Location:** `simulation_engine.rs:28-37`
 
-**Location:** `cycle_engine.rs:89-101`
+**Problem:** ConnectionManager has proper validation, but CycleEngine accepts connections without validation. Invalid memory connections could cause runtime panics.
 
-**Problem:** Input gathering logic assumes outputs exist in `cycle_outputs` during the same cycle, but `cycle_outputs` is empty at the start of each cycle.
+**Fix Required:** Validate all connections during transfer from ConnectionManager to CycleEngine.
 
-**Fix Applied:** Updated input routing to use previous cycle outputs:
-- **Changed:** Input gathering now uses `self.previous_cycle_outputs`
-- **Timing:** Previous cycle's outputs become current cycle's inputs
-- **Result:** Components can now properly receive data from connected components
+### Bug 5: Incomplete Probe Integration
+
+**Location:** `cycle_engine.rs:124-128`
+
+**Problem:** ConnectionManager tracks probe connections (`probes` field), but CycleEngine ignores this and probes all components instead of just connected ones.
+
+**Fix Required:** Transfer and respect probe connection mapping from ConnectionManager.
+
+### Bug 6: Cycle 0 Cold Start Issue
+
+**Location:** `cycle_engine.rs:96-97`
+
+**Problem:** All components get empty inputs on first cycle due to empty `previous_cycle_outputs`. This may cause initialization issues for components expecting valid inputs.
+
+**Fix Required:** Consider initialization strategy for cycle 0, or document cold start behavior.
+
+### Bug 7: Missing Error Propagation
+
+**Location:** Memory proxy interface
+
+**Problem:** Memory operations can fail (e.g., invalid addresses), but the proxy interface doesn't propagate errors to components:
+```rust
+fn read(&self, component_id: &ComponentId, port: &str, address: &str) -> Option<Event>;
+fn write(&mut self, component_id: &ComponentId, port: &str, address: &str, data: Event);
+```
+
+**Fix Required:** Return `Result<Option<Event>, MemoryError>` for reads and `Result<(), MemoryError>` for writes.
