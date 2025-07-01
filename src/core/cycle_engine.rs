@@ -80,23 +80,20 @@ impl CycleEngine {
         // 1. Collect current cycle outputs
         let mut current_cycle_outputs: HashMap<(ComponentId, String), Event> = HashMap::new();
         
-        // Create a separate scope for the memory proxy to avoid borrow conflicts
-        {
-            let mut proxy = CentralMemoryProxy {
-                memory_components: &mut self.memory_components,
-                memory_connections: &self.memory_connections,
-            };
+        // 2. Execute all processing components (one at a time to avoid borrow conflicts)
+        let component_ids: Vec<ComponentId> = self.processing_components.keys().cloned().collect();
+        
+        for comp_id in component_ids {
+            // Gather inputs for this component from PREVIOUS cycle outputs
+            let mut inputs = HashMap::new();
             
-            // 2. Execute all processing components
-            for (comp_id, component) in &self.processing_components {
-                // Gather inputs for this component from PREVIOUS cycle outputs
-                let mut inputs = HashMap::new();
+            if let Some(component) = self.processing_components.get(&comp_id) {
                 for input_port in component.input_ports() {
                     // Look for connections to this input port
                     for ((source_id, source_port), targets) in &self.connections {
                         for (target_id, target_port) in targets {
-                            if target_id == comp_id && target_port == input_port {
-                                // KEY FIX: Use previous_cycle_outputs instead of current cycle
+                            if target_id == &comp_id && target_port == input_port {
+                                // Use previous_cycle_outputs for current cycle inputs
                                 if let Some(event) = self.previous_cycle_outputs.get(&(source_id.clone(), source_port.clone())) {
                                     inputs.insert(input_port.to_string(), event.clone());
                                 }
@@ -104,6 +101,12 @@ impl CycleEngine {
                         }
                     }
                 }
+                
+                // Create proxy for this component evaluation only
+                let mut proxy = CentralMemoryProxy {
+                    memory_components: &mut self.memory_components,
+                    memory_connections: &self.memory_connections,
+                };
                 
                 // Evaluate component with memory proxy access
                 let outputs = component.evaluate(&inputs, &mut proxy);
@@ -114,6 +117,7 @@ impl CycleEngine {
                         current_cycle_outputs.insert((comp_id.clone(), output_port.to_string()), event.clone());
                     }
                 }
+                // Proxy is dropped here, releasing the borrow
             }
         }
         
