@@ -13,6 +13,9 @@ pub struct CycleEngine {
     // Port connections: (source_id, port) -> Vec<(target_id, port)>
     connections: HashMap<(ComponentId, String), Vec<(ComponentId, String)>>,
     
+    // Store component outputs from previous cycle for current cycle inputs
+    pub previous_cycle_outputs: HashMap<(ComponentId, String), Event>,
+    
     current_cycle: u64,
 }
 
@@ -45,6 +48,7 @@ impl CycleEngine {
             probe_components: HashMap::new(),
             memory_connections: HashMap::new(),
             connections: HashMap::new(),
+            previous_cycle_outputs: HashMap::new(),
             current_cycle: 0,
         }
     }
@@ -73,8 +77,8 @@ impl CycleEngine {
     }
     
     pub fn run_cycle(&mut self) {
-        // 1. Collect all processing component outputs
-        let mut cycle_outputs: HashMap<(ComponentId, String), Event> = HashMap::new();
+        // 1. Collect current cycle outputs
+        let mut current_cycle_outputs: HashMap<(ComponentId, String), Event> = HashMap::new();
         
         // Create a separate scope for the memory proxy to avoid borrow conflicts
         {
@@ -85,14 +89,15 @@ impl CycleEngine {
             
             // 2. Execute all processing components
             for (comp_id, component) in &self.processing_components {
-                // Gather inputs for this component
+                // Gather inputs for this component from PREVIOUS cycle outputs
                 let mut inputs = HashMap::new();
                 for input_port in component.input_ports() {
                     // Look for connections to this input port
                     for ((source_id, source_port), targets) in &self.connections {
                         for (target_id, target_port) in targets {
                             if target_id == comp_id && target_port == input_port {
-                                if let Some(event) = cycle_outputs.get(&(source_id.clone(), source_port.clone())) {
+                                // KEY FIX: Use previous_cycle_outputs instead of current cycle
+                                if let Some(event) = self.previous_cycle_outputs.get(&(source_id.clone(), source_port.clone())) {
                                     inputs.insert(input_port.to_string(), event.clone());
                                 }
                             }
@@ -103,23 +108,26 @@ impl CycleEngine {
                 // Evaluate component with memory proxy access
                 let outputs = component.evaluate(&inputs, &mut proxy);
                 
-                // Store outputs for this cycle
+                // Store outputs for NEXT cycle
                 for output_port in component.output_ports() {
                     if let Some(event) = outputs.get(output_port) {
-                        cycle_outputs.insert((comp_id.clone(), output_port.to_string()), event.clone());
+                        current_cycle_outputs.insert((comp_id.clone(), output_port.to_string()), event.clone());
                     }
                 }
             }
         }
         
-        // 3. Trigger probes for all outputs
-        for ((source_id, source_port), event) in &cycle_outputs {
+        // 3. Trigger probes for current cycle outputs
+        for ((source_id, source_port), event) in &current_cycle_outputs {
             for (probe_id, probe) in &mut self.probe_components {
                 probe.probe(source_id, source_port, event);
             }
         }
         
-        // 4. End cycle on all memory components (create next snapshot)
+        // 4. Update previous cycle outputs for next cycle
+        self.previous_cycle_outputs = current_cycle_outputs;
+        
+        // 5. End cycle on all memory components (create next snapshot)
         for memory in self.memory_components.values_mut() {
             memory.end_cycle();
         }

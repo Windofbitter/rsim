@@ -103,6 +103,9 @@ pub struct CycleEngine {
     // Port connections: (source_id, port) -> Vec<(target_id, port)>
     connections: HashMap<(ComponentId, String), Vec<(ComponentId, String)>>,
     
+    // Store component outputs from previous cycle for current cycle inputs
+    previous_cycle_outputs: HashMap<(ComponentId, String), Event>,
+    
     current_cycle: u64,
 }
 
@@ -135,6 +138,7 @@ impl CycleEngine {
             probe_components: HashMap::new(),
             memory_connections: HashMap::new(),
             connections: HashMap::new(),
+            previous_cycle_outputs: HashMap::new(),
             current_cycle: 0,
         }
     }
@@ -163,16 +167,57 @@ impl CycleEngine {
     }
     
     pub fn run_cycle(&mut self) {
-        // 1. Execute all processing components with centralized memory proxy
-        let mut proxy = CentralMemoryProxy {
-            memory_components: &mut self.memory_components,
-            memory_connections: &self.memory_connections,
-        };
+        // 1. Collect current cycle outputs
+        let mut current_cycle_outputs: HashMap<(ComponentId, String), Event> = HashMap::new();
         
-        // 2. Collect component inputs and execute
-        // 3. Route outputs to connected components
-        // 4. End cycle on all memory components (create next snapshot)
+        // Create a separate scope for the memory proxy to avoid borrow conflicts
+        {
+            let mut proxy = CentralMemoryProxy {
+                memory_components: &mut self.memory_components,
+                memory_connections: &self.memory_connections,
+            };
+            
+            // 2. Execute all processing components
+            for (comp_id, component) in &self.processing_components {
+                // Gather inputs for this component from PREVIOUS cycle outputs
+                let mut inputs = HashMap::new();
+                for input_port in component.input_ports() {
+                    // Look for connections to this input port
+                    for ((source_id, source_port), targets) in &self.connections {
+                        for (target_id, target_port) in targets {
+                            if target_id == comp_id && target_port == input_port {
+                                // KEY FIX: Use previous_cycle_outputs instead of current cycle
+                                if let Some(event) = self.previous_cycle_outputs.get(&(source_id.clone(), source_port.clone())) {
+                                    inputs.insert(input_port.to_string(), event.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Evaluate component with memory proxy access
+                let outputs = component.evaluate(&inputs, &mut proxy);
+                
+                // Store outputs for NEXT cycle
+                for output_port in component.output_ports() {
+                    if let Some(event) = outputs.get(output_port) {
+                        current_cycle_outputs.insert((comp_id.clone(), output_port.to_string()), event.clone());
+                    }
+                }
+            }
+        }
         
+        // 3. Trigger probes for current cycle outputs
+        for ((source_id, source_port), event) in &current_cycle_outputs {
+            for (probe_id, probe) in &mut self.probe_components {
+                probe.probe(source_id, source_port, event);
+            }
+        }
+        
+        // 4. Update previous cycle outputs for next cycle
+        self.previous_cycle_outputs = current_cycle_outputs;
+        
+        // 5. End cycle on all memory components (create next snapshot)
         for memory in self.memory_components.values_mut() {
             memory.end_cycle();
         }
@@ -311,7 +356,7 @@ This centralized approach is much cleaner than distributed proxy management!
 
 ## Critical Logic Bugs Found in Implementation
 
-### Bug 1: Circular Dependency in Component Execution
+### ✅ Bug 1: Circular Dependency in Component Execution - FIXED
 
 **Location:** `cycle_engine.rs:86-112`
 
@@ -322,9 +367,11 @@ This centralized approach is much cleaner than distributed proxy management!
 3. Component B can't evaluate until all components have gathered inputs
 4. Result: All components get empty inputs (except from memory)
 
-**Fix Required:** Implement proper two-phase execution:
-- **Phase 1:** Collect inputs (from previous cycle's component outputs + current memory snapshots)
-- **Phase 2:** Execute all components with collected inputs, store outputs for next cycle
+**Fix Applied:** Added previous cycle output storage with proper timing:
+- **Added field:** `previous_cycle_outputs: HashMap<(ComponentId, String), Event>`
+- **Input gathering:** Uses previous cycle's outputs as current cycle's inputs
+- **Output storage:** Current cycle outputs stored for next cycle's inputs
+- **Hardware timing:** Matches flip-flop behavior where inputs come from previous clock cycle
 
 ### Bug 2: Borrow Conflict in Memory Proxy Scope
 
@@ -339,30 +386,24 @@ This centralized approach is much cleaner than distributed proxy management!
 
 **Fix Required:** Restructure to separate memory proxy creation from component evaluation, or use interior mutability patterns.
 
-### Bug 3: Missing Component State Persistence
+### ✅ Bug 3: Missing Component State Persistence - FIXED
 
 **Problem:** The current implementation doesn't store component outputs between cycles. Components can only access:
 - Memory snapshots (previous cycle)
 - Empty component inputs (due to Bug 1)
 
-**Fix Required:** Add cycle-to-cycle component output storage:
-```rust
-// Store component outputs from previous cycle
-previous_outputs: HashMap<(ComponentId, String), Event>
-```
+**Fix Applied:** Added cycle-to-cycle component output storage in Bug 1 fix:
+- **Field added:** `previous_cycle_outputs: HashMap<(ComponentId, String), Event>`
+- **Storage:** Current cycle outputs are stored at cycle end for next cycle
+- **Access:** Components can now receive inputs from other components
 
-### Bug 4: Incomplete Input Routing Logic
+### ✅ Bug 4: Incomplete Input Routing Logic - FIXED
 
 **Location:** `cycle_engine.rs:89-101`
 
 **Problem:** Input gathering logic assumes outputs exist in `cycle_outputs` during the same cycle, but `cycle_outputs` is empty at the start of each cycle.
 
-**Fix Required:** Use previous cycle's outputs for input routing:
-```rust
-// Use previous cycle outputs for current cycle inputs
-for input_port in component.input_ports() {
-    if let Some(event) = self.previous_outputs.get(&(source_id, source_port)) {
-        inputs.insert(input_port.to_string(), event.clone());
-    }
-}
-```
+**Fix Applied:** Updated input routing to use previous cycle outputs:
+- **Changed:** Input gathering now uses `self.previous_cycle_outputs`
+- **Timing:** Previous cycle's outputs become current cycle's inputs
+- **Result:** Components can now properly receive data from connected components
