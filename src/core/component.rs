@@ -3,52 +3,49 @@ use std::any::Any;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-// The universal message type passed between components.
-// Using Arc<dyn Any + Send + Sync> for thread-safe event distribution and parallel execution
+// Universal data type for inter-component communication
 pub type Event = Arc<dyn Any + Send + Sync>;
 
-// The foundational trait for all components.
-pub trait BaseComponent {
+// Base trait for all components
+pub trait BaseComponent: Send {
     fn component_id(&self) -> &ComponentId;
 }
 
-// Trait for components that are part of the primary, active data-flow graph.
-pub trait ActiveComponent: BaseComponent {
+// Engine-level memory proxy interface - centralized memory access
+pub trait EngineMemoryProxy {
+    fn read(&self, component_id: &ComponentId, port: &str, address: &str) -> Option<Event>;
+    fn write(&mut self, component_id: &ComponentId, port: &str, address: &str, data: Event);
+}
+
+// Stateless processing components
+pub trait ProcessingComponent: BaseComponent {
     fn input_ports(&self) -> Vec<&'static str>;
-    fn output_port(&self) -> &'static str;
+    fn output_ports(&self) -> Vec<&'static str>;
+    fn memory_ports(&self) -> Vec<&'static str> { vec![] }
+    
+    // Evaluate with access to engine memory proxy
+    fn evaluate(&self, 
+                inputs: &HashMap<String, Event>,
+                memory_proxy: &mut dyn EngineMemoryProxy) -> HashMap<String, Event>;
 }
 
-// Trait for stateless components that produce an output based on their current inputs.
-pub trait CombinationalComponent: ActiveComponent {
-    fn evaluate(&self, port_events: &HashMap<String, Event>) -> Option<Event>;
+// Stateful memory components
+pub trait MemoryComponent: BaseComponent {
+    fn memory_id(&self) -> &str;
+    fn input_port(&self) -> &'static str { "in" }
+    fn output_port(&self) -> &'static str { "out" }
+    
+    // Read from previous cycle's state snapshot
+    fn read_snapshot(&self, address: &str) -> Option<Event>;
+    
+    // Write operation (applied immediately to current state)
+    fn write(&mut self, address: &str, data: Event) -> bool;
+    
+    // Called at end of cycle to create snapshot for next cycle
+    fn end_cycle(&mut self);
 }
 
-// Trait for stateful components that have a clocked behavior.
-pub trait SequentialComponent: ActiveComponent {
-    fn current_output(&self) -> Option<Event>;
-    fn prepare_next_state(&mut self, port_events: &HashMap<String, Event>);
-    fn commit_state_change(&mut self);
-}
-
-// Trait for passive monitoring components (e.g., metrics collectors, loggers).
+// Passive monitoring components
 pub trait ProbeComponent: BaseComponent {
-    fn probe(&mut self, event: &Event);
-}
-
-// An enum to hold any type of component in the ConnectionManager.
-pub enum Component {
-    Combinational(Box<dyn CombinationalComponent>),
-    Sequential(Box<dyn SequentialComponent>),
-    Probe(Box<dyn ProbeComponent>),
-}
-
-// Add helper methods for easy access.
-impl Component {
-    pub fn as_base(&self) -> &dyn BaseComponent {
-        match self {
-            Component::Combinational(c) => c.as_ref(),
-            Component::Sequential(c) => c.as_ref(),
-            Component::Probe(c) => c.as_ref(),
-        }
-    }
+    fn probe(&mut self, source: &ComponentId, port: &str, event: &Event);
 }

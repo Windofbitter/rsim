@@ -1,4 +1,3 @@
-// Remove old imports for EventManager and EventScheduler
 use super::connection_manager::ConnectionManager;
 use super::cycle_engine::CycleEngine;
 
@@ -9,14 +8,38 @@ pub struct SimulationEngine {
 
 impl SimulationEngine {
     pub fn new(connection_manager: ConnectionManager, max_cycles: Option<u64>) -> Result<Self, String> {
-        let mut engine = Self {
-            cycle_engine: CycleEngine::new(connection_manager),
+        // Create cycle engine and transfer components from connection manager
+        let mut cycle_engine = CycleEngine::new();
+        
+        // Transfer all components to cycle engine
+        for (id, component) in connection_manager.processing_components {
+            cycle_engine.register_processing(component);
+        }
+        
+        for (id, component) in connection_manager.memory_components {
+            cycle_engine.register_memory(component);
+        }
+        
+        for (id, component) in connection_manager.probe_components {
+            cycle_engine.register_probe(component);
+        }
+        
+        // Transfer connections
+        for (source, targets) in connection_manager.connections {
+            for target in targets {
+                cycle_engine.connect(source.clone(), target);
+            }
+        }
+        
+        // Transfer memory connections
+        for ((proc_id, port), mem_id) in connection_manager.memory_connections {
+            cycle_engine.connect_memory(proc_id, port, mem_id);
+        }
+        
+        let engine = Self {
+            cycle_engine,
             max_cycles,
         };
-        
-        // Build the required mappings before simulation can run
-        engine.cycle_engine.connection_manager.build_evaluation_order()?;
-        engine.cycle_engine.connection_manager.build_input_mapping();
         
         Ok(engine)
     }
@@ -34,6 +57,6 @@ impl SimulationEngine {
     }
 
     pub fn current_cycle(&self) -> u64 {
-        self.cycle_engine.current_cycle
+        self.cycle_engine.current_cycle()
     }
 }

@@ -1,93 +1,133 @@
-use super::component::Component;
-use super::connection_manager::ConnectionManager;
+use super::component::{ProcessingComponent, MemoryComponent, ProbeComponent, EngineMemoryProxy, Event};
 use super::types::ComponentId;
+use std::collections::HashMap;
 
 pub struct CycleEngine {
-    pub connection_manager: ConnectionManager,
-    pub current_cycle: u64,
+    processing_components: HashMap<ComponentId, Box<dyn ProcessingComponent>>,
+    memory_components: HashMap<ComponentId, Box<dyn MemoryComponent>>,
+    probe_components: HashMap<ComponentId, Box<dyn ProbeComponent>>,
+    
+    // Memory connections: (component_id, port) -> memory_component_id
+    memory_connections: HashMap<(ComponentId, String), ComponentId>,
+    
+    // Port connections: (source_id, port) -> Vec<(target_id, port)>
+    connections: HashMap<(ComponentId, String), Vec<(ComponentId, String)>>,
+    
+    current_cycle: u64,
+}
+
+// Engine's centralized memory proxy
+pub struct CentralMemoryProxy<'a> {
+    memory_components: &'a mut HashMap<ComponentId, Box<dyn MemoryComponent>>,
+    memory_connections: &'a HashMap<(ComponentId, String), ComponentId>,
+}
+
+impl<'a> EngineMemoryProxy for CentralMemoryProxy<'a> {
+    fn read(&self, component_id: &ComponentId, port: &str, address: &str) -> Option<Event> {
+        let mem_id = self.memory_connections.get(&(component_id.clone(), port.to_string()))?;
+        self.memory_components.get(mem_id)?.read_snapshot(address)
+    }
+    
+    fn write(&mut self, component_id: &ComponentId, port: &str, address: &str, data: Event) {
+        if let Some(mem_id) = self.memory_connections.get(&(component_id.clone(), port.to_string())) {
+            if let Some(memory) = self.memory_components.get_mut(mem_id) {
+                memory.write(address, data);
+            }
+        }
+    }
 }
 
 impl CycleEngine {
-    pub fn new(connection_manager: ConnectionManager) -> Self {
+    pub fn new() -> Self {
         Self {
-            connection_manager,
+            processing_components: HashMap::new(),
+            memory_components: HashMap::new(),
+            probe_components: HashMap::new(),
+            memory_connections: HashMap::new(),
+            connections: HashMap::new(),
             current_cycle: 0,
         }
     }
-
+    
+    pub fn register_processing(&mut self, component: Box<dyn ProcessingComponent>) {
+        let id = component.component_id().clone();
+        self.processing_components.insert(id, component);
+    }
+    
+    pub fn register_memory(&mut self, component: Box<dyn MemoryComponent>) {
+        let id = component.component_id().clone();
+        self.memory_components.insert(id, component);
+    }
+    
+    pub fn register_probe(&mut self, component: Box<dyn ProbeComponent>) {
+        let id = component.component_id().clone();
+        self.probe_components.insert(id, component);
+    }
+    
+    pub fn connect_memory(&mut self, proc_id: ComponentId, port: String, mem_id: ComponentId) {
+        self.memory_connections.insert((proc_id, port), mem_id);
+    }
+    
+    pub fn connect(&mut self, source: (ComponentId, String), target: (ComponentId, String)) {
+        self.connections.entry(source).or_default().push(target);
+    }
+    
     pub fn run_cycle(&mut self) {
-        // Note: No event clearing needed - double buffering handles this
+        // 1. Collect all processing component outputs
+        let mut cycle_outputs: HashMap<(ComponentId, String), Event> = HashMap::new();
         
-        // Phase 1: Combinational Propagation
-        // Evaluate all combinational components in the pre-calculated topological order.
-        for comp_id in &self.connection_manager.combinational_order.clone() {
-            if let Some(Component::Combinational(comp)) = 
-                self.connection_manager.components.get(comp_id) {
+        // Create a separate scope for the memory proxy to avoid borrow conflicts
+        {
+            let mut proxy = CentralMemoryProxy {
+                memory_components: &mut self.memory_components,
+                memory_connections: &self.memory_connections,
+            };
+            
+            // 2. Execute all processing components
+            for (comp_id, component) in &self.processing_components {
+                // Gather inputs for this component
+                let mut inputs = HashMap::new();
+                for input_port in component.input_ports() {
+                    // Look for connections to this input port
+                    for ((source_id, source_port), targets) in &self.connections {
+                        for (target_id, target_port) in targets {
+                            if target_id == comp_id && target_port == input_port {
+                                if let Some(event) = cycle_outputs.get(&(source_id.clone(), source_port.clone())) {
+                                    inputs.insert(input_port.to_string(), event.clone());
+                                }
+                            }
+                        }
+                    }
+                }
                 
-                // Gather inputs using the reverse mapping
-                let inputs = self.connection_manager.gather_inputs(
-                    comp_id, 
-                    &comp.input_ports()
-                );
+                // Evaluate component with memory proxy access
+                let outputs = component.evaluate(&inputs, &mut proxy);
                 
-                // Evaluate component
-                if let Some(output_event) = comp.evaluate(&inputs) {
-                    // Publish event (stores + triggers probes)
-                    let output_port = (comp_id.clone(), comp.output_port().to_string());
-                    self.connection_manager.publish_event(output_port, output_event);
+                // Store outputs for this cycle
+                for output_port in component.output_ports() {
+                    if let Some(event) = outputs.get(output_port) {
+                        cycle_outputs.insert((comp_id.clone(), output_port.to_string()), event.clone());
+                    }
                 }
             }
         }
-
-        // Phase 2: Sequential State Preparation
-        // Process each sequential component individually to avoid borrow conflicts
-        let sequential_ids = self.connection_manager.sequential_ids.clone();
-        for comp_id in &sequential_ids {
-            // For each component, gather inputs and immediately call prepare_next_state
-            // This pattern avoids holding references across mutable borrows
-            self.prepare_sequential_component(comp_id);
-        }
-
-        // Phase 3: Sequential State Commit + Output
-        // All sequential components atomically update their state for the next cycle.
-        for comp_id in &self.connection_manager.sequential_ids.clone() {
-            if let Some(Component::Sequential(comp)) = 
-                self.connection_manager.components.get_mut(comp_id) {
-                
-                comp.commit_state_change();
-                
-                // Publish sequential component's output
-                if let Some(output_event) = comp.current_output() {
-                    let output_port = (comp_id.clone(), comp.output_port().to_string());
-                    self.connection_manager.publish_event(output_port, output_event);
-                }
+        
+        // 3. Trigger probes for all outputs
+        for ((source_id, source_port), event) in &cycle_outputs {
+            for (probe_id, probe) in &mut self.probe_components {
+                probe.probe(source_id, source_port, event);
             }
         }
-
-        // End of cycle: Atomic buffer swap makes new events available for next cycle
-        self.connection_manager.swap_event_buffers();
+        
+        // 4. End cycle on all memory components (create next snapshot)
+        for memory in self.memory_components.values_mut() {
+            memory.end_cycle();
+        }
         
         self.current_cycle += 1;
     }
     
-    /// Prepares a sequential component by gathering its inputs and calling prepare_next_state
-    /// This method handles the borrow checker constraints by doing the work in sequence
-    fn prepare_sequential_component(&mut self, comp_id: &ComponentId) {
-        // Step 1: Get the input ports for this component
-        let input_ports = if let Some(Component::Sequential(comp)) = 
-            self.connection_manager.components.get(comp_id) {
-            comp.input_ports()
-        } else {
-            return; // Component not found or not sequential
-        };
-        
-        // Step 2: Gather inputs using the input ports
-        let inputs = self.connection_manager.gather_inputs(comp_id, &input_ports);
-        
-        // Step 3: Call prepare_next_state with the gathered inputs
-        if let Some(Component::Sequential(comp)) = 
-            self.connection_manager.components.get_mut(comp_id) {
-            comp.prepare_next_state(&inputs);
-        }
+    pub fn current_cycle(&self) -> u64 {
+        self.current_cycle
     }
 }

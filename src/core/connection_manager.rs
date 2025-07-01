@@ -1,203 +1,94 @@
-use super::component::{Component, Event};
+use super::component::{ProcessingComponent, MemoryComponent, ProbeComponent, Event};
 use super::types::ComponentId;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::HashMap;
 
 pub struct ConnectionManager {
-    pub components: HashMap<ComponentId, Component>,
-    // Active data-flow connections: (Source Component, Source Port) -> Vec<(Target Component, Target Port)>
+    pub processing_components: HashMap<ComponentId, Box<dyn ProcessingComponent>>,
+    pub memory_components: HashMap<ComponentId, Box<dyn MemoryComponent>>,
+    pub probe_components: HashMap<ComponentId, Box<dyn ProbeComponent>>,
+    
+    // Port connections: (source_id, port) -> Vec<(target_id, port)>
     pub connections: HashMap<(ComponentId, String), Vec<(ComponentId, String)>>,
-    // Passive monitoring probes: (Source Component, Source Port) -> Vec<ProbeComponentId>
+    
+    // Memory connections: (component_id, port) -> memory_component_id
+    pub memory_connections: HashMap<(ComponentId, String), ComponentId>,
+    
+    // Probe connections: (source_id, port) -> Vec<probe_id>
     pub probes: HashMap<(ComponentId, String), Vec<ComponentId>>,
-    // The calculated, safe execution order for combinational components.
-    pub combinational_order: Vec<ComponentId>,
-    // The list of all sequential components.
-    pub sequential_ids: Vec<ComponentId>,
-    
-    // NEW: Reverse mapping for efficient input gathering
-    // Maps (target_component, input_port) -> (source_component, source_port)
-    input_sources: HashMap<(ComponentId, String), (ComponentId, String)>,
-    
-    // Double buffering for event integrity
-    // Active events: read-only map containing previous cycle's outputs (current cycle's inputs)
-    active_events: HashMap<(ComponentId, String), Event>,
-    // Next events: write-only map for current cycle's new outputs
-    next_events: HashMap<(ComponentId, String), Event>,
 }
 
 impl ConnectionManager {
     pub fn new() -> Self {
         Self {
-            components: HashMap::new(),
+            processing_components: HashMap::new(),
+            memory_components: HashMap::new(),
+            probe_components: HashMap::new(),
             connections: HashMap::new(),
+            memory_connections: HashMap::new(),
             probes: HashMap::new(),
-            combinational_order: Vec::new(),
-            sequential_ids: Vec::new(),
-            input_sources: HashMap::new(),
-            active_events: HashMap::new(),
-            next_events: HashMap::new(),
         }
     }
 
-    pub fn register_component(&mut self, component: Component) {
-        let id = component.as_base().component_id().clone();
-        if let Component::Sequential(_) = &component {
-            self.sequential_ids.push(id.clone());
-        }
-        self.components.insert(id, component);
+    pub fn register_processing(&mut self, component: Box<dyn ProcessingComponent>) {
+        let id = component.component_id().clone();
+        self.processing_components.insert(id, component);
+    }
+
+    pub fn register_memory(&mut self, component: Box<dyn MemoryComponent>) {
+        let id = component.component_id().clone();
+        self.memory_components.insert(id, component);
+    }
+
+    pub fn register_probe(&mut self, component: Box<dyn ProbeComponent>) {
+        let id = component.component_id().clone();
+        self.probe_components.insert(id, component);
     }
 
     pub fn connect(&mut self, source: (ComponentId, String), target: (ComponentId, String)) -> Result<(), String> {
-        // Validate that input port doesn't already have a source
-        if self.input_sources.contains_key(&target) {
-            return Err(format!("Input port {:?} already connected to a source", target));
-        }
-        
         // Validate that both components exist
-        if !self.components.contains_key(&source.0) {
+        if !self.processing_components.contains_key(&source.0) && !self.memory_components.contains_key(&source.0) {
             return Err(format!("Source component {} does not exist", source.0));
         }
-        if !self.components.contains_key(&target.0) {
+        if !self.processing_components.contains_key(&target.0) && !self.memory_components.contains_key(&target.0) {
             return Err(format!("Target component {} does not exist", target.0));
         }
         
-        self.connections.entry(source.clone()).or_default().push(target.clone());
-        self.input_sources.insert(target, source);
+        self.connections.entry(source).or_default().push(target);
+        Ok(())
+    }
+
+    pub fn connect_memory(&mut self, proc_id: ComponentId, port: String, mem_id: ComponentId) -> Result<(), String> {
+        // Validate that processing component exists
+        if !self.processing_components.contains_key(&proc_id) {
+            return Err(format!("Processing component {} does not exist", proc_id));
+        }
+        
+        // Validate that memory component exists
+        if !self.memory_components.contains_key(&mem_id) {
+            return Err(format!("Memory component {} does not exist", mem_id));
+        }
+        
+        // Check if port is already connected to memory
+        if self.memory_connections.contains_key(&(proc_id.clone(), port.clone())) {
+            return Err(format!("Port ({}, {}) already connected to memory", proc_id, port));
+        }
+        
+        self.memory_connections.insert((proc_id, port), mem_id);
         Ok(())
     }
 
     pub fn add_probe(&mut self, source_port: (ComponentId, String), probe_id: ComponentId) -> Result<(), String> {
         // Validate that source component exists
-        if !self.components.contains_key(&source_port.0) {
+        if !self.processing_components.contains_key(&source_port.0) && !self.memory_components.contains_key(&source_port.0) {
             return Err(format!("Source component {} does not exist", source_port.0));
         }
         
-        // Validate that probe component exists and is a probe
-        match self.components.get(&probe_id) {
-            Some(Component::Probe(_)) => {},
-            Some(_) => return Err(format!("Component {} is not a probe component", probe_id)),
-            None => return Err(format!("Probe component {} does not exist", probe_id)),
+        // Validate that probe component exists
+        if !self.probe_components.contains_key(&probe_id) {
+            return Err(format!("Probe component {} does not exist", probe_id));
         }
         
         self.probes.entry(source_port).or_default().push(probe_id);
         Ok(())
-    }
-
-    /// Analyzes the graph of combinational components to find a safe execution order.
-    /// This is a topological sort. It will return an error if a cycle is detected.
-    pub fn build_evaluation_order(&mut self) -> Result<(), String> {
-        let mut adj_list = HashMap::new();
-        let mut in_degree = HashMap::new();
-        let mut combinational_ids = HashSet::new();
-
-        // Initialize graph data structures
-        for (id, comp) in &self.components {
-            if let Component::Combinational(_) = comp {
-                combinational_ids.insert(id.clone());
-                in_degree.entry(id.clone()).or_insert(0);
-                adj_list.entry(id.clone()).or_insert_with(Vec::new);
-            }
-        }
-
-        // Build adjacency list and in-degrees from connections
-        for (source, targets) in &self.connections {
-            let (source_id, _) = source;
-            if !combinational_ids.contains(source_id) { continue; }
-
-            for (target_id, _) in targets {
-                if !combinational_ids.contains(target_id) { continue; }
-                adj_list.get_mut(source_id).unwrap().push(target_id.clone());
-                *in_degree.entry(target_id.clone()).or_insert(0) += 1;
-            }
-        }
-
-        // Kahn's algorithm for topological sort
-        let mut queue: VecDeque<ComponentId> = in_degree
-            .iter()
-            .filter(|(_, &degree)| degree == 0)
-            .map(|(id, _)| id.clone())
-            .collect();
-        
-        let mut sorted_order = Vec::new();
-        while let Some(u) = queue.pop_front() {
-            sorted_order.push(u.clone());
-            if let Some(neighbors) = adj_list.get(&u) {
-                for v in neighbors {
-                    if let Some(degree) = in_degree.get_mut(v) {
-                        *degree -= 1;
-                        if *degree == 0 {
-                            queue.push_back(v.clone());
-                        }
-                    }
-                }
-            }
-        }
-
-        if sorted_order.len() == combinational_ids.len() {
-            self.combinational_order = sorted_order;
-            Ok(())
-        } else {
-            Err("Combinational cycle detected in component graph.".to_string())
-        }
-    }
-    
-    /// Builds reverse mapping for efficient input signal gathering
-    /// Note: This method is only needed if connections were made before the mapping was built
-    /// Normally, input_sources is maintained by the connect() method
-    pub fn build_input_mapping(&mut self) {
-        self.input_sources.clear();
-        
-        for ((source_id, source_port), targets) in &self.connections {
-            for (target_id, target_port) in targets {
-                // Check for duplicate input mappings (should not happen with new validation)
-                if let Some(existing) = self.input_sources.get(&(target_id.clone(), target_port.clone())) {
-                    panic!("Duplicate input mapping found: ({}, {}) already connected to {:?}, cannot also connect to ({}, {})", 
-                           target_id, target_port, existing, source_id, source_port);
-                }
-                
-                self.input_sources.insert(
-                    (target_id.clone(), target_port.clone()),
-                    (source_id.clone(), source_port.clone())
-                );
-            }
-        }
-    }
-    
-    /// Gathers input events for a component based on its input ports
-    pub fn gather_inputs(&self, component_id: &ComponentId, input_ports: &[&str]) 
-        -> HashMap<String, Event> {
-        let mut inputs = HashMap::new();
-        
-        for port in input_ports {
-            if let Some((source_id, source_port)) = 
-                self.input_sources.get(&(component_id.clone(), port.to_string())) {
-                
-                if let Some(event) = self.active_events.get(&(source_id.clone(), source_port.clone())) {
-                    // Clone the Arc - cheap operation
-                    inputs.insert(port.to_string(), event.clone());
-                }
-            }
-        }
-        
-        inputs
-    }
-    
-    /// Swaps event buffers at end of cycle (atomic state transition)
-    pub fn swap_event_buffers(&mut self) {
-        self.active_events = std::mem::take(&mut self.next_events);
-    }
-    
-    /// Publishes an event and triggers all associated probes
-    pub fn publish_event(&mut self, source: (ComponentId, String), event: Event) {
-        // Store event in next_events buffer for next cycle
-        self.next_events.insert(source.clone(), event.clone());
-        
-        // Trigger all probes for this output port
-        if let Some(probe_ids) = self.probes.get(&source) {
-            for probe_id in probe_ids {
-                if let Some(Component::Probe(probe)) = self.components.get_mut(probe_id) {
-                    probe.probe(&event);
-                }
-            }
-        }
     }
 }
