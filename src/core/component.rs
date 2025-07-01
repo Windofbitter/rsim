@@ -9,10 +9,18 @@ pub trait BaseComponent: Send {
     fn component_id(&self) -> &ComponentId;
 }
 
+#[derive(Debug, Clone)]
+pub enum MemoryError {
+    InvalidAddress(String),
+    InvalidPort(String),
+    MemoryNotFound(ComponentId),
+    OperationFailed(String),
+}
+
 // Engine-level memory proxy interface - centralized memory access
 pub trait EngineMemoryProxy {
-    fn read(&self, component_id: &ComponentId, port: &str, address: &str) -> Option<Event>;
-    fn write(&mut self, component_id: &ComponentId, port: &str, address: &str, data: Event);
+    fn read(&self, component_id: &ComponentId, port: &str, address: &str) -> Result<Option<Event>, MemoryError>;
+    fn write(&mut self, component_id: &ComponentId, port: &str, address: &str, data: Event) -> Result<(), MemoryError>;
 }
 
 // Stateless processing components

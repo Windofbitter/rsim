@@ -1,4 +1,4 @@
-use super::component::{EngineMemoryProxy, Event, MemoryComponent};
+use super::component::{EngineMemoryProxy, Event, MemoryComponent, MemoryError};
 use super::types::ComponentId;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -22,22 +22,36 @@ impl<'a> CentralMemoryProxy<'a> {
 }
 
 impl<'a> EngineMemoryProxy for CentralMemoryProxy<'a> {
-    fn read(&self, component_id: &ComponentId, port: &str, address: &str) -> Option<Event> {
+    fn read(&self, component_id: &ComponentId, port: &str, address: &str) -> Result<Option<Event>, MemoryError> {
         let mem_id = self
             .memory_connections
-            .get(&(component_id.clone(), port.to_string()))?;
-        let memory_ref = self.memory_components.get(mem_id)?;
-        memory_ref.borrow().read_snapshot(address)
+            .get(&(component_id.clone(), port.to_string()))
+            .ok_or_else(|| MemoryError::InvalidPort(format!("{}:{}", component_id, port)))?;
+        
+        let memory_ref = self
+            .memory_components
+            .get(mem_id)
+            .ok_or_else(|| MemoryError::MemoryNotFound(mem_id.clone()))?;
+        
+        Ok(memory_ref.borrow().read_snapshot(address))
     }
 
-    fn write(&mut self, component_id: &ComponentId, port: &str, address: &str, data: Event) {
-        if let Some(mem_id) = self
+    fn write(&mut self, component_id: &ComponentId, port: &str, address: &str, data: Event) -> Result<(), MemoryError> {
+        let mem_id = self
             .memory_connections
             .get(&(component_id.clone(), port.to_string()))
-        {
-            if let Some(memory_ref) = self.memory_components.get(mem_id) {
-                memory_ref.borrow_mut().write(address, data);
-            }
+            .ok_or_else(|| MemoryError::InvalidPort(format!("{}:{}", component_id, port)))?;
+        
+        let memory_ref = self
+            .memory_components
+            .get(mem_id)
+            .ok_or_else(|| MemoryError::MemoryNotFound(mem_id.clone()))?;
+        
+        let success = memory_ref.borrow_mut().write(address, data);
+        if success {
+            Ok(())
+        } else {
+            Err(MemoryError::OperationFailed(format!("Write failed to {}:{}", mem_id, address)))
         }
     }
 }
