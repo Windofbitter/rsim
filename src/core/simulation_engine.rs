@@ -12,28 +12,30 @@ impl SimulationEngine {
         let mut cycle_engine = CycleEngine::new();
         
         // Transfer all components to cycle engine
-        for (id, component) in connection_manager.processing_components {
+        for (_id, component) in connection_manager.processing_components {
             cycle_engine.register_processing(component);
         }
         
-        for (id, component) in connection_manager.memory_components {
+        for (_id, component) in connection_manager.memory_components {
             cycle_engine.register_memory(component);
         }
         
-        for (id, component) in connection_manager.probe_components {
+        for (_id, component) in connection_manager.probe_components {
             cycle_engine.register_probe(component);
         }
         
-        // Transfer connections
+        // Transfer connections with validation
         for (source, targets) in connection_manager.connections {
             for target in targets {
-                cycle_engine.connect(source.clone(), target);
+                cycle_engine.connect(source.clone(), target)
+                    .map_err(|e| format!("Connection validation failed: {}", e))?;
             }
         }
         
-        // Transfer memory connections
+        // Transfer memory connections with validation
         for ((proc_id, port), mem_id) in connection_manager.memory_connections {
-            cycle_engine.connect_memory(proc_id, port, mem_id);
+            cycle_engine.connect_memory(proc_id, port, mem_id)
+                .map_err(|e| format!("Memory connection validation failed: {}", e))?;
         }
         
         // Build topological execution order for deterministic simulation

@@ -384,7 +384,7 @@ This centralized approach is much cleaner than distributed proxy management!
 - **Integration:** SimulationEngine calls `build_execution_order()` after component registration
 - **Result:** Components now execute in dependency-aware, deterministic order
 
-### Bug 3: Input Port Collision Handling
+### ✅ Bug 3: Input Port Collision Handling - FIXED
 
 **Location:** `cycle_engine.rs:97-99`
 
@@ -394,15 +394,24 @@ inputs.insert(input_port.to_string(), event.clone());  // Overwrites previous va
 ```
 Should detect and handle as error or combine values.
 
-**Fix Required:** Detect multiple drivers and either error or implement proper fan-in logic.
+**Fix Applied:** Added validation in `connect()` method:
+- **Detection logic:** Checks existing connections for same target input port
+- **Error prevention:** Returns error when attempting multiple drivers to same input
+- **Coverage:** Works for both processing and memory components
+- **Result:** Multiple drivers now properly rejected with descriptive error messages
 
-### Bug 4: Missing Connection Validation
+### ✅ Bug 4: Missing Connection Validation - FIXED
 
 **Location:** `simulation_engine.rs:28-37`
 
 **Problem:** ConnectionManager has proper validation, but CycleEngine accepts connections without validation. Invalid memory connections could cause runtime panics.
 
-**Fix Required:** Validate all connections during transfer from ConnectionManager to CycleEngine.
+**Fix Applied:** Added comprehensive validation to both connection methods:
+- **Component validation:** `connect()` and `connect_memory()` verify component existence
+- **Port validation:** Validates source/target ports exist on specified components
+- **Memory validation:** `connect_memory()` checks processing component memory ports
+- **Error propagation:** SimulationEngine now handles validation errors during construction
+- **Result:** Invalid connections caught at setup time, preventing runtime panics
 
 ### Bug 5: Incomplete Probe Integration
 
