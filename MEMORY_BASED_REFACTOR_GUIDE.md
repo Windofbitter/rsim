@@ -32,13 +32,11 @@ This guide refactors the simulation engine to a simplified memory-based architec
 **Action:** Replace the entire content of `src/core/component.rs`:
 
 ```rust
-use super::types::ComponentId;
-use std::any::Any;
+use super::types::{ComponentId, ComponentValue};
 use std::collections::HashMap;
-use std::sync::Arc;
 
-// Universal data type for inter-component communication
-pub type Event = Arc<dyn Any + Send + Sync>;
+// Use existing ComponentValue for type consistency
+pub type Event = ComponentValue;
 
 // Base trait for all components
 pub trait BaseComponent: Send {
@@ -151,6 +149,11 @@ impl CycleEngine {
         self.memory_components.insert(id, component);
     }
     
+    pub fn register_probe(&mut self, component: Box<dyn ProbeComponent>) {
+        let id = component.component_id().clone();
+        self.probe_components.insert(id, component);
+    }
+    
     pub fn connect_memory(&mut self, proc_id: ComponentId, port: String, mem_id: ComponentId) {
         self.memory_connections.insert((proc_id, port), mem_id);
     }
@@ -195,7 +198,6 @@ impl CycleEngine {
 use crate::core::component::{MemoryComponent, Event, BaseComponent};
 use crate::core::types::ComponentId;
 use std::collections::VecDeque;
-use std::sync::Arc;
 
 pub struct FifoMemory {
     component_id: ComponentId,
@@ -225,10 +227,11 @@ impl MemoryComponent for FifoMemory {
     }
     
     fn read_snapshot(&self, address: &str) -> Option<Event> {
+        use crate::core::types::ComponentValue;
         match address {
             "pop" => self.snapshot.front().cloned(),
-            "can_read" => Some(Arc::new(!self.snapshot.is_empty())),
-            "length" => Some(Arc::new(self.snapshot.len())),
+            "can_read" => Some(ComponentValue::Bool(!self.snapshot.is_empty())),
+            "length" => Some(ComponentValue::Int(self.snapshot.len() as i64)),
             _ => None,
         }
     }
@@ -303,3 +306,63 @@ impl BaseComponent for FifoMemory {
 5. **Update simulation engine** to use new cycle engine
 
 This centralized approach is much cleaner than distributed proxy management!
+
+---
+
+## Critical Logic Bugs Found in Implementation
+
+### Bug 1: Circular Dependency in Component Execution
+
+**Location:** `cycle_engine.rs:86-112`
+
+**Problem:** Components try to gather inputs from other components' outputs in the same cycle, but outputs are only stored AFTER all components have been evaluated. This creates a circular dependency where:
+
+1. Component A needs Component B's output as input
+2. Component B's output isn't available until Component B evaluates  
+3. Component B can't evaluate until all components have gathered inputs
+4. Result: All components get empty inputs (except from memory)
+
+**Fix Required:** Implement proper two-phase execution:
+- **Phase 1:** Collect inputs (from previous cycle's component outputs + current memory snapshots)
+- **Phase 2:** Execute all components with collected inputs, store outputs for next cycle
+
+### Bug 2: Borrow Conflict in Memory Proxy Scope
+
+**Location:** `cycle_engine.rs:80-113`
+
+**Problem:** The memory proxy holds a mutable borrow of `memory_components` for the entire component evaluation loop. This prevents components from actually accessing memory through the proxy because:
+
+1. Proxy creation takes `&mut memory_components` 
+2. Component evaluation happens inside this borrow scope
+3. Any memory access attempts would require additional borrows of already-borrowed data
+4. Rust prevents this at compile time
+
+**Fix Required:** Restructure to separate memory proxy creation from component evaluation, or use interior mutability patterns.
+
+### Bug 3: Missing Component State Persistence
+
+**Problem:** The current implementation doesn't store component outputs between cycles. Components can only access:
+- Memory snapshots (previous cycle)
+- Empty component inputs (due to Bug 1)
+
+**Fix Required:** Add cycle-to-cycle component output storage:
+```rust
+// Store component outputs from previous cycle
+previous_outputs: HashMap<(ComponentId, String), Event>
+```
+
+### Bug 4: Incomplete Input Routing Logic
+
+**Location:** `cycle_engine.rs:89-101`
+
+**Problem:** Input gathering logic assumes outputs exist in `cycle_outputs` during the same cycle, but `cycle_outputs` is empty at the start of each cycle.
+
+**Fix Required:** Use previous cycle's outputs for input routing:
+```rust
+// Use previous cycle outputs for current cycle inputs
+for input_port in component.input_ports() {
+    if let Some(event) = self.previous_outputs.get(&(source_id, source_port)) {
+        inputs.insert(input_port.to_string(), event.clone());
+    }
+}
+```

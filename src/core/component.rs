@@ -1,10 +1,8 @@
-use super::types::ComponentId;
-use std::any::Any;
+use super::types::{ComponentId, ComponentValue};
 use std::collections::HashMap;
-use std::sync::Arc;
 
-// Universal data type for inter-component communication
-pub type Event = Arc<dyn Any + Send + Sync>;
+// Use existing ComponentValue for type consistency
+pub type Event = ComponentValue;
 
 // Base trait for all components
 pub trait BaseComponent: Send {
