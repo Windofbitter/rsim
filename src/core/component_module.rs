@@ -1,5 +1,5 @@
 use super::state::{ComponentState, MemoryData};
-use super::types::{ComponentId, ComponentValue};
+use super::types::ComponentId;
 use super::typed_values::{TypedInputMap, TypedOutputMap};
 use std::collections::HashMap;
 
@@ -168,43 +168,6 @@ impl ProcessorModule {
     }
 }
 
-/// Probe component module for monitoring
-#[derive(Clone)]
-pub struct ProbeModule {
-    /// Component name/type
-    pub name: String,
-    /// Probe function that gets called when data is observed
-    pub probe_fn: fn(&ComponentId, &str, &ComponentValue),
-    /// Optional state for the probe
-    pub state_factory: Option<fn() -> Box<dyn ComponentState>>,
-}
-
-impl ProbeModule {
-    /// Create a new probe module
-    pub fn new(
-        name: &str,
-        probe_fn: fn(&ComponentId, &str, &ComponentValue),
-    ) -> Self {
-        Self {
-            name: name.to_string(),
-            probe_fn,
-            state_factory: None,
-        }
-    }
-
-    /// Create a new probe module with state
-    pub fn with_state(
-        name: &str,
-        probe_fn: fn(&ComponentId, &str, &ComponentValue),
-        state_factory: fn() -> Box<dyn ComponentState>,
-    ) -> Self {
-        Self {
-            name: name.to_string(),
-            probe_fn,
-            state_factory: Some(state_factory),
-        }
-    }
-}
 
 /// Trait for memory modules that can store and retrieve typed data
 pub trait MemoryModuleTrait: Send {
@@ -294,7 +257,6 @@ impl<T: MemoryData> MemoryModuleTrait for MemoryModule<T> {
 pub enum ComponentModule {
     Processing(ProcessorModule),
     Memory(Box<dyn MemoryModuleTrait>),
-    Probe(ProbeModule),
 }
 
 impl Clone for ComponentModule {
@@ -302,7 +264,6 @@ impl Clone for ComponentModule {
         match self {
             ComponentModule::Processing(proc_module) => ComponentModule::Processing(proc_module.clone()),
             ComponentModule::Memory(memory_module) => ComponentModule::Memory(memory_module.clone_module()),
-            ComponentModule::Probe(probe_module) => ComponentModule::Probe(probe_module.clone()),
         }
     }
 }
@@ -313,7 +274,6 @@ impl ComponentModule {
         match self {
             ComponentModule::Processing(module) => &module.name,
             ComponentModule::Memory(module) => module.memory_id(),
-            ComponentModule::Probe(module) => &module.name,
         }
     }
 
@@ -325,11 +285,6 @@ impl ComponentModule {
     /// Check if this is a memory module
     pub fn is_memory(&self) -> bool {
         matches!(self, ComponentModule::Memory(_))
-    }
-
-    /// Check if this is a probe module
-    pub fn is_probe(&self) -> bool {
-        matches!(self, ComponentModule::Probe(_))
     }
 
     /// Get as processing module
@@ -344,14 +299,6 @@ impl ComponentModule {
     pub fn as_memory(&self) -> Option<&dyn MemoryModuleTrait> {
         match self {
             ComponentModule::Memory(module) => Some(module.as_ref()),
-            _ => None,
-        }
-    }
-
-    /// Get as probe module
-    pub fn as_probe(&self) -> Option<&ProbeModule> {
-        match self {
-            ComponentModule::Probe(module) => Some(module),
             _ => None,
         }
     }

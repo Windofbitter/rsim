@@ -14,8 +14,6 @@ pub struct SimulationBuilder {
     connections: HashMap<(ComponentId, String), Vec<(ComponentId, String)>>,
     /// Memory connections: (component_id, port) -> memory_id
     memory_connections: HashMap<(ComponentId, String), ComponentId>,
-    /// Probe connections: (source_id, port) -> Vec<probe_id>
-    probe_connections: HashMap<(ComponentId, String), Vec<ComponentId>>,
 }
 
 impl SimulationBuilder {
@@ -26,7 +24,6 @@ impl SimulationBuilder {
             components: HashMap::new(),
             connections: HashMap::new(),
             memory_connections: HashMap::new(),
-            probe_connections: HashMap::new(),
         }
     }
 
@@ -143,31 +140,6 @@ impl SimulationBuilder {
         Ok(self)
     }
 
-    /// Connect a component output to a probe
-    pub fn connect_probe(mut self, source: (&str, &str), probe_id: &str) -> Result<Self, String> {
-        let (source_id, source_port) = source;
-
-        // Validate components exist
-        if !self.components.contains_key(source_id) {
-            return Err(format!("Source component '{}' not found", source_id));
-        }
-        if !self.components.contains_key(probe_id) {
-            return Err(format!("Probe component '{}' not found", probe_id));
-        }
-
-        // Validate source port exists
-        self.validate_source_port(source_id, source_port)?;
-
-        // Validate the target is a probe component
-        let probe_instance = &self.components[probe_id];
-        if !probe_instance.is_probe() {
-            return Err(format!("Component '{}' is not a probe component", probe_id));
-        }
-
-        let source_key = (source_id.to_string(), source_port.to_string());
-        self.probe_connections.entry(source_key).or_default().push(probe_id.to_string());
-        Ok(self)
-    }
 
     /// Validate all connections and required ports
     pub fn validate_connections(&self) -> Result<(), String> {
@@ -249,13 +221,6 @@ impl SimulationBuilder {
             engine.connect_memory(component_id, port, memory_id)?;
         }
 
-        // Set up probe connections
-        for ((source_id, source_port), probe_ids) in self.probe_connections {
-            for probe_id in probe_ids {
-                engine.connect_probe((source_id.clone(), source_port.clone()), probe_id)?;
-            }
-        }
-
         // Build execution order
         engine.build_execution_order()?;
 
@@ -266,15 +231,12 @@ impl SimulationBuilder {
     pub fn component_stats(&self) -> SimulationStats {
         let mut processing_count = 0;
         let mut memory_count = 0;
-        let mut probe_count = 0;
 
         for instance in self.components.values() {
             if instance.is_processing() {
                 processing_count += 1;
             } else if instance.is_memory() {
                 memory_count += 1;
-            } else if instance.is_probe() {
-                probe_count += 1;
             }
         }
 
@@ -282,10 +244,8 @@ impl SimulationBuilder {
             total_components: self.components.len(),
             processing_components: processing_count,
             memory_components: memory_count,
-            probe_components: probe_count,
             total_connections: self.connections.len(),
             memory_connections: self.memory_connections.len(),
-            probe_connections: self.probe_connections.len(),
         }
     }
 
@@ -321,9 +281,6 @@ impl SimulationBuilder {
                     ));
                 }
             },
-            ComponentModule::Probe(_) => {
-                return Err(format!("Probe components don't have output ports"));
-            },
         }
         
         Ok(())
@@ -350,9 +307,6 @@ impl SimulationBuilder {
                         port, component_id
                     ));
                 }
-            },
-            ComponentModule::Probe(_) => {
-                return Err(format!("Probe components don't have input ports for direct connections"));
             },
         }
         
@@ -387,10 +341,8 @@ pub struct SimulationStats {
     pub total_components: usize,
     pub processing_components: usize,
     pub memory_components: usize,
-    pub probe_components: usize,
     pub total_connections: usize,
     pub memory_connections: usize,
-    pub probe_connections: usize,
 }
 
 impl Default for SimulationBuilder {

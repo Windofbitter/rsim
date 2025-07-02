@@ -1,6 +1,5 @@
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
-use super::types::ComponentValue;
 
 /// Type-erased but type-safe container for component values
 #[derive(Debug)]
@@ -64,39 +63,29 @@ impl TypedValue {
         TypeId::of::<T>() == self.type_id
     }
     
-    /// Convert TypedValue to Event (ComponentValue) for probes and external interfaces
-    pub fn to_event(&self) -> Option<ComponentValue> {
-        if self.is_type::<i64>() {
-            self.get::<i64>().ok().map(|v| ComponentValue::Int(*v))
-        } else if self.is_type::<f64>() {
-            self.get::<f64>().ok().map(|v| ComponentValue::Float(*v))
-        } else if self.is_type::<String>() {
-            self.get::<String>().ok().map(|v| ComponentValue::String(v.clone()))
-        } else if self.is_type::<bool>() {
-            self.get::<bool>().ok().map(|v| ComponentValue::Bool(*v))
-        } else {
-            None
-        }
-    }
-    
-    /// Create TypedValue from Event (ComponentValue)
-    pub fn from_event(event: ComponentValue) -> Self {
-        match event {
-            ComponentValue::Int(v) => TypedValue::new(v),
-            ComponentValue::Float(v) => TypedValue::new(v),
-            ComponentValue::String(v) => TypedValue::new(v),
-            ComponentValue::Bool(v) => TypedValue::new(v),
-        }
-    }
 }
 
 impl Clone for TypedValue {
     fn clone(&self) -> Self {
-        // Clone by converting to ComponentValue and back (for common types)
-        if let Some(event) = self.to_event() {
-            TypedValue::from_event(event)
+        // Clone common types directly
+        if let Ok(value) = self.get::<i64>() { 
+            TypedValue::new(*value)
+        } else if let Ok(value) = self.get::<f64>() { 
+            TypedValue::new(*value)
+        } else if let Ok(value) = self.get::<String>() { 
+            TypedValue::new(value.clone())
+        } else if let Ok(value) = self.get::<bool>() { 
+            TypedValue::new(*value)
+        } else if let Ok(value) = self.get::<u64>() { 
+            TypedValue::new(*value)
+        } else if let Ok(value) = self.get::<i32>() { 
+            TypedValue::new(*value)
+        } else if let Ok(value) = self.get::<f32>() { 
+            TypedValue::new(*value)
+        } else if let Ok(value) = self.get::<u32>() { 
+            TypedValue::new(*value)
         } else {
-            // For custom types that don't convert to ComponentValue, we can't clone
+            // For custom types that don't implement Clone, we can't clone
             panic!("TypedValue::clone() is not supported for type {}. Custom types must implement manual cloning.", self.type_name);
         }
     }

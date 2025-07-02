@@ -82,23 +82,6 @@ impl ComponentRegistry {
             .collect()
     }
 
-    /// Get probe components
-    pub fn probe_components(&self) -> HashMap<ComponentId, &ComponentInstance> {
-        self.components
-            .iter()
-            .filter(|(_, instance)| instance.is_probe())
-            .map(|(id, instance)| (id.clone(), instance))
-            .collect()
-    }
-
-    /// Get mutable probe components
-    pub fn probe_components_mut(&mut self) -> HashMap<ComponentId, &mut ComponentInstance> {
-        self.components
-            .iter_mut()
-            .filter(|(_, instance)| instance.is_probe())
-            .map(|(id, instance)| (id.clone(), instance))
-            .collect()
-    }
 
     /// Check if a component exists
     pub fn has_component(&self, id: &ComponentId) -> bool {
@@ -121,13 +104,6 @@ impl ComponentRegistry {
             .unwrap_or(false)
     }
 
-    /// Check if a probe component exists
-    pub fn has_probe_component(&self, id: &ComponentId) -> bool {
-        self.components
-            .get(id)
-            .map(|instance| instance.is_probe())
-            .unwrap_or(false)
-    }
 
     /// Get all component IDs
     pub fn component_ids(&self) -> Vec<&ComponentId> {
@@ -152,14 +128,6 @@ impl ComponentRegistry {
             .collect()
     }
 
-    /// Get probe component IDs
-    pub fn probe_component_ids(&self) -> Vec<ComponentId> {
-        self.components
-            .iter()
-            .filter(|(_, instance)| instance.is_probe())
-            .map(|(id, _)| id.clone())
-            .collect()
-    }
 
     /// Remove a component by ID
     pub fn remove_component(&mut self, id: &ComponentId) -> Option<ComponentInstance> {
@@ -173,15 +141,12 @@ impl ComponentRegistry {
     pub fn component_counts(&self) -> ComponentCounts {
         let mut processing = 0;
         let mut memory = 0;
-        let mut probe = 0;
 
         for instance in self.components.values() {
             if instance.is_processing() {
                 processing += 1;
             } else if instance.is_memory() {
                 memory += 1;
-            } else if instance.is_probe() {
-                probe += 1;
             }
         }
 
@@ -189,7 +154,6 @@ impl ComponentRegistry {
             total: self.components.len(),
             processing,
             memory,
-            probe,
         }
     }
 
@@ -230,7 +194,6 @@ pub struct ComponentCounts {
     pub total: usize,
     pub processing: usize,
     pub memory: usize,
-    pub probe: usize,
 }
 
 impl Default for ComponentRegistry {

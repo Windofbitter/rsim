@@ -1,4 +1,3 @@
-use super::component::Event;
 use super::typed_values::{TypedValue, TypedInputMap, TypedOutputMap, TypedOutputs};
 use super::component_manager::ComponentInstance;
 use super::component_module::{ComponentModule, EvaluationContext, MemoryModuleTrait};
@@ -16,10 +15,6 @@ pub struct CycleEngine {
     connections: HashMap<(ComponentId, String), Vec<(ComponentId, String)>>,
     /// Memory connections: (component_id, port) -> memory_id
     memory_connections: HashMap<(ComponentId, String), ComponentId>,
-    /// Probe connections: (source_id, port) -> Vec<probe_id>
-    probe_connections: HashMap<(ComponentId, String), Vec<ComponentId>>,
-    /// Store component outputs from previous cycle for current cycle inputs (as Events for probes)
-    previous_cycle_outputs: HashMap<(ComponentId, String), Event>,
     /// Store typed outputs from current cycle for next cycle inputs
     current_typed_outputs: HashMap<(ComponentId, String), TypedValue>,
     /// Execution order for processing components (topologically sorted)
@@ -35,8 +30,6 @@ impl CycleEngine {
             memory_modules: HashMap::new(),
             connections: HashMap::new(),
             memory_connections: HashMap::new(),
-            probe_connections: HashMap::new(),
-            previous_cycle_outputs: HashMap::new(),
             current_typed_outputs: HashMap::new(),
             execution_order: Vec::new(),
             current_cycle: 0,
@@ -122,30 +115,6 @@ impl CycleEngine {
         Ok(())
     }
 
-    /// Connect component to probe
-    pub fn connect_probe(
-        &mut self,
-        source: (ComponentId, String),
-        probe_id: ComponentId,
-    ) -> Result<(), String> {
-        // Validate components exist
-        if !self.components.contains_key(&source.0) {
-            return Err(format!("Source component '{}' not found", source.0));
-        }
-        if !self.components.contains_key(&probe_id) {
-            return Err(format!("Probe component '{}' not found", probe_id));
-        }
-
-        // Validate source port and probe component
-        self.validate_source_port(&source.0, &source.1)?;
-        let probe_instance = &self.components[&probe_id];
-        if !probe_instance.is_probe() {
-            return Err(format!("Component '{}' is not a probe", probe_id));
-        }
-
-        self.probe_connections.entry(source).or_default().push(probe_id);
-        Ok(())
-    }
 
     /// Build execution order using topological sort
     pub fn build_execution_order(&mut self) -> Result<(), String> {
@@ -215,7 +184,6 @@ impl CycleEngine {
 
     /// Run a single simulation cycle
     pub fn run_cycle(&mut self) {
-        let mut current_cycle_outputs: HashMap<(ComponentId, String), Event> = HashMap::new();
         let mut new_typed_outputs: HashMap<(ComponentId, String), TypedValue> = HashMap::new();
 
         // Execute processing components in topological order
@@ -225,7 +193,7 @@ impl CycleEngine {
             let mut typed_inputs = TypedInputMap::new();
             
             // Get the processing module info without holding a borrow
-            let (input_ports, output_ports, evaluate_fn) = {
+            let (input_ports, _output_ports, evaluate_fn) = {
                 if let Some(instance) = self.components.get(comp_id) {
                     if let ComponentModule::Processing(proc_module) = &instance.module {
                         (
@@ -278,22 +246,13 @@ impl CycleEngine {
                 // Evaluate the component
                 match evaluate_fn(&eval_context, &mut typed_outputs) {
                     Ok(()) => {
-                        // Store typed outputs for next cycle and convert to Events for probes
+                        // Store typed outputs for next cycle
                         let output_map = typed_outputs.into_map();
                         for (port_name, typed_value) in output_map {
-                            // Store typed value for next cycle component inputs
                             new_typed_outputs.insert(
-                                (comp_id.clone(), port_name.clone()),
-                                typed_value.clone(),
+                                (comp_id.clone(), port_name),
+                                typed_value,
                             );
-                            
-                            // Convert to Event for probes
-                            if let Some(event) = typed_value.to_event() {
-                                current_cycle_outputs.insert(
-                                    (comp_id.clone(), port_name),
-                                    event,
-                                );
-                            }
                         }
                     },
                     Err(error) => {
@@ -303,22 +262,8 @@ impl CycleEngine {
             }
         }
 
-        // Trigger probes for current cycle outputs
-        for ((source_id, source_port), event) in &current_cycle_outputs {
-            if let Some(probe_ids) = self.probe_connections.get(&(source_id.clone(), source_port.clone())) {
-                for probe_id in probe_ids {
-                    if let Some(probe_instance) = self.components.get_mut(probe_id) {
-                        if let ComponentModule::Probe(probe_module) = &probe_instance.module {
-                            (probe_module.probe_fn)(source_id, source_port, event);
-                        }
-                    }
-                }
-            }
-        }
-
-        // Update both typed outputs for component inputs and Events for probes
+        // Update typed outputs for next cycle
         self.current_typed_outputs = new_typed_outputs;
-        self.previous_cycle_outputs = current_cycle_outputs;
 
         // End cycle on all memory modules
         for memory_module_ref in self.memory_modules.values() {
@@ -374,9 +319,6 @@ impl CycleEngine {
                     ));
                 }
             },
-            ComponentModule::Probe(_) => {
-                return Err(format!("Probe components don't have output ports"));
-            },
         }
         
         Ok(())
@@ -402,9 +344,6 @@ impl CycleEngine {
                         port, component_id
                     ));
                 }
-            },
-            ComponentModule::Probe(_) => {
-                return Err(format!("Probe components don't have input ports for direct connections"));
             },
         }
         

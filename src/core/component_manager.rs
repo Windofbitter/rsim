@@ -48,13 +48,8 @@ impl ComponentManager {
 
         let module = self.clone_module(template)?;
         
-        // Create state if the module supports it
-        let state = match &module {
-            ComponentModule::Probe(probe_module) => {
-                probe_module.state_factory.as_ref().map(|factory| factory())
-            },
-            _ => None,
-        };
+        // Components don't currently support state factories
+        let state = None;
 
         Ok(ComponentInstance {
             id: component_id,
@@ -99,9 +94,6 @@ impl ComponentManager {
             ComponentModule::Memory(mem_module) => {
                 Ok(ComponentModule::Memory(mem_module.clone_module()))
             },
-            ComponentModule::Probe(probe_module) => {
-                Ok(ComponentModule::Probe(probe_module.clone()))
-            },
         }
     }
 
@@ -144,9 +136,6 @@ impl ComponentManager {
             ComponentModule::Memory(_) => {
                 // Memory components typically don't have required connection validation
             },
-            ComponentModule::Probe(_) => {
-                // Probe components don't have required connections
-            },
         }
 
         Ok(())
@@ -156,13 +145,11 @@ impl ComponentManager {
     pub fn get_module_stats(&self) -> ComponentManagerStats {
         let mut processing_count = 0;
         let mut memory_count = 0;
-        let mut probe_count = 0;
 
         for module in self.module_templates.values() {
             match module {
                 ComponentModule::Processing(_) => processing_count += 1,
                 ComponentModule::Memory(_) => memory_count += 1,
-                ComponentModule::Probe(_) => probe_count += 1,
             }
         }
 
@@ -170,7 +157,6 @@ impl ComponentManager {
             total_modules: self.module_templates.len(),
             processing_modules: processing_count,
             memory_modules: memory_count,
-            probe_modules: probe_count,
             components_created: self.id_counter.load(Ordering::SeqCst),
         }
     }
@@ -182,7 +168,6 @@ pub struct ComponentManagerStats {
     pub total_modules: usize,
     pub processing_modules: usize,
     pub memory_modules: usize,
-    pub probe_modules: usize,
     pub components_created: u64,
 }
 
@@ -213,10 +198,6 @@ impl ComponentInstance {
         self.module.is_memory()
     }
 
-    /// Check if this is a probe component
-    pub fn is_probe(&self) -> bool {
-        self.module.is_probe()
-    }
 
     /// Get mutable access to the component state
     pub fn state_mut(&mut self) -> Option<&mut dyn ComponentState> {

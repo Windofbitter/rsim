@@ -10,9 +10,6 @@ pub struct ConnectionManager {
 
     /// Port connections: (source_id, port) -> Vec<(target_id, port)>
     connections: HashMap<(ComponentId, String), Vec<(ComponentId, String)>>,
-
-    /// Probe connections: (source_id, port) -> Vec<probe_id>
-    probes: HashMap<(ComponentId, String), Vec<ComponentId>>,
 }
 
 impl ConnectionManager {
@@ -20,7 +17,6 @@ impl ConnectionManager {
         Self {
             memory_connections: HashMap::new(),
             connections: HashMap::new(),
-            probes: HashMap::new(),
         }
     }
 
@@ -111,31 +107,6 @@ impl ConnectionManager {
         Ok(())
     }
 
-    /// Connect a component output to a probe
-    pub fn connect_probe(
-        &mut self,
-        registry: &ComponentRegistry,
-        source_port: (ComponentId, String),
-        probe_id: ComponentId,
-    ) -> Result<(), String> {
-        let (source_id, source_port_name) = &source_port;
-
-        // Validate that source component exists
-        if !registry.has_component(source_id) {
-            return Err(format!("Source component '{}' not found", source_id));
-        }
-
-        // Validate that probe component exists
-        if !registry.has_probe_component(&probe_id) {
-            return Err(format!("Probe component '{}' not found", probe_id));
-        }
-
-        // Validate source port exists
-        self.validate_source_port(registry, source_id, source_port_name)?;
-
-        self.probes.entry(source_port).or_default().push(probe_id);
-        Ok(())
-    }
 
     /// Validate that a component has the specified output port
     fn validate_source_port(
@@ -162,9 +133,6 @@ impl ConnectionManager {
                             port, component_id
                         ));
                     }
-                },
-                ComponentModule::Probe(_) => {
-                    return Err(format!("Probe components don't have output ports"));
                 },
             }
         }
@@ -196,9 +164,6 @@ impl ConnectionManager {
                             port, component_id
                         ));
                     }
-                },
-                ComponentModule::Probe(_) => {
-                    return Err(format!("Probe components don't have input ports for direct connections"));
                 },
             }
         }
@@ -237,15 +202,6 @@ impl ConnectionManager {
             }
         }
 
-        // Validate probe connections
-        for ((source_id, source_port), probe_ids) in &self.probes {
-            self.validate_source_port(registry, source_id, source_port)?;
-            for probe_id in probe_ids {
-                if !registry.has_probe_component(probe_id) {
-                    return Err(format!("Probe component '{}' in probe connection not found", probe_id));
-                }
-            }
-        }
 
         Ok(())
     }
@@ -281,16 +237,10 @@ impl ConnectionManager {
             .map(|targets| targets.len())
             .sum();
 
-        let total_probe_connections: usize = self.probes.values()
-            .map(|probes| probes.len())
-            .sum();
-
         ConnectionStats {
             total_connections: total_targets,
             memory_connections: self.memory_connections.len(),
-            probe_connections: total_probe_connections,
             unique_sources: self.connections.len(),
-            unique_probe_sources: self.probes.len(),
         }
     }
 
@@ -303,25 +253,16 @@ impl ConnectionManager {
         &self.connections
     }
 
-    pub fn probes(&self) -> &HashMap<(ComponentId, String), Vec<ComponentId>> {
-        &self.probes
-    }
 
     /// Remove all connections involving a specific component
     pub fn remove_component_connections(&mut self, component_id: &ComponentId) {
         // Remove as source
         self.connections.retain(|(source_id, _), _| source_id != component_id);
-        self.probes.retain(|(source_id, _), _| source_id != component_id);
         self.memory_connections.retain(|(comp_id, _), _| comp_id != component_id);
 
         // Remove as target
         for targets in self.connections.values_mut() {
             targets.retain(|(target_id, _)| target_id != component_id);
-        }
-
-        // Remove as probe target
-        for probe_ids in self.probes.values_mut() {
-            probe_ids.retain(|probe_id| probe_id != component_id);
         }
 
         // Remove as memory target
@@ -332,7 +273,6 @@ impl ConnectionManager {
     pub fn clear(&mut self) {
         self.connections.clear();
         self.memory_connections.clear();
-        self.probes.clear();
     }
 }
 
@@ -341,9 +281,7 @@ impl ConnectionManager {
 pub struct ConnectionStats {
     pub total_connections: usize,
     pub memory_connections: usize,
-    pub probe_connections: usize,
     pub unique_sources: usize,
-    pub unique_probe_sources: usize,
 }
 
 impl Default for ConnectionManager {

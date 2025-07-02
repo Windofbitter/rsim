@@ -1,9 +1,6 @@
-use super::types::{ComponentId, ComponentValue};
+use super::types::ComponentId;
 use super::component_manager::ComponentInstance;
 use super::state::ComponentState;
-
-// Use existing ComponentValue for type consistency
-pub type Event = ComponentValue;
 
 /// Unified component structure that represents module-based components only
 pub struct Component {
@@ -37,10 +34,6 @@ impl Component {
         self.instance.is_memory()
     }
 
-    /// Check if this is a probe component
-    pub fn is_probe(&self) -> bool {
-        self.instance.is_probe()
-    }
 
     /// Get mutable access to component state
     pub fn state_mut(&mut self) -> Option<&mut dyn ComponentState> {
