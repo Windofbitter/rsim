@@ -1,6 +1,6 @@
-use super::manager::ComponentInstance;
-use super::module::{ComponentModule, MemoryModuleTrait};
-use super::super::types::ComponentId;
+use crate::core::components::manager::ComponentInstance;
+use crate::core::components::module::{ComponentModule, MemoryModuleTrait};
+use crate::core::types::ComponentId;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;

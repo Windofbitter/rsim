@@ -1,9 +1,9 @@
 /// Example showing how developers would write components with the new Event-based API
 #[cfg(test)]
 mod examples {
-    use super::super::values::traits::*;
-    use super::super::values::implementations::*;
-    use super::super::components::module::{EvaluationContext, ProcessorModule, PortSpec};
+    use crate::core::values::traits::*;
+    use crate::core::values::implementations::*;
+    use crate::core::components::module::{EvaluationContext, ProcessorModule, PortSpec};
 
     /// Example 1: Simple component using convenience API (90% of use cases)
     fn simple_adder_component(ctx: &EvaluationContext, outputs: &mut EventOutputMap) -> Result<(), String> {

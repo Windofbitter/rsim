@@ -1,7 +1,7 @@
-use super::super::components::module::ComponentModule;
-use super::super::components::manager::ComponentInstance;
-use super::super::components::registry::ComponentRegistry;
-use super::super::types::ComponentId;
+use crate::core::components::module::ComponentModule;
+use crate::core::components::manager::ComponentInstance;
+use crate::core::components::registry::ComponentRegistry;
+use crate::core::types::ComponentId;
 
 /// Port validation utilities for components
 pub struct PortValidator;

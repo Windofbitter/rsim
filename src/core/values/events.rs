@@ -1,5 +1,5 @@
 use std::sync::atomic::{AtomicU64, Ordering};
-use super::typed_value::TypedValue;
+use crate::core::values::typed_value::TypedValue;
 
 /// Global event ID counter for unique event identification
 static EVENT_ID_COUNTER: AtomicU64 = AtomicU64::new(1);

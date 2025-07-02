@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use super::typed_value::TypedValue;
-use super::events::Event;
+use crate::core::values::typed_value::TypedValue;
+use crate::core::values::events::Event;
 
 /// Trait for accessing typed inputs in components
 pub trait TypedInputs {

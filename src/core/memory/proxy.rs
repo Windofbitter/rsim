@@ -1,6 +1,6 @@
-use super::super::components::module::{TypeSafeMemoryProxy, MemoryModuleTrait};
-use super::super::components::state::MemoryData;
-use super::super::types::ComponentId;
+use crate::core::components::module::{TypeSafeMemoryProxy, MemoryModuleTrait};
+use crate::core::components::state::MemoryData;
+use crate::core::types::ComponentId;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;

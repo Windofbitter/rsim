@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod tests {
-    use super::super::values::events::*;
-    use super::super::values::traits::*;
-    use super::super::values::implementations::*;
+    use crate::core::values::events::*;
+    use crate::core::values::traits::*;
+    use crate::core::values::implementations::*;
 
     #[test]
     fn test_event_basic_functionality() {

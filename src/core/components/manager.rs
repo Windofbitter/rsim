@@ -1,6 +1,6 @@
-use super::module::ComponentModule;
-use super::state::ComponentState;
-use super::super::types::ComponentId;
+use crate::core::components::module::ComponentModule;
+use crate::core::components::state::ComponentState;
+use crate::core::types::ComponentId;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 

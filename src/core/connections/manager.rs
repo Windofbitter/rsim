@@ -1,7 +1,7 @@
-use super::super::components::registry::ComponentRegistry;
-use super::super::components::module::ComponentModule;
-use super::connection_validator::ConnectionValidator;
-use super::super::types::ComponentId;
+use crate::core::components::registry::ComponentRegistry;
+use crate::core::components::module::ComponentModule;
+use crate::core::connections::connection_validator::ConnectionValidator;
+use crate::core::types::ComponentId;
 use std::collections::HashMap;
 
 /// Manages all connections between components and validates connection rules

@@ -1,8 +1,8 @@
-use super::super::components::manager::{ComponentManager, ComponentInstance};
-use super::super::components::module::ComponentModule;
-use super::super::execution::cycle_engine::CycleEngine;
-use super::super::connections::connection_validator::ConnectionValidator;
-use super::super::types::{ComponentId, OutputPort, InputPort, MemoryPort};
+use crate::core::components::manager::{ComponentManager, ComponentInstance};
+use crate::core::components::module::ComponentModule;
+use crate::core::execution::cycle_engine::CycleEngine;
+use crate::core::connections::connection_validator::ConnectionValidator;
+use crate::core::types::{ComponentId, OutputPort, InputPort, MemoryPort};
 use std::collections::HashMap;
 
 /// Imperative API for creating and configuring simulations

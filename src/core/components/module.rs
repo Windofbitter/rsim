@@ -1,6 +1,6 @@
-use super::state::{ComponentState, MemoryData};
-use super::super::types::ComponentId;
-use super::super::values::implementations::{TypedInputMap, EventInputMap, EventOutputMap};
+use crate::core::components::state::{ComponentState, MemoryData};
+use crate::core::types::ComponentId;
+use crate::core::values::implementations::{TypedInputMap, EventInputMap, EventOutputMap};
 use std::collections::HashMap;
 
 /// Evaluation context provided to component modules during evaluation.

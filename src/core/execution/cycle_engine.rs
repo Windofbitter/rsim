@@ -1,13 +1,13 @@
-use super::super::values::events::Event;
-use super::super::values::implementations::{EventInputMap, EventOutputMap};
-use super::super::values::traits::EventOutputs;
-use super::super::components::manager::ComponentInstance;
-use super::super::components::module::{ComponentModule, EvaluationContext};
-use super::super::components::registry::ComponentRegistry;
-use super::super::connections::manager::ConnectionManager;
-use super::execution_order::ExecutionOrderBuilder;
-use super::super::memory::proxy::TypeSafeCentralMemoryProxy;
-use super::super::types::ComponentId;
+use crate::core::values::events::Event;
+use crate::core::values::implementations::{EventInputMap, EventOutputMap};
+use crate::core::values::traits::EventOutputs;
+use crate::core::components::manager::ComponentInstance;
+use crate::core::components::module::{ComponentModule, EvaluationContext};
+use crate::core::components::registry::ComponentRegistry;
+use crate::core::connections::manager::ConnectionManager;
+use crate::core::execution::execution_order::ExecutionOrderBuilder;
+use crate::core::memory::proxy::TypeSafeCentralMemoryProxy;
+use crate::core::types::ComponentId;
 use std::collections::HashMap;
 
 pub struct CycleEngine {

@@ -1,4 +1,4 @@
-use super::super::types::ComponentId;
+use crate::core::types::ComponentId;
 
 #[derive(Debug, Clone)]
 pub enum MemoryError {

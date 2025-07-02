@@ -1,4 +1,4 @@
-use super::cycle_engine::CycleEngine;
+use crate::core::execution::cycle_engine::CycleEngine;
 
 pub struct SimulationEngine {
     cycle_engine: CycleEngine,

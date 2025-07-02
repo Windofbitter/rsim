@@ -1,8 +1,8 @@
-use super::super::components::registry::{ComponentRegistry, ComponentType};
-use super::super::components::manager::ComponentInstance;
-use super::super::components::module::ComponentModule;
-use super::port_validator::PortValidator;
-use super::super::types::ComponentId;
+use crate::core::components::registry::{ComponentRegistry, ComponentType};
+use crate::core::components::manager::ComponentInstance;
+use crate::core::components::module::ComponentModule;
+use crate::core::connections::port_validator::PortValidator;
+use crate::core::types::ComponentId;
 use std::collections::HashMap;
 
 /// Centralized connection validation logic for all connection managers
