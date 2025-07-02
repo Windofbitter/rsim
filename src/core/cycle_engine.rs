@@ -1,8 +1,9 @@
 use super::typed_values::{TypedValue, TypedInputMap, TypedOutputMap, TypedOutputs};
 use super::component_manager::ComponentInstance;
 use super::component_module::{ComponentModule, EvaluationContext};
-use super::component_registry::{ComponentRegistry, ComponentType};
+use super::component_registry::ComponentRegistry;
 use super::connection_manager::ConnectionManager;
+use super::execution_order::ExecutionOrderBuilder;
 use super::memory_proxy::TypeSafeCentralMemoryProxy;
 use super::types::ComponentId;
 use std::collections::HashMap;
@@ -58,63 +59,13 @@ impl CycleEngine {
 
     /// Build execution order using topological sort
     pub fn build_execution_order(&mut self) -> Result<(), String> {
-        let mut order = Vec::new();
-        let mut visited = std::collections::HashSet::new();
-        let mut temp_visited = std::collections::HashSet::new();
-
-        // Get all processing components
-        let processing_components: Vec<ComponentId> = self.component_registry.component_ids_by_type(ComponentType::Processing);
-
-        // Perform DFS-based topological sort
-        for component_id in &processing_components {
-            if !visited.contains(component_id) {
-                self.topological_sort_visit(
-                    component_id,
-                    &mut visited,
-                    &mut temp_visited,
-                    &mut order,
-                )?;
-            }
-        }
-
-        order.reverse(); // Reverse to get correct topological order
+        // Use the well-designed Kahn's algorithm implementation
+        let order = ExecutionOrderBuilder::build_execution_order(
+            &self.component_registry,
+            self.connection_manager.connections(),
+        )?;
+        
         self.execution_order = order;
-        Ok(())
-    }
-
-    fn topological_sort_visit(
-        &self,
-        component_id: &ComponentId,
-        visited: &mut std::collections::HashSet<ComponentId>,
-        temp_visited: &mut std::collections::HashSet<ComponentId>,
-        order: &mut Vec<ComponentId>,
-    ) -> Result<(), String> {
-        if temp_visited.contains(component_id) {
-            return Err(format!("Cycle detected involving component '{}'", component_id));
-        }
-        if visited.contains(component_id) {
-            return Ok(());
-        }
-
-        temp_visited.insert(component_id.clone());
-
-        // Visit all components that this component depends on (provides input to this component)
-        for ((source_id, _), targets) in self.connection_manager.connections() {
-            for (target_id, _) in targets {
-                if target_id == component_id && source_id != component_id {
-                    if let Some(source_instance) = self.component_registry.get_component(source_id) {
-                        if source_instance.is_processing() {
-                            self.topological_sort_visit(source_id, visited, temp_visited, order)?;
-                        }
-                    }
-                }
-            }
-        }
-
-        temp_visited.remove(component_id);
-        visited.insert(component_id.clone());
-        order.push(component_id.clone());
-
         Ok(())
     }
 
