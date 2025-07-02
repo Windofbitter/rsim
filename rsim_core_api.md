@@ -26,13 +26,27 @@ let final_cycle = engine.run()?;
 ## Core Types
 
 ### TypedValue
-Type-erased but type-safe container for component values.
+Type-erased but type-safe container for component values. Supports any `Clone` type automatically.
 
 ```rust
 impl TypedValue {
-    pub fn new<T: Send + Sync + 'static>(value: T) -> Self;
+    pub fn new<T: Send + Sync + Clone + 'static>(value: T) -> Self;
     pub fn get<T: 'static>(&self) -> Result<&T, String>;
     pub fn into_inner<T: 'static>(self) -> Result<T, String>;
+}
+```
+
+### Event
+Event wrapper with timestamp, unique ID, and typed payload for timing-aware simulations.
+
+```rust
+impl Event {
+    pub fn new<T: Send + Sync + Clone + 'static>(timestamp: u64, payload: T) -> Self;
+    pub fn get_payload<T: 'static>(&self) -> Result<&T, String>;
+    pub fn into_payload<T: 'static>(self) -> Result<T, String>;
+    
+    pub event_id: u64;        // Unique identifier
+    pub timestamp: u64;       // Simulation cycle timestamp
 }
 ```
 
@@ -72,7 +86,7 @@ impl ProcessorModule {
         input_ports: Vec<PortSpec>,
         output_ports: Vec<PortSpec>,
         memory_ports: Vec<PortSpec>,
-        evaluate_fn: fn(&EvaluationContext, &mut TypedOutputMap) -> Result<(), String>,
+        evaluate_fn: fn(&EvaluationContext, &mut EventOutputMap) -> Result<(), String>,
     ) -> Self;
 }
 ```
@@ -92,7 +106,7 @@ impl PortSpec {
 
 ```rust
 pub struct EvaluationContext<'a> {
-    pub inputs: &'a TypedInputMap,
+    pub inputs: &'a EventInputMap,
     pub memory: &'a mut TypeSafeCentralMemoryProxy,
     pub state: Option<&'a mut dyn ComponentState>,
     pub component_id: &'a ComponentId,
@@ -110,7 +124,32 @@ pub trait TypedInputs {
 }
 
 pub trait TypedOutputs {
-    fn set<T: Send + Sync + 'static>(&mut self, port: &str, value: T) -> Result<(), String>;
+    fn set<T: Send + Sync + Clone + 'static>(&mut self, port: &str, value: T) -> Result<(), String>;
+}
+```
+
+### EventInputs & EventOutputs (Progressive Disclosure API)
+
+```rust
+pub trait EventInputs {
+    // Simple: Just get the value (90% of use cases)
+    fn get<T: 'static + Clone>(&self, port: &str) -> Result<T, String>;
+    
+    // Intermediate: Access timing information
+    fn get_timestamp(&self, port: &str) -> Result<u64, String>;
+    
+    // Advanced: Full event access
+    fn get_event(&self, port: &str) -> Result<&Event, String>;
+    
+    fn has_input(&self, port: &str) -> bool;
+}
+
+pub trait EventOutputs {
+    // Simple: Set value (Event creation automatic)
+    fn set<T: Send + Sync + Clone + 'static>(&mut self, port: &str, value: T) -> Result<(), String>;
+    
+    // Advanced: Emit event directly
+    fn emit_event(&mut self, port: &str, event: Event) -> Result<(), String>;
 }
 ```
 
@@ -138,71 +177,139 @@ impl SimulationEngine {
 }
 ```
 
-## Complete Example
+## Event-Based Component Examples
+
+### Simple Event Component (90% of use cases)
+```rust
+fn simple_adder(ctx: &EvaluationContext, outputs: &mut EventOutputMap) -> Result<(), String> {
+    // Just use .get() - no need to know about Events
+    let a = ctx.inputs.get::<i64>("input_a")?;
+    let b = ctx.inputs.get::<i64>("input_b")?;
+    
+    // Event creation is automatic
+    outputs.set("output", a + b)?;
+    Ok(())
+}
+```
+
+### Timestamp-Aware Component
+```rust
+fn delay_component(ctx: &EvaluationContext, outputs: &mut EventOutputMap) -> Result<(), String> {
+    let data = ctx.inputs.get::<i64>("data")?;
+    let input_timestamp = ctx.inputs.get_timestamp("data")?;
+    
+    // Only process data older than 5 cycles
+    if input_timestamp <= 5 {
+        return Ok(()); // Skip recent data
+    }
+    
+    outputs.set("delayed_output", data)?;
+    Ok(())
+}
+```
+
+### Event Correlation Component
+```rust
+fn event_correlator(ctx: &EvaluationContext, outputs: &mut EventOutputMap) -> Result<(), String> {
+    if ctx.inputs.has_input("sensor_a") && ctx.inputs.has_input("sensor_b") {
+        let timestamp_a = ctx.inputs.get_timestamp("sensor_a")?;
+        let timestamp_b = ctx.inputs.get_timestamp("sensor_b")?;
+        
+        // Only correlate synchronized events
+        if timestamp_a == timestamp_b {
+            let data_a = ctx.inputs.get::<f64>("sensor_a")?;
+            let data_b = ctx.inputs.get::<f64>("sensor_b")?;
+            outputs.set("correlation", data_a * data_b)?;
+        }
+    }
+    Ok(())
+}
+```
+
+## Custom Types Example
 
 ```rust
 use rsim::core::{
-    simulation_builder::SimulationBuilder,
-    component_module::{ComponentModule, ProcessorModule, PortSpec, MemoryModule},
-    state::MemoryData,
+    Simulation,
+    simulation_engine::SimulationEngine,
+    component_module::{ComponentModule, ProcessorModule, PortSpec},
+    typed_values::{EventInputs, EventOutputs},
 };
 
-// Define custom data type
-#[derive(Clone)]
-struct ProcessedData {
+// Define custom data types - just implement Clone!
+#[derive(Clone, Debug)]
+struct SensorReading {
     value: f64,
+    sensor_id: u32,
     timestamp: u64,
 }
-impl MemoryData for ProcessedData {}
 
-// Create processor component
-fn create_processor() -> ComponentModule {
+#[derive(Clone, Debug)]
+struct ProcessedReading {
+    avg: f64,
+    count: u32,
+    timestamp: u64,
+}
+
+// Create components using custom types
+fn create_data_source() -> ComponentModule {
     ComponentModule::Processing(ProcessorModule::new(
-        "processor", 
-        vec![PortSpec::input("input")],
-        vec![PortSpec::output("processed")],
-        vec![PortSpec::memory("cache")],
-        |ctx, outputs| {
-            // Get input
-            let input: f64 = ctx.inputs.get("input")?;
-            
-            // Process data
-            let processed = input * 2.0;
-            
-            // Store in memory cache
-            let cache_data = ProcessedData {
-                value: processed,
+        "data_source",
+        vec![],
+        vec![PortSpec::output("data")],
+        vec![],
+        |_ctx, outputs| {
+            let reading = SensorReading {
+                value: 42.0,
+                sensor_id: 1,
                 timestamp: 123,
             };
-            ctx.memory.write("cache", "latest", cache_data)?;
+            outputs.set("data", reading)?; // Custom types just work! ✨
+            Ok(())
+        }
+    ))
+}
+
+fn create_processor() -> ComponentModule {
+    ComponentModule::Processing(ProcessorModule::new(
+        "processor",
+        vec![PortSpec::input("sensor_data")],
+        vec![PortSpec::output("processed")],
+        vec![],
+        |ctx, outputs| {
+            let reading = ctx.inputs.get::<SensorReading>("sensor_data")?;
             
-            // Set output
+            let processed = ProcessedReading {
+                avg: reading.value * 2.0,
+                count: 1,
+                timestamp: reading.timestamp,
+            };
+            
             outputs.set("processed", processed)?;
             Ok(())
         }
     ))
 }
 
-// Build simulation
+// Build and run simulation
 let mut simulation = Simulation::new();
+simulation.register_module("data_source", create_data_source())?;
 simulation.register_module("processor", create_processor())?;
-simulation.register_module("memory", ComponentModule::Memory(
-    Box::new(MemoryModule::<ProcessedData>::new("cache_memory"))
-))?;
-let proc_id = simulation.create_component_with_id("processor", "proc_1".to_string())?;
-let cache_id = simulation.create_component_with_id("memory", "cache_1".to_string())?;
-simulation.connect_memory(proc_id.memory_port("cache"), &cache_id)?;
-let cycle_engine = simulation.build()?;
 
-// Run simulation
-let mut engine = SimulationEngine::new(cycle_engine, Some(100))?;
+let source = simulation.create_component("data_source")?;
+let processor = simulation.create_component("processor")?;
+simulation.connect(source.output("data"), processor.input("sensor_data"))?;
+
+let cycle_engine = simulation.build()?;
+let mut engine = SimulationEngine::new(cycle_engine, Some(10))?;
 let final_cycle = engine.run()?;
 ```
 
 ## Best Practices
 
-1. **Type Safety**: Always use typed inputs/outputs
-2. **Error Handling**: Handle all input conditions gracefully  
-3. **Memory Usage**: Use memory for persistent state across cycles
+1. **Custom Types**: Just implement `Clone` - types work automatically with RSim
+2. **Type Safety**: Always use typed inputs/outputs for compile-time guarantees
+3. **Error Handling**: Handle all input conditions gracefully  
 4. **Component Isolation**: Keep components focused and minimal
-5. **Testing**: Test components individually before integration
+5. **Event Usage**: Use simple `.get()` for most cases, timestamps for timing logic, full events for advanced scenarios
+6. **Testing**: Test components individually before integration

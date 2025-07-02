@@ -1,21 +1,73 @@
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+/// Global event ID counter for unique event identification
+static EVENT_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
+
+/// Generate a unique event ID
+fn next_event_id() -> u64 {
+    EVENT_ID_COUNTER.fetch_add(1, Ordering::Relaxed)
+}
+
+/// Event wrapper containing timestamp, unique ID, and typed payload
+#[derive(Debug, Clone)]
+pub struct Event {
+    pub event_id: u64,
+    pub timestamp: u64,
+    pub payload: TypedValue,
+}
+
+impl Event {
+    /// Create a new event with auto-generated timestamp and ID
+    pub fn new<T: Send + Sync + Clone + 'static>(timestamp: u64, payload: T) -> Self {
+        Self {
+            event_id: next_event_id(),
+            timestamp,
+            payload: TypedValue::new(payload),
+        }
+    }
+    
+    /// Create event from existing TypedValue
+    pub fn from_typed_value(timestamp: u64, payload: TypedValue) -> Self {
+        Self {
+            event_id: next_event_id(),
+            timestamp,
+            payload,
+        }
+    }
+    
+    /// Get the payload as a specific type
+    pub fn get_payload<T: 'static>(&self) -> Result<&T, String> {
+        self.payload.get::<T>()
+    }
+    
+    /// Extract the payload as a specific type
+    pub fn into_payload<T: 'static>(self) -> Result<T, String> {
+        self.payload.into_inner::<T>()
+    }
+}
 
 /// Type-erased but type-safe container for component values
 #[derive(Debug)]
 pub struct TypedValue {
     data: Box<dyn Any + Send + Sync>,
+    clone_fn: fn(&dyn Any) -> Box<dyn Any + Send + Sync>,
     type_name: &'static str,
     type_id: TypeId,
 }
 
 impl TypedValue {
     /// Create a new typed value
-    pub fn new<T: Send + Sync + 'static>(value: T) -> Self {
+    pub fn new<T: Send + Sync + Clone + 'static>(value: T) -> Self {
         Self {
             type_id: TypeId::of::<T>(),
             type_name: std::any::type_name::<T>(),
             data: Box::new(value),
+            clone_fn: |any| {
+                let typed = any.downcast_ref::<T>().expect("Type mismatch in clone_fn");
+                Box::new(typed.clone())
+            },
         }
     }
     
@@ -67,26 +119,11 @@ impl TypedValue {
 
 impl Clone for TypedValue {
     fn clone(&self) -> Self {
-        // Clone common types directly
-        if let Ok(value) = self.get::<i64>() { 
-            TypedValue::new(*value)
-        } else if let Ok(value) = self.get::<f64>() { 
-            TypedValue::new(*value)
-        } else if let Ok(value) = self.get::<String>() { 
-            TypedValue::new(value.clone())
-        } else if let Ok(value) = self.get::<bool>() { 
-            TypedValue::new(*value)
-        } else if let Ok(value) = self.get::<u64>() { 
-            TypedValue::new(*value)
-        } else if let Ok(value) = self.get::<i32>() { 
-            TypedValue::new(*value)
-        } else if let Ok(value) = self.get::<f32>() { 
-            TypedValue::new(*value)
-        } else if let Ok(value) = self.get::<u32>() { 
-            TypedValue::new(*value)
-        } else {
-            // For custom types that don't implement Clone, we can't clone
-            panic!("TypedValue::clone() is not supported for type {}. Custom types must implement manual cloning.", self.type_name);
+        Self {
+            data: (self.clone_fn)(self.data.as_ref()),
+            clone_fn: self.clone_fn,
+            type_name: self.type_name,
+            type_id: self.type_id,
         }
     }
 }
@@ -114,7 +151,7 @@ pub trait TypedInputs {
 /// Trait for collecting typed outputs from components
 pub trait TypedOutputs {
     /// Set typed output value
-    fn set<T: Send + Sync + 'static>(&mut self, port: &str, value: T) -> Result<(), String>;
+    fn set<T: Send + Sync + Clone + 'static>(&mut self, port: &str, value: T) -> Result<(), String>;
     
     /// Check if an output port is valid
     fn is_valid_port(&self, port: &str) -> bool;
@@ -124,6 +161,50 @@ pub trait TypedOutputs {
     
     /// Get the collected outputs (consumes self)
     fn into_map(self) -> HashMap<String, TypedValue>;
+}
+
+/// Trait for accessing event inputs with progressive disclosure
+pub trait EventInputs {
+    /// Get typed input value (convenience method)
+    fn get<T: 'static + Clone>(&self, port: &str) -> Result<T, String>;
+    
+    /// Get full event for a port
+    fn get_event(&self, port: &str) -> Result<&Event, String>;
+    
+    /// Get timestamp for a port (convenience method)
+    fn get_timestamp(&self, port: &str) -> Result<u64, String>;
+    
+    /// Check if input exists
+    fn has_input(&self, port: &str) -> bool;
+    
+    /// Get all available input port names
+    fn input_ports(&self) -> Vec<&str>;
+    
+    /// Get the number of inputs
+    fn len(&self) -> usize;
+    
+    /// Check if there are no inputs
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
+/// Trait for collecting event outputs with progressive disclosure
+pub trait EventOutputs {
+    /// Set typed output value (convenience method)
+    fn set<T: Send + Sync + Clone + 'static>(&mut self, port: &str, value: T) -> Result<(), String>;
+    
+    /// Emit event directly
+    fn emit_event(&mut self, port: &str, event: Event) -> Result<(), String>;
+    
+    /// Check if an output port is valid
+    fn is_valid_port(&self, port: &str) -> bool;
+    
+    /// Get all expected output port names
+    fn expected_ports(&self) -> Vec<&str>;
+    
+    /// Get the collected events (consumes self)
+    fn into_event_map(self) -> HashMap<String, Event>;
 }
 
 /// Implementation of TypedInputs backed by a HashMap
@@ -145,7 +226,7 @@ impl TypedInputMap {
     }
     
     /// Insert a typed value
-    pub fn insert<T: Send + Sync + 'static>(&mut self, port: String, value: T) {
+    pub fn insert<T: Send + Sync + Clone + 'static>(&mut self, port: String, value: T) {
         self.inputs.insert(port, TypedValue::new(value));
     }
     
@@ -212,7 +293,7 @@ impl TypedOutputMap {
 }
 
 impl TypedOutputs for TypedOutputMap {
-    fn set<T: Send + Sync + 'static>(&mut self, port: &str, value: T) -> Result<(), String> {
+    fn set<T: Send + Sync + Clone + 'static>(&mut self, port: &str, value: T) -> Result<(), String> {
         // If we have expected ports defined, validate the port exists
         if !self.expected_ports.is_empty() && !self.expected_ports.contains_key(port) {
             return Err(format!(
@@ -246,6 +327,158 @@ impl TypedOutputs for TypedOutputMap {
     }
     
     fn into_map(self) -> HashMap<String, TypedValue> {
+        self.outputs
+    }
+}
+
+/// Implementation of EventInputs backed by a HashMap of Events
+pub struct EventInputMap {
+    inputs: HashMap<String, Event>,
+}
+
+impl EventInputMap {
+    /// Create a new empty event input map
+    pub fn new() -> Self {
+        Self {
+            inputs: HashMap::new(),
+        }
+    }
+    
+    /// Create event input map from a HashMap of Events
+    pub fn from_map(inputs: HashMap<String, Event>) -> Self {
+        Self { inputs }
+    }
+    
+    /// Insert an event
+    pub fn insert_event(&mut self, port: String, event: Event) {
+        self.inputs.insert(port, event);
+    }
+    
+    /// Insert a typed value with timestamp
+    pub fn insert<T: Send + Sync + Clone + 'static>(&mut self, port: String, timestamp: u64, value: T) {
+        self.inputs.insert(port, Event::new(timestamp, value));
+    }
+}
+
+impl EventInputs for EventInputMap {
+    fn get<T: 'static + Clone>(&self, port: &str) -> Result<T, String> {
+        let event = self.inputs.get(port)
+            .ok_or_else(|| format!("Input port '{}' not found", port))?;
+        
+        let value_ref = event.payload.get::<T>()?;
+        Ok(value_ref.clone())
+    }
+    
+    fn get_event(&self, port: &str) -> Result<&Event, String> {
+        self.inputs.get(port)
+            .ok_or_else(|| format!("Input port '{}' not found", port))
+    }
+    
+    fn get_timestamp(&self, port: &str) -> Result<u64, String> {
+        let event = self.get_event(port)?;
+        Ok(event.timestamp)
+    }
+    
+    fn has_input(&self, port: &str) -> bool {
+        self.inputs.contains_key(port)
+    }
+    
+    fn input_ports(&self) -> Vec<&str> {
+        self.inputs.keys().map(|s| s.as_str()).collect()
+    }
+    
+    fn len(&self) -> usize {
+        self.inputs.len()
+    }
+}
+
+impl Default for EventInputMap {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Implementation of EventOutputs backed by a HashMap with port validation
+pub struct EventOutputMap {
+    outputs: HashMap<String, Event>,
+    expected_ports: HashMap<String, &'static str>, // port_name -> type_name
+    timestamp: u64,
+}
+
+impl EventOutputMap {
+    /// Create a new event output map with expected ports
+    pub fn new(expected_ports: Vec<(&str, &'static str)>, timestamp: u64) -> Self {
+        let expected_ports = expected_ports.into_iter()
+            .map(|(port, type_name)| (port.to_string(), type_name))
+            .collect();
+            
+        Self {
+            outputs: HashMap::new(),
+            expected_ports,
+            timestamp,
+        }
+    }
+    
+    /// Create an event output map without port validation (accepts any port)
+    pub fn new_flexible(timestamp: u64) -> Self {
+        Self {
+            outputs: HashMap::new(),
+            expected_ports: HashMap::new(),
+            timestamp,
+        }
+    }
+}
+
+impl EventOutputs for EventOutputMap {
+    fn set<T: Send + Sync + Clone + 'static>(&mut self, port: &str, value: T) -> Result<(), String> {
+        // Port validation (same as TypedOutputMap)
+        if !self.expected_ports.is_empty() && !self.expected_ports.contains_key(port) {
+            return Err(format!(
+                "Unknown output port '{}'. Expected ports: {:?}", 
+                port, 
+                self.expected_ports.keys().collect::<Vec<_>>()
+            ));
+        }
+        
+        // Type validation
+        if let Some(&expected_type) = self.expected_ports.get(port) {
+            let actual_type = std::any::type_name::<T>();
+            if expected_type != actual_type {
+                return Err(format!(
+                    "Type mismatch for output port '{}': expected {}, got {}", 
+                    port, expected_type, actual_type
+                ));
+            }
+        }
+        
+        let event = Event::new(self.timestamp, value);
+        self.outputs.insert(port.to_string(), event);
+        Ok(())
+    }
+    
+    fn emit_event(&mut self, port: &str, event: Event) -> Result<(), String> {
+        // Port validation
+        if !self.expected_ports.is_empty() && !self.expected_ports.contains_key(port) {
+            return Err(format!(
+                "Unknown output port '{}'. Expected ports: {:?}", 
+                port, 
+                self.expected_ports.keys().collect::<Vec<_>>()
+            ));
+        }
+        
+        self.outputs.insert(port.to_string(), event);
+        Ok(())
+    }
+    
+    fn is_valid_port(&self, port: &str) -> bool {
+        self.expected_ports.is_empty() || self.expected_ports.contains_key(port)
+    }
+    
+    fn expected_ports(&self) -> Vec<&str> {
+        self.expected_ports.keys().map(|s| s.as_str()).collect()
+    }
+    
+    fn into_event_map(self) -> HashMap<String, Event> {
         self.outputs
     }
 }
@@ -327,5 +560,64 @@ mod tests {
         
         let map = outputs.into_map();
         assert_eq!(map.len(), 2);
+    }
+    
+    #[test]
+    fn test_event_creation() {
+        let event = Event::new(123, 42i64);
+        assert_eq!(event.timestamp, 123);
+        assert_eq!(event.get_payload::<i64>().unwrap(), &42);
+        assert!(event.event_id > 0);
+    }
+    
+    #[test]
+    fn test_event_unique_ids() {
+        let event1 = Event::new(1, 42i64);
+        let event2 = Event::new(1, 42i64);
+        assert_ne!(event1.event_id, event2.event_id);
+    }
+    
+    #[test]
+    fn test_event_inputs() {
+        let mut inputs = EventInputMap::new();
+        inputs.insert("port1".to_string(), 100, 42i64);
+        inputs.insert("port2".to_string(), 101, "hello".to_string());
+        
+        // Test convenience methods
+        assert_eq!(inputs.get::<i64>("port1").unwrap(), 42);
+        assert_eq!(inputs.get::<String>("port2").unwrap(), "hello");
+        
+        // Test timestamp access
+        assert_eq!(inputs.get_timestamp("port1").unwrap(), 100);
+        assert_eq!(inputs.get_timestamp("port2").unwrap(), 101);
+        
+        // Test event access
+        let event = inputs.get_event("port1").unwrap();
+        assert_eq!(event.timestamp, 100);
+        assert_eq!(event.get_payload::<i64>().unwrap(), &42);
+        
+        assert!(inputs.has_input("port1"));
+        assert!(!inputs.has_input("port3"));
+        assert_eq!(inputs.len(), 2);
+    }
+    
+    #[test]
+    fn test_event_outputs() {
+        let mut outputs = EventOutputMap::new_flexible(200);
+        
+        // Test convenience method
+        outputs.set("out1", 42i64).unwrap();
+        outputs.set("out2", "hello".to_string()).unwrap();
+        
+        let event_map = outputs.into_event_map();
+        assert_eq!(event_map.len(), 2);
+        
+        let event1 = &event_map["out1"];
+        assert_eq!(event1.timestamp, 200);
+        assert_eq!(event1.get_payload::<i64>().unwrap(), &42);
+        
+        let event2 = &event_map["out2"];
+        assert_eq!(event2.timestamp, 200);
+        assert_eq!(event2.get_payload::<String>().unwrap(), "hello");
     }
 }
