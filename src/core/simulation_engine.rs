@@ -31,9 +31,9 @@ impl SimulationEngine {
         Ok(self.current_cycle())
     }
 
-    pub fn step(&mut self) -> Result<bool, String> {
+    pub fn step(&mut self) -> Result<(), String> {
         self.cycle_engine.run_cycle();
-        Ok(true)
+        Ok(())
     }
 
     pub fn current_cycle(&self) -> u64 {
