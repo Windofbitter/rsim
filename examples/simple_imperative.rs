@@ -1,10 +1,10 @@
 /// Example demonstrating the new imperative Simulation API
 use rsim::core::{
     Simulation,
-    simulation_engine::SimulationEngine,
-    component_module::{ComponentModule, ProcessorModule, PortSpec},
-    typed_values::{TypedInputs, TypedOutputs},
+    execution::simulation_engine::SimulationEngine,
+    components::module::{ComponentModule, ProcessorModule, PortSpec},
 };
+use rsim::{EventInputs, EventOutputs};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create adder module

@@ -1,8 +1,8 @@
-use super::component_manager::{ComponentManager, ComponentInstance};
-use super::component_module::ComponentModule;
-use super::cycle_engine::CycleEngine;
-use super::connection_validator::ConnectionValidator;
-use super::types::{ComponentId, OutputPort, InputPort, MemoryPort};
+use super::super::components::manager::{ComponentManager, ComponentInstance};
+use super::super::components::module::ComponentModule;
+use super::super::execution::cycle_engine::CycleEngine;
+use super::super::connections::connection_validator::ConnectionValidator;
+use super::super::types::{ComponentId, OutputPort, InputPort, MemoryPort};
 use std::collections::HashMap;
 
 /// Imperative API for creating and configuring simulations

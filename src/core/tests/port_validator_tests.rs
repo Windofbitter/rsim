@@ -1,8 +1,9 @@
 #[cfg(test)]
 mod tests {
-    use crate::core::component_manager::ComponentInstance;
-    use crate::core::component_module::{ComponentModule, ProcessorModule, MemoryModule, PortSpec, PortType};
-    use crate::core::port_validator::PortValidator;
+    use crate::core::components::manager::ComponentInstance;
+    use crate::core::components::module::{ComponentModule, ProcessorModule, MemoryModule, PortSpec, PortType};
+    use crate::core::connections::port_validator::PortValidator;
+    use crate::core::types::ComponentId;
 
     #[test]
     fn test_port_validator_exists() {
@@ -30,7 +31,7 @@ mod tests {
             description: Some("Test memory".to_string()),
         }];
         
-        fn dummy_evaluate(_ctx: &crate::core::component_module::EvaluationContext, _outputs: &mut crate::core::typed_values::TypedOutputMap) -> Result<(), String> {
+        fn dummy_evaluate(_ctx: &crate::core::components::module::EvaluationContext, _outputs: &mut crate::core::values::implementations::EventOutputMap) -> Result<(), String> {
             Ok(())
         }
         
@@ -43,7 +44,7 @@ mod tests {
         );
         
         let component = ComponentInstance {
-            id: "test_comp".to_string(),
+            id: ComponentId::new("test_comp".to_string(), "test_proc".to_string()),
             module: ComponentModule::Processing(proc_module),
             state: None,
         };
@@ -81,7 +82,7 @@ mod tests {
         // Test memory component port validation
         let memory_module = MemoryModule::<i64>::new("test_mem");
         let mem_component = ComponentInstance {
-            id: "test_mem".to_string(),
+            id: ComponentId::new("test_mem".to_string(), "test_mem".to_string()),
             module: ComponentModule::Memory(Box::new(memory_module)),
             state: None,
         };

@@ -1,6 +1,6 @@
-use super::component_manager::ComponentInstance;
-use super::component_module::{ComponentModule, MemoryModuleTrait};
-use super::types::ComponentId;
+use super::manager::ComponentInstance;
+use super::module::{ComponentModule, MemoryModuleTrait};
+use super::super::types::ComponentId;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;

@@ -1,6 +1,6 @@
-use super::component_module::{TypeSafeMemoryProxy, MemoryModuleTrait};
-use super::state::MemoryData;
-use super::types::ComponentId;
+use super::super::components::module::{TypeSafeMemoryProxy, MemoryModuleTrait};
+use super::super::components::state::MemoryData;
+use super::super::types::ComponentId;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;

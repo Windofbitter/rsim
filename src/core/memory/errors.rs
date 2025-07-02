@@ -1,4 +1,4 @@
-use super::types::ComponentId;
+use super::super::types::ComponentId;
 
 #[derive(Debug, Clone)]
 pub enum MemoryError {

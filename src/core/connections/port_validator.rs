@@ -1,7 +1,7 @@
-use super::component_module::ComponentModule;
-use super::component_manager::ComponentInstance;
-use super::component_registry::ComponentRegistry;
-use super::types::ComponentId;
+use super::super::components::module::ComponentModule;
+use super::super::components::manager::ComponentInstance;
+use super::super::components::registry::ComponentRegistry;
+use super::super::types::ComponentId;
 
 /// Port validation utilities for components
 pub struct PortValidator;

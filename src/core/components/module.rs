@@ -1,15 +1,27 @@
 use super::state::{ComponentState, MemoryData};
-use super::types::ComponentId;
-use super::typed_values::{TypedInputMap, TypedOutputMap};
+use super::super::types::ComponentId;
+use super::super::values::implementations::{TypedInputMap, EventInputMap, EventOutputMap};
 use std::collections::HashMap;
 
 /// Evaluation context provided to component modules during evaluation.
 /// Contains inputs, memory access, and output collection.
 pub struct EvaluationContext<'a> {
+    /// Event input values from connected components
+    pub inputs: &'a EventInputMap,
+    /// Memory proxy for type-safe memory access
+    pub memory: &'a mut crate::core::memory::proxy::TypeSafeCentralMemoryProxy,
+    /// Component's current state (if any)
+    pub state: Option<&'a mut dyn ComponentState>,
+    /// Component ID for context
+    pub component_id: &'a ComponentId,
+}
+
+/// Legacy evaluation context for backward compatibility
+pub struct LegacyEvaluationContext<'a> {
     /// Typed input values from connected components
     pub inputs: &'a TypedInputMap,
     /// Memory proxy for type-safe memory access
-    pub memory: &'a mut crate::core::memory_proxy::TypeSafeCentralMemoryProxy,
+    pub memory: &'a mut crate::core::memory::proxy::TypeSafeCentralMemoryProxy,
     /// Component's current state (if any)
     pub state: Option<&'a mut dyn ComponentState>,
     /// Component ID for context
@@ -115,8 +127,8 @@ pub struct ProcessorModule {
     pub output_ports: Vec<PortSpec>,
     /// Memory port specifications
     pub memory_ports: Vec<PortSpec>,
-    /// Evaluation function with typed outputs
-    pub evaluate_fn: fn(&EvaluationContext, &mut TypedOutputMap) -> Result<(), String>,
+    /// Evaluation function with event outputs
+    pub evaluate_fn: fn(&EvaluationContext, &mut EventOutputMap) -> Result<(), String>,
 }
 
 impl ProcessorModule {
@@ -126,7 +138,7 @@ impl ProcessorModule {
         input_ports: Vec<PortSpec>,
         output_ports: Vec<PortSpec>,
         memory_ports: Vec<PortSpec>,
-        evaluate_fn: fn(&EvaluationContext, &mut TypedOutputMap) -> Result<(), String>,
+        evaluate_fn: fn(&EvaluationContext, &mut EventOutputMap) -> Result<(), String>,
     ) -> Self {
         Self {
             name: name.to_string(),

@@ -1,5 +1,5 @@
-use super::component_registry::{ComponentRegistry, ComponentType};
-use super::types::ComponentId;
+use super::super::components::registry::{ComponentRegistry, ComponentType};
+use super::super::types::ComponentId;
 use std::collections::{HashMap, VecDeque};
 
 /// Manages topological sorting and execution order calculation for processing components

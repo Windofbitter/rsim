@@ -1,9 +1,9 @@
 use rsim::core::{
     Simulation,
-    simulation_engine::SimulationEngine,
-    component_module::{ComponentModule, ProcessorModule, PortSpec},
-    typed_values::{EventInputs, EventOutputs},
+    execution::simulation_engine::SimulationEngine,
+    components::module::{ComponentModule, ProcessorModule, PortSpec},
 };
+use rsim::{EventInputs, EventOutputs};
 
 #[derive(Clone, Debug)]
 struct SensorReading {

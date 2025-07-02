@@ -2,9 +2,10 @@
 #[cfg(test)]
 mod tests {
     use crate::core::{
-        cycle_engine::CycleEngine,
-        component_manager::ComponentManager,
-        component_module::{ComponentModule, ProcessorModule, PortSpec},
+        execution::cycle_engine::CycleEngine,
+        components::manager::ComponentManager,
+        components::module::{ComponentModule, ProcessorModule, PortSpec},
+        types::ComponentId,
     };
 
     #[test]
@@ -41,7 +42,7 @@ mod tests {
         // Verify execution order contains our component
         let order = engine.execution_order();
         assert_eq!(order.len(), 1);
-        assert_eq!(order[0], "test_comp_1");
+        assert_eq!(order[0].id(), "test_comp_1");
     }
 
     #[test]
@@ -70,8 +71,10 @@ mod tests {
         engine.register_component(instance2).unwrap();
         
         // Create a cycle: comp1 -> comp2 -> comp1
-        engine.connect(("comp1".to_string(), "out".to_string()), ("comp2".to_string(), "in".to_string())).unwrap();
-        engine.connect(("comp2".to_string(), "out".to_string()), ("comp1".to_string(), "in".to_string())).unwrap();
+        let comp1_id = ComponentId::new("comp1".to_string(), "test_processor".to_string());
+        let comp2_id = ComponentId::new("comp2".to_string(), "test_processor".to_string());
+        engine.connect((comp1_id.clone(), "out".to_string()), (comp2_id.clone(), "in".to_string())).unwrap();
+        engine.connect((comp2_id, "out".to_string()), (comp1_id, "in".to_string())).unwrap();
         
         // Building execution order should detect the cycle
         let result = engine.build_execution_order();

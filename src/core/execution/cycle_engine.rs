@@ -1,11 +1,13 @@
-use super::typed_values::{TypedValue, TypedInputMap, TypedOutputMap, TypedOutputs};
-use super::component_manager::ComponentInstance;
-use super::component_module::{ComponentModule, EvaluationContext};
-use super::component_registry::ComponentRegistry;
-use super::connection_manager::ConnectionManager;
+use super::super::values::events::Event;
+use super::super::values::implementations::{EventInputMap, EventOutputMap};
+use super::super::values::traits::EventOutputs;
+use super::super::components::manager::ComponentInstance;
+use super::super::components::module::{ComponentModule, EvaluationContext};
+use super::super::components::registry::ComponentRegistry;
+use super::super::connections::manager::ConnectionManager;
 use super::execution_order::ExecutionOrderBuilder;
-use super::memory_proxy::TypeSafeCentralMemoryProxy;
-use super::types::ComponentId;
+use super::super::memory::proxy::TypeSafeCentralMemoryProxy;
+use super::super::types::ComponentId;
 use std::collections::HashMap;
 
 pub struct CycleEngine {
@@ -13,8 +15,8 @@ pub struct CycleEngine {
     component_registry: ComponentRegistry,
     /// Connection manager for handling all connections
     connection_manager: ConnectionManager,
-    /// Store typed outputs from current cycle for next cycle inputs
-    current_typed_outputs: HashMap<(ComponentId, String), TypedValue>,
+    /// Store event outputs from current cycle for next cycle inputs
+    current_event_outputs: HashMap<(ComponentId, String), Event>,
     /// Execution order for processing components (topologically sorted)
     execution_order: Vec<ComponentId>,
     /// Current cycle counter
@@ -26,7 +28,7 @@ impl CycleEngine {
         Self {
             component_registry: ComponentRegistry::new(),
             connection_manager: ConnectionManager::new(),
-            current_typed_outputs: HashMap::new(),
+            current_event_outputs: HashMap::new(),
             execution_order: Vec::new(),
             current_cycle: 0,
         }
@@ -71,13 +73,13 @@ impl CycleEngine {
 
     /// Run a single simulation cycle
     pub fn run_cycle(&mut self) {
-        let mut new_typed_outputs: HashMap<(ComponentId, String), TypedValue> = HashMap::new();
+        let mut new_event_outputs: HashMap<(ComponentId, String), Event> = HashMap::new();
 
         // Execute processing components in topological order
         let execution_order = self.execution_order.clone();
         for comp_id in &execution_order {
-            // Gather typed inputs from previous cycle outputs
-            let mut typed_inputs = TypedInputMap::new();
+            // Gather event inputs from previous cycle outputs
+            let mut event_inputs = EventInputMap::new();
             
             // Get the processing module info without holding a borrow
             let (input_ports, _output_ports, evaluate_fn) = {
@@ -101,9 +103,9 @@ impl CycleEngine {
                 for ((source_id, source_port), targets) in self.connection_manager.connections() {
                     for (target_id, target_port) in targets {
                         if target_id == comp_id && target_port == &input_port.name {
-                            // Look for typed value from previous cycle
-                            if let Some(typed_value) = self.current_typed_outputs.get(&(source_id.clone(), source_port.clone())) {
-                                typed_inputs.insert_typed(input_port.name.clone(), typed_value.clone());
+                            // Look for event from previous cycle
+                            if let Some(event) = self.current_event_outputs.get(&(source_id.clone(), source_port.clone())) {
+                                event_inputs.insert_event(input_port.name.clone(), event.clone());
                             }
                         }
                     }
@@ -119,26 +121,26 @@ impl CycleEngine {
 
             // Get mutable access to the component for state
             if let Some(instance) = self.component_registry.get_component_mut(comp_id) {
-                // Create typed outputs collector (flexible to allow any type)
-                let mut typed_outputs = TypedOutputMap::new_flexible();
+                // Create event outputs collector (flexible to allow any type)
+                let mut event_outputs = EventOutputMap::new_flexible(self.current_cycle);
                 
                 // Create evaluation context
                 let eval_context = EvaluationContext {
-                    inputs: &typed_inputs,
+                    inputs: &event_inputs,
                     memory: &mut memory_proxy,
                     state: instance.state_mut(),
                     component_id: comp_id,
                 };
 
                 // Evaluate the component
-                match evaluate_fn(&eval_context, &mut typed_outputs) {
+                match evaluate_fn(&eval_context, &mut event_outputs) {
                     Ok(()) => {
-                        // Store typed outputs for next cycle
-                        let output_map = typed_outputs.into_map();
-                        for (port_name, typed_value) in output_map {
-                            new_typed_outputs.insert(
+                        // Store event outputs for next cycle
+                        let output_map = event_outputs.into_event_map();
+                        for (port_name, event) in output_map {
+                            new_event_outputs.insert(
                                 (comp_id.clone(), port_name),
-                                typed_value,
+                                event,
                             );
                         }
                     },
@@ -149,8 +151,8 @@ impl CycleEngine {
             }
         }
 
-        // Update typed outputs for next cycle
-        self.current_typed_outputs = new_typed_outputs;
+        // Update event outputs for next cycle
+        self.current_event_outputs = new_event_outputs;
 
         // End cycle on all memory modules
         for memory_module_ref in self.component_registry.memory_modules().values() {

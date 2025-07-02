@@ -1,7 +1,7 @@
-use super::component_registry::ComponentRegistry;
-use super::component_module::ComponentModule;
+use super::super::components::registry::ComponentRegistry;
+use super::super::components::module::ComponentModule;
 use super::connection_validator::ConnectionValidator;
-use super::types::ComponentId;
+use super::super::types::ComponentId;
 use std::collections::HashMap;
 
 /// Manages all connections between components and validates connection rules

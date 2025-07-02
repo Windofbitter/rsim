@@ -2,10 +2,10 @@
 #[cfg(test)]
 mod tests {
     use crate::core::{
-        cycle_engine::CycleEngine,
-        simulation_engine::SimulationEngine,
-        component_manager::ComponentManager,
-        component_module::{ComponentModule, ProcessorModule, PortSpec},
+        execution::cycle_engine::CycleEngine,
+        execution::simulation_engine::SimulationEngine,
+        components::manager::ComponentManager,
+        components::module::{ComponentModule, ProcessorModule, PortSpec},
     };
 
     #[test]

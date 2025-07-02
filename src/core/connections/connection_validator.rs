@@ -1,8 +1,8 @@
-use super::component_registry::{ComponentRegistry, ComponentType};
-use super::component_manager::ComponentInstance;
-use super::component_module::ComponentModule;
+use super::super::components::registry::{ComponentRegistry, ComponentType};
+use super::super::components::manager::ComponentInstance;
+use super::super::components::module::ComponentModule;
 use super::port_validator::PortValidator;
-use super::types::ComponentId;
+use super::super::types::ComponentId;
 use std::collections::HashMap;
 
 /// Centralized connection validation logic for all connection managers
