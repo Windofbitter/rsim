@@ -2,6 +2,7 @@ use super::typed_values::{TypedValue, TypedInputMap, TypedOutputMap, TypedOutput
 use super::component_manager::ComponentInstance;
 use super::component_module::{ComponentModule, EvaluationContext, MemoryModuleTrait};
 use super::memory_proxy::TypeSafeCentralMemoryProxy;
+use super::connection_validator::ConnectionValidator;
 use super::types::ComponentId;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -65,21 +66,16 @@ impl CycleEngine {
             return Err(format!("Target component '{}' not found", target.0));
         }
 
-        // Validate ports
-        self.validate_source_port(&source.0, &source.1)?;
-        self.validate_target_port(&target.0, &target.1)?;
+        // Validate connection using centralized validator
+        let source_component = self.components.get(&source.0)
+            .ok_or_else(|| format!("Source component '{}' not found", source.0))?;
+        let target_component = self.components.get(&target.0)
+            .ok_or_else(|| format!("Target component '{}' not found", target.0))?;
+        
+        ConnectionValidator::validate_connection_direct(source_component, &source.1, target_component, &target.1)?;
 
         // Check for input port collision
-        for targets in self.connections.values() {
-            for existing_target in targets {
-                if existing_target == &target {
-                    return Err(format!(
-                        "Input port '{}' on component '{}' already connected",
-                        target.1, target.0
-                    ));
-                }
-            }
-        }
+        ConnectionValidator::check_input_port_collision(&self.connections, &target.0, &target.1)?;
 
         self.connections.entry(source).or_default().push(target);
         Ok(())
@@ -101,7 +97,9 @@ impl CycleEngine {
         }
 
         // Validate memory port exists
-        self.validate_memory_port(&component_id, &port)?;
+        let component = self.components.get(&component_id)
+            .ok_or_else(|| format!("Component '{}' not found", component_id))?;
+        ConnectionValidator::validate_memory_connection_direct(component, &port)?;
 
         let port_key = (component_id, port);
         if self.memory_connections.contains_key(&port_key) {
@@ -298,78 +296,6 @@ impl CycleEngine {
         self.components.keys().collect()
     }
 
-    /// Helper method to validate source port exists
-    fn validate_source_port(&self, component_id: &str, port: &str) -> Result<(), String> {
-        let instance = &self.components[component_id];
-        
-        match &instance.module {
-            ComponentModule::Processing(proc_module) => {
-                if !proc_module.has_output_port(port) {
-                    return Err(format!(
-                        "Output port '{}' not found on processing component '{}'. Valid ports: {:?}",
-                        port, component_id, proc_module.output_port_names()
-                    ));
-                }
-            },
-            ComponentModule::Memory(_) => {
-                if port != "out" {
-                    return Err(format!(
-                        "Output port '{}' not found on memory component '{}'. Valid port: 'out'",
-                        port, component_id
-                    ));
-                }
-            },
-        }
-        
-        Ok(())
-    }
-
-    /// Helper method to validate target port exists
-    fn validate_target_port(&self, component_id: &str, port: &str) -> Result<(), String> {
-        let instance = &self.components[component_id];
-        
-        match &instance.module {
-            ComponentModule::Processing(proc_module) => {
-                if !proc_module.has_input_port(port) {
-                    return Err(format!(
-                        "Input port '{}' not found on processing component '{}'. Valid ports: {:?}",
-                        port, component_id, proc_module.input_port_names()
-                    ));
-                }
-            },
-            ComponentModule::Memory(_) => {
-                if port != "in" {
-                    return Err(format!(
-                        "Input port '{}' not found on memory component '{}'. Valid port: 'in'",
-                        port, component_id
-                    ));
-                }
-            },
-        }
-        
-        Ok(())
-    }
-
-    /// Helper method to validate memory port exists
-    fn validate_memory_port(&self, component_id: &str, port: &str) -> Result<(), String> {
-        let instance = &self.components[component_id];
-        
-        if let ComponentModule::Processing(proc_module) = &instance.module {
-            if !proc_module.has_memory_port(port) {
-                return Err(format!(
-                    "Memory port '{}' not found on component '{}'. Valid ports: {:?}",
-                    port, component_id, proc_module.memory_port_names()
-                ));
-            }
-        } else {
-            return Err(format!(
-                "Component '{}' is not a processing component and cannot have memory ports",
-                component_id
-            ));
-        }
-        
-        Ok(())
-    }
 }
 
 impl Default for CycleEngine {

@@ -1,5 +1,6 @@
 use super::component_registry::ComponentRegistry;
 use super::component_module::ComponentModule;
+use super::connection_validator::ConnectionValidator;
 use super::types::ComponentId;
 use std::collections::HashMap;
 
@@ -28,38 +29,11 @@ impl ConnectionManager {
         port: String,
         mem_id: ComponentId,
     ) -> Result<(), String> {
-        // Validate that the processing component exists
-        if !registry.has_processing_component(&proc_id) {
-            return Err(format!("Processing component '{}' not found", proc_id));
-        }
-
-        // Validate that the memory component exists
-        if !registry.has_memory_component(&mem_id) {
-            return Err(format!("Memory component '{}' not found", mem_id));
-        }
-
-        // Validate that the port exists on the processing component
-        if let Some(component) = registry.get_component(&proc_id) {
-            if let ComponentModule::Processing(proc_module) = &component.module {
-                if !proc_module.has_memory_port(&port) {
-                    return Err(format!(
-                        "Memory port '{}' not found on component '{}'. Valid ports: {:?}",
-                        port, proc_id, proc_module.memory_port_names()
-                    ));
-                }
-            }
-        }
+        // Validate the memory connection
+        ConnectionValidator::validate_memory_connection(registry, &proc_id, &port, &mem_id)?;
 
         // Check if this port is already connected to a memory component
-        if let Some(existing_mem_id) = self
-            .memory_connections
-            .get(&(proc_id.clone(), port.clone()))
-        {
-            return Err(format!(
-                "Memory port '{}' on component '{}' is already connected to memory '{}'",
-                port, proc_id, existing_mem_id
-            ));
-        }
+        ConnectionValidator::check_memory_port_collision(&self.memory_connections, &proc_id, &port)?;
 
         self.memory_connections.insert((proc_id, port), mem_id);
         Ok(())
@@ -75,132 +49,25 @@ impl ConnectionManager {
         let (source_id, source_port) = &source;
         let (target_id, target_port) = &target;
 
-        // Validate that source component exists
-        if !registry.has_component(source_id) {
-            return Err(format!("Source component '{}' not found", source_id));
-        }
-
-        // Validate that target component exists
-        if !registry.has_component(target_id) {
-            return Err(format!("Target component '{}' not found", target_id));
-        }
-
-        // Validate source port exists
-        self.validate_source_port(registry, source_id, source_port)?;
-
-        // Validate target port exists
-        self.validate_target_port(registry, target_id, target_port)?;
+        // Validate the connection
+        ConnectionValidator::validate_connection(registry, source_id, source_port, target_id, target_port)?;
 
         // Check for input port collision
-        for existing_targets in self.connections.values() {
-            for (existing_target_id, existing_target_port) in existing_targets {
-                if existing_target_id == target_id && existing_target_port == target_port {
-                    return Err(format!(
-                        "Input port '{}' on component '{}' is already connected. Multiple drivers not allowed.",
-                        target_port, target_id
-                    ));
-                }
-            }
-        }
+        ConnectionValidator::check_input_port_collision(&self.connections, target_id, target_port)?;
 
         self.connections.entry(source).or_default().push(target);
         Ok(())
     }
 
 
-    /// Validate that a component has the specified output port
-    fn validate_source_port(
-        &self,
-        registry: &ComponentRegistry,
-        component_id: &ComponentId,
-        port: &str,
-    ) -> Result<(), String> {
-        if let Some(component) = registry.get_component(component_id) {
-            match &component.module {
-                ComponentModule::Processing(proc_module) => {
-                    if !proc_module.has_output_port(port) {
-                        return Err(format!(
-                            "Output port '{}' not found on processing component '{}'. Valid ports: {:?}",
-                            port, component_id, proc_module.output_port_names()
-                        ));
-                    }
-                },
-                ComponentModule::Memory(_) => {
-                    // Memory components have a standard output port "out"
-                    if port != "out" {
-                        return Err(format!(
-                            "Output port '{}' not found on memory component '{}'. Valid port: 'out'",
-                            port, component_id
-                        ));
-                    }
-                },
-            }
-        }
-        Ok(())
-    }
-
-    /// Validate that a component has the specified input port
-    fn validate_target_port(
-        &self,
-        registry: &ComponentRegistry,
-        component_id: &ComponentId,
-        port: &str,
-    ) -> Result<(), String> {
-        if let Some(component) = registry.get_component(component_id) {
-            match &component.module {
-                ComponentModule::Processing(proc_module) => {
-                    if !proc_module.has_input_port(port) {
-                        return Err(format!(
-                            "Input port '{}' not found on processing component '{}'. Valid ports: {:?}",
-                            port, component_id, proc_module.input_port_names()
-                        ));
-                    }
-                },
-                ComponentModule::Memory(_) => {
-                    // Memory components have a standard input port "in"
-                    if port != "in" {
-                        return Err(format!(
-                            "Input port '{}' not found on memory component '{}'. Valid port: 'in'",
-                            port, component_id
-                        ));
-                    }
-                },
-            }
-        }
-        Ok(())
-    }
 
     /// Validate all connections in the manager
     pub fn validate_all_connections(&self, registry: &ComponentRegistry) -> Result<(), String> {
         // Validate regular connections
-        for ((source_id, source_port), targets) in &self.connections {
-            self.validate_source_port(registry, source_id, source_port)?;
-            for (target_id, target_port) in targets {
-                self.validate_target_port(registry, target_id, target_port)?;
-            }
-        }
+        ConnectionValidator::validate_all_connections(registry, &self.connections)?;
 
         // Validate memory connections
-        for ((component_id, port), memory_id) in &self.memory_connections {
-            if !registry.has_component(component_id) {
-                return Err(format!("Component '{}' in memory connection not found", component_id));
-            }
-            if !registry.has_memory_component(memory_id) {
-                return Err(format!("Memory component '{}' in memory connection not found", memory_id));
-            }
-
-            // Validate the memory port exists
-            if let Some(component) = registry.get_component(component_id) {
-                if let ComponentModule::Processing(proc_module) = &component.module {
-                    if !proc_module.has_memory_port(port) {
-                        return Err(format!(
-                            "Memory port '{}' not found on component '{}'",
-                            port, component_id
-                        ));
-                    }
-                }
-            }
-        }
+        ConnectionValidator::validate_all_memory_connections(registry, &self.memory_connections)?;
 
 
         Ok(())

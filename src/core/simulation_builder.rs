@@ -1,6 +1,7 @@
 use super::component_manager::{ComponentManager, ComponentInstance};
 use super::component_module::ComponentModule;
 use super::cycle_engine::CycleEngine;
+use super::connection_validator::ConnectionValidator;
 use super::types::ComponentId;
 use std::collections::HashMap;
 
@@ -86,8 +87,12 @@ impl SimulationBuilder {
         }
 
         // Validate ports exist
-        self.validate_source_port(source_id, source_port)?;
-        self.validate_target_port(target_id, target_port)?;
+        let source_component = self.components.get(source_id)
+            .ok_or_else(|| format!("Source component '{}' not found", source_id))?;
+        let target_component = self.components.get(target_id)
+            .ok_or_else(|| format!("Target component '{}' not found", target_id))?;
+        
+        ConnectionValidator::validate_connection_direct(source_component, source_port, target_component, target_port)?;
 
         // Check for input port collision
         for targets in self.connections.values() {
@@ -119,7 +124,9 @@ impl SimulationBuilder {
         }
 
         // Validate the component has the memory port
-        self.validate_memory_port(component_id, port)?;
+        let component = self.components.get(component_id)
+            .ok_or_else(|| format!("Component '{}' not found", component_id))?;
+        ConnectionValidator::validate_memory_connection_direct(component, port)?;
 
         // Validate the target is a memory component
         let memory_instance = &self.components[memory_id];
@@ -259,80 +266,6 @@ impl SimulationBuilder {
         self.components.get(id)
     }
 
-    /// Helper method to validate source port exists
-    fn validate_source_port(&self, component_id: &str, port: &str) -> Result<(), String> {
-        let instance = &self.components[component_id];
-        
-        match &instance.module {
-            ComponentModule::Processing(proc_module) => {
-                if !proc_module.has_output_port(port) {
-                    return Err(format!(
-                        "Output port '{}' not found on processing component '{}'. Valid ports: {:?}",
-                        port, component_id, proc_module.output_port_names()
-                    ));
-                }
-            },
-            ComponentModule::Memory(_) => {
-                // Memory components typically have a standard output port "out"
-                if port != "out" {
-                    return Err(format!(
-                        "Output port '{}' not found on memory component '{}'. Valid port: 'out'",
-                        port, component_id
-                    ));
-                }
-            },
-        }
-        
-        Ok(())
-    }
-
-    /// Helper method to validate target port exists
-    fn validate_target_port(&self, component_id: &str, port: &str) -> Result<(), String> {
-        let instance = &self.components[component_id];
-        
-        match &instance.module {
-            ComponentModule::Processing(proc_module) => {
-                if !proc_module.has_input_port(port) {
-                    return Err(format!(
-                        "Input port '{}' not found on processing component '{}'. Valid ports: {:?}",
-                        port, component_id, proc_module.input_port_names()
-                    ));
-                }
-            },
-            ComponentModule::Memory(_) => {
-                // Memory components typically have a standard input port "in"
-                if port != "in" {
-                    return Err(format!(
-                        "Input port '{}' not found on memory component '{}'. Valid port: 'in'",
-                        port, component_id
-                    ));
-                }
-            },
-        }
-        
-        Ok(())
-    }
-
-    /// Helper method to validate memory port exists
-    fn validate_memory_port(&self, component_id: &str, port: &str) -> Result<(), String> {
-        let instance = &self.components[component_id];
-        
-        if let ComponentModule::Processing(proc_module) = &instance.module {
-            if !proc_module.has_memory_port(port) {
-                return Err(format!(
-                    "Memory port '{}' not found on component '{}'. Valid ports: {:?}",
-                    port, component_id, proc_module.memory_port_names()
-                ));
-            }
-        } else {
-            return Err(format!(
-                "Component '{}' is not a processing component and cannot have memory ports",
-                component_id
-            ));
-        }
-        
-        Ok(())
-    }
 }
 
 /// Statistics about the simulation configuration
