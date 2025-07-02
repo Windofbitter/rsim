@@ -1,4 +1,4 @@
-use super::component_registry::ComponentRegistry;
+use super::component_registry::{ComponentRegistry, ComponentType};
 use super::types::ComponentId;
 use std::collections::{HashMap, VecDeque};
 
@@ -16,7 +16,7 @@ impl ExecutionOrderBuilder {
         let mut in_degree: HashMap<ComponentId, usize> = HashMap::new();
 
         // Initialize graph data structures for all processing components
-        for comp_id in registry.processing_components().keys() {
+        for comp_id in registry.components_by_type(ComponentType::Processing).keys() {
             in_degree.insert(comp_id.clone(), 0);
             adj_list.insert(comp_id.clone(), Vec::new());
         }
@@ -24,12 +24,12 @@ impl ExecutionOrderBuilder {
         // Build adjacency list and in-degrees from connections
         for ((source_id, _source_port), targets) in connections {
             // Only consider connections between processing components
-            if !registry.has_processing_component(source_id) {
+            if !registry.has_component_of_type(source_id, ComponentType::Processing) {
                 continue;
             }
 
             for (target_id, _target_port) in targets {
-                if !registry.has_processing_component(target_id) {
+                if !registry.has_component_of_type(target_id, ComponentType::Processing) {
                     continue;
                 }
 
@@ -75,7 +75,7 @@ impl ExecutionOrderBuilder {
         }
 
         // Check for cycles
-        if sorted_order.len() == registry.processing_components().len() {
+        if sorted_order.len() == registry.components_by_type(ComponentType::Processing).len() {
             Ok(sorted_order)
         } else {
             Err("Cycle detected in processing component dependencies".to_string())

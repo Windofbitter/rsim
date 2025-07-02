@@ -1,7 +1,7 @@
 use super::typed_values::{TypedValue, TypedInputMap, TypedOutputMap, TypedOutputs};
 use super::component_manager::ComponentInstance;
 use super::component_module::{ComponentModule, EvaluationContext};
-use super::component_registry::ComponentRegistry;
+use super::component_registry::{ComponentRegistry, ComponentType};
 use super::connection_manager::ConnectionManager;
 use super::memory_proxy::TypeSafeCentralMemoryProxy;
 use super::types::ComponentId;
@@ -63,7 +63,7 @@ impl CycleEngine {
         let mut temp_visited = std::collections::HashSet::new();
 
         // Get all processing components
-        let processing_components: Vec<ComponentId> = self.component_registry.processing_component_ids();
+        let processing_components: Vec<ComponentId> = self.component_registry.component_ids_by_type(ComponentType::Processing);
 
         // Perform DFS-based topological sort
         for component_id in &processing_components {

@@ -5,6 +5,13 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+/// Component type filter for unified access methods
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ComponentType {
+    Processing,
+    Memory,
+}
+
 /// Manages registration and storage of all module-based component types
 pub struct ComponentRegistry {
     /// All component instances
@@ -65,20 +72,14 @@ impl ComponentRegistry {
         &self.memory_modules
     }
 
-    /// Get processing components
-    pub fn processing_components(&self) -> HashMap<ComponentId, &ComponentInstance> {
+    /// Get components filtered by type (unified replacement for processing_components and memory_component_instances)
+    pub fn components_by_type(&self, component_type: ComponentType) -> HashMap<ComponentId, &ComponentInstance> {
         self.components
             .iter()
-            .filter(|(_, instance)| instance.is_processing())
-            .map(|(id, instance)| (id.clone(), instance))
-            .collect()
-    }
-
-    /// Get memory component instances
-    pub fn memory_component_instances(&self) -> HashMap<ComponentId, &ComponentInstance> {
-        self.components
-            .iter()
-            .filter(|(_, instance)| instance.is_memory())
+            .filter(|(_, instance)| match component_type {
+                ComponentType::Processing => instance.is_processing(),
+                ComponentType::Memory => instance.is_memory(),
+            })
             .map(|(id, instance)| (id.clone(), instance))
             .collect()
     }
@@ -89,19 +90,14 @@ impl ComponentRegistry {
         self.components.contains_key(id)
     }
 
-    /// Check if a processing component exists
-    pub fn has_processing_component(&self, id: &ComponentId) -> bool {
+    /// Check if a component of a specific type exists (unified replacement for has_processing_component and has_memory_component)
+    pub fn has_component_of_type(&self, id: &ComponentId, component_type: ComponentType) -> bool {
         self.components
             .get(id)
-            .map(|instance| instance.is_processing())
-            .unwrap_or(false)
-    }
-
-    /// Check if a memory component exists
-    pub fn has_memory_component(&self, id: &ComponentId) -> bool {
-        self.components
-            .get(id)
-            .map(|instance| instance.is_memory())
+            .map(|instance| match component_type {
+                ComponentType::Processing => instance.is_processing(),
+                ComponentType::Memory => instance.is_memory(),
+            })
             .unwrap_or(false)
     }
 
@@ -111,20 +107,14 @@ impl ComponentRegistry {
         self.components.keys().collect()
     }
 
-    /// Get processing component IDs
-    pub fn processing_component_ids(&self) -> Vec<ComponentId> {
+    /// Get component IDs filtered by type (unified replacement for processing_component_ids and memory_component_ids)
+    pub fn component_ids_by_type(&self, component_type: ComponentType) -> Vec<ComponentId> {
         self.components
             .iter()
-            .filter(|(_, instance)| instance.is_processing())
-            .map(|(id, _)| id.clone())
-            .collect()
-    }
-
-    /// Get memory component IDs
-    pub fn memory_component_ids(&self) -> Vec<ComponentId> {
-        self.components
-            .iter()
-            .filter(|(_, instance)| instance.is_memory())
+            .filter(|(_, instance)| match component_type {
+                ComponentType::Processing => instance.is_processing(),
+                ComponentType::Memory => instance.is_memory(),
+            })
             .map(|(id, _)| id.clone())
             .collect()
     }

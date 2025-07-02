@@ -2,6 +2,7 @@ pub mod component;
 pub mod component_manager;
 pub mod component_module;
 pub mod component_registry;
+pub use component_registry::ComponentType;
 pub mod connection_manager;
 pub mod connection_validator;
 pub mod cycle_engine;

@@ -1,4 +1,4 @@
-use super::component_registry::ComponentRegistry;
+use super::component_registry::{ComponentRegistry, ComponentType};
 use super::component_manager::ComponentInstance;
 use super::component_module::ComponentModule;
 use super::port_validator::PortValidator;
@@ -60,12 +60,12 @@ impl ConnectionValidator {
         mem_id: &ComponentId,
     ) -> Result<(), String> {
         // Validate that the processing component exists
-        if !registry.has_processing_component(proc_id) {
+        if !registry.has_component_of_type(proc_id, ComponentType::Processing) {
             return Err(format!("Processing component '{}' not found", proc_id));
         }
 
         // Validate that the memory component exists
-        if !registry.has_memory_component(mem_id) {
+        if !registry.has_component_of_type(mem_id, ComponentType::Memory) {
             return Err(format!("Memory component '{}' not found", mem_id));
         }
 
@@ -149,7 +149,7 @@ impl ConnectionValidator {
             if !registry.has_component(component_id) {
                 return Err(format!("Component '{}' in memory connection not found", component_id));
             }
-            if !registry.has_memory_component(memory_id) {
+            if !registry.has_component_of_type(memory_id, ComponentType::Memory) {
                 return Err(format!("Memory component '{}' in memory connection not found", memory_id));
             }
 
