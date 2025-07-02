@@ -2,11 +2,11 @@ use super::component_manager::{ComponentManager, ComponentInstance};
 use super::component_module::ComponentModule;
 use super::cycle_engine::CycleEngine;
 use super::connection_validator::ConnectionValidator;
-use super::types::ComponentId;
+use super::types::{ComponentId, OutputPort, InputPort, MemoryPort};
 use std::collections::HashMap;
 
-/// Builder pattern for creating and configuring simulations with fluent API
-pub struct SimulationBuilder {
+/// Imperative API for creating and configuring simulations
+pub struct Simulation {
     /// Component manager for creating instances
     component_manager: ComponentManager,
     /// Created component instances  
@@ -17,8 +17,8 @@ pub struct SimulationBuilder {
     memory_connections: HashMap<(ComponentId, String), ComponentId>,
 }
 
-impl SimulationBuilder {
-    /// Create a new simulation builder
+impl Simulation {
+    /// Create a new simulation
     pub fn new() -> Self {
         Self {
             component_manager: ComponentManager::new(),
@@ -29,54 +29,61 @@ impl SimulationBuilder {
     }
 
     /// Register a component module template
-    pub fn register_module(mut self, name: &str, module: ComponentModule) -> Result<Self, String> {
-        self.component_manager.register_module(name, module)?;
-        Ok(self)
+    pub fn register_module(&mut self, name: &str, module: ComponentModule) -> Result<(), String> {
+        self.component_manager.register_module(name, module)
     }
 
     /// Create a component with automatic ID generation
-    pub fn create_component(mut self, module_name: &str) -> Result<Self, String> {
+    pub fn create_component(&mut self, module_name: &str) -> Result<ComponentId, String> {
         let instance = self.component_manager.create_component_auto_id(module_name)?;
         let id = instance.id().clone();
-        self.components.insert(id, instance);
-        Ok(self)
+        self.components.insert(id.clone(), instance);
+        Ok(id)
     }
 
     /// Create a component with a specific ID
-    pub fn create_component_with_id(mut self, module_name: &str, component_id: ComponentId) -> Result<Self, String> {
-        if self.components.contains_key(&component_id) {
-            return Err(format!("Component with ID '{}' already exists", component_id));
+    pub fn create_component_with_id(&mut self, module_name: &str, id_string: String) -> Result<ComponentId, String> {
+        let temp_id = ComponentId::new(id_string.clone(), module_name.to_string());
+        if self.components.contains_key(&temp_id) {
+            return Err(format!("Component with ID '{}' already exists", id_string));
         }
         
-        let instance = self.component_manager.create_component(module_name, component_id.clone())?;
-        self.components.insert(component_id, instance);
-        Ok(self)
+        let instance = self.component_manager.create_component(module_name, id_string)?;
+        let component_id = instance.id().clone();
+        self.components.insert(component_id.clone(), instance);
+        Ok(component_id)
     }
 
     /// Create multiple components of the same type
-    pub fn create_components(mut self, module_name: &str, count: usize) -> Result<Self, String> {
+    pub fn create_components(&mut self, module_name: &str, count: usize) -> Result<Vec<ComponentId>, String> {
         let instances = self.component_manager.create_components(module_name, count)?;
+        let mut component_ids = Vec::new();
         for instance in instances {
             let id = instance.id().clone();
+            component_ids.push(id.clone());
             self.components.insert(id, instance);
         }
-        Ok(self)
+        Ok(component_ids)
     }
 
     /// Create components with custom prefix
-    pub fn create_components_with_prefix(mut self, module_name: &str, prefix: &str, count: usize) -> Result<Self, String> {
+    pub fn create_components_with_prefix(&mut self, module_name: &str, prefix: &str, count: usize) -> Result<Vec<ComponentId>, String> {
         let instances = self.component_manager.create_components_with_prefix(module_name, prefix, count)?;
+        let mut component_ids = Vec::new();
         for instance in instances {
             let id = instance.id().clone();
+            component_ids.push(id.clone());
             self.components.insert(id, instance);
         }
-        Ok(self)
+        Ok(component_ids)
     }
 
-    /// Connect two component ports
-    pub fn connect(mut self, source: (&str, &str), target: (&str, &str)) -> Result<Self, String> {
-        let (source_id, source_port) = source;
-        let (target_id, target_port) = target;
+    /// Connect two component ports using port handles
+    pub fn connect(&mut self, output: OutputPort, input: InputPort) -> Result<(), String> {
+        let source_id = output.component_id();
+        let source_port = output.port_name();
+        let target_id = input.component_id();
+        let target_port = input.port_name();
 
         // Validate components exist
         if !self.components.contains_key(source_id) {
@@ -106,21 +113,24 @@ impl SimulationBuilder {
             }
         }
 
-        let source_key = (source_id.to_string(), source_port.to_string());
-        let target_tuple = (target_id.to_string(), target_port.to_string());
+        let source_key = (source_id.clone(), source_port.to_string());
+        let target_tuple = (target_id.clone(), target_port.to_string());
         
         self.connections.entry(source_key).or_default().push(target_tuple);
-        Ok(self)
+        Ok(())
     }
 
-    /// Connect a component memory port to a memory component
-    pub fn connect_memory(mut self, component_id: &str, port: &str, memory_id: &str) -> Result<Self, String> {
+    /// Connect a component memory port to a memory component using port handles
+    pub fn connect_memory(&mut self, memory_port: MemoryPort, memory_component: &ComponentId) -> Result<(), String> {
+        let component_id = memory_port.component_id();
+        let port = memory_port.port_name();
+        
         // Validate components exist
         if !self.components.contains_key(component_id) {
             return Err(format!("Component '{}' not found", component_id));
         }
-        if !self.components.contains_key(memory_id) {
-            return Err(format!("Memory component '{}' not found", memory_id));
+        if !self.components.contains_key(memory_component) {
+            return Err(format!("Memory component '{}' not found", memory_component));
         }
 
         // Validate the component has the memory port
@@ -129,13 +139,13 @@ impl SimulationBuilder {
         ConnectionValidator::validate_memory_connection_direct(component, port)?;
 
         // Validate the target is a memory component
-        let memory_instance = &self.components[memory_id];
+        let memory_instance = &self.components[memory_component];
         if !memory_instance.is_memory() {
-            return Err(format!("Component '{}' is not a memory component", memory_id));
+            return Err(format!("Component '{}' is not a memory component", memory_component));
         }
 
         // Check if this port is already connected
-        let port_key = (component_id.to_string(), port.to_string());
+        let port_key = (component_id.clone(), port.to_string());
         if self.memory_connections.contains_key(&port_key) {
             return Err(format!(
                 "Memory port '{}' on component '{}' is already connected",
@@ -143,8 +153,8 @@ impl SimulationBuilder {
             ));
         }
 
-        self.memory_connections.insert(port_key, memory_id.to_string());
-        Ok(self)
+        self.memory_connections.insert(port_key, memory_component.clone());
+        Ok(())
     }
 
 
@@ -278,40 +288,28 @@ pub struct SimulationStats {
     pub memory_connections: usize,
 }
 
-impl Default for SimulationBuilder {
+impl Default for Simulation {
     fn default() -> Self {
         Self::new()
     }
 }
 
-/// Extension trait to provide additional builder methods
-pub trait SimulationBuilderExt {
-    /// Chain multiple component creation calls
-    fn with_components(self, specs: Vec<(&str, Option<&str>)>) -> Result<Self, String>
-    where
-        Self: Sized;
-
-    /// Chain multiple connection calls
-    fn with_connections(self, connections: Vec<((&str, &str), (&str, &str))>) -> Result<Self, String>
-    where
-        Self: Sized;
+/// Extension trait to provide additional convenience methods
+pub trait SimulationExt {
+    /// Create multiple components with their IDs
+    fn create_components_batch(&mut self, specs: Vec<(&str, Option<&str>)>) -> Result<Vec<ComponentId>, String>;
 }
 
-impl SimulationBuilderExt for SimulationBuilder {
-    fn with_components(mut self, specs: Vec<(&str, Option<&str>)>) -> Result<Self, String> {
+impl SimulationExt for Simulation {
+    fn create_components_batch(&mut self, specs: Vec<(&str, Option<&str>)>) -> Result<Vec<ComponentId>, String> {
+        let mut component_ids = Vec::new();
         for (module_name, component_id) in specs {
-            self = match component_id {
+            let id = match component_id {
                 Some(id) => self.create_component_with_id(module_name, id.to_string())?,
                 None => self.create_component(module_name)?,
             };
+            component_ids.push(id);
         }
-        Ok(self)
-    }
-
-    fn with_connections(mut self, connections: Vec<((&str, &str), (&str, &str))>) -> Result<Self, String> {
-        for (source, target) in connections {
-            self = self.connect(source, target)?;
-        }
-        Ok(self)
+        Ok(component_ids)
     }
 }

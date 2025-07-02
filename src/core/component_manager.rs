@@ -42,7 +42,7 @@ impl ComponentManager {
     }
 
     /// Create a component instance with a specific ID
-    pub fn create_component(&self, module_name: &str, component_id: ComponentId) -> Result<ComponentInstance, String> {
+    pub fn create_component(&self, module_name: &str, id_string: String) -> Result<ComponentInstance, String> {
         let template = self.module_templates.get(module_name)
             .ok_or_else(|| format!("Component module '{}' not found", module_name))?;
 
@@ -50,6 +50,8 @@ impl ComponentManager {
         
         // Components don't currently support state factories
         let state = None;
+        
+        let component_id = ComponentId::new(id_string, module_name.to_string());
 
         Ok(ComponentInstance {
             id: component_id,
@@ -61,13 +63,14 @@ impl ComponentManager {
     /// Create a component instance with an automatically generated ID
     pub fn create_component_auto_id(&self, module_name: &str) -> Result<ComponentInstance, String> {
         let id = self.generate_unique_id(module_name);
-        self.create_component(module_name, id)
+        self.create_component(module_name, id.id().to_string())
     }
 
     /// Generate a unique component ID
     pub fn generate_unique_id(&self, module_name: &str) -> ComponentId {
         let counter = self.id_counter.fetch_add(1, Ordering::SeqCst);
-        format!("{}_{}", module_name, counter)
+        let id_string = format!("{}_{}", module_name, counter);
+        ComponentId::new(id_string, module_name.to_string())
     }
 
     /// Check if a module template exists
@@ -110,8 +113,8 @@ impl ComponentManager {
     pub fn create_components_with_prefix(&self, module_name: &str, prefix: &str, count: usize) -> Result<Vec<ComponentInstance>, String> {
         let mut components = Vec::new();
         for i in 0..count {
-            let id = format!("{}_{}", prefix, i);
-            components.push(self.create_component(module_name, id)?);
+            let id_string = format!("{}_{}", prefix, i);
+            components.push(self.create_component(module_name, id_string)?);
         }
         Ok(components)
     }

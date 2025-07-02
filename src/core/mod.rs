@@ -10,9 +10,11 @@ pub mod execution_order;
 pub mod memory_proxy;
 pub mod port_validator;
 pub mod simulation_builder;
+pub use simulation_builder::{Simulation, SimulationExt};
 pub mod simulation_engine;
 pub mod state;
 pub mod types;
+pub use types::{ComponentId, OutputPort, InputPort, MemoryPort};
 pub mod typed_values;
 
 #[cfg(test)]
