@@ -1,57 +1,120 @@
-use super::component::{EngineMemoryProxy, Event, MemoryComponent, MemoryError};
+use super::component_module::{TypeSafeMemoryProxy, MemoryModuleTrait};
+use super::state::MemoryData;
 use super::types::ComponentId;
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-/// Engine's centralized memory proxy that manages memory access for components
-pub struct CentralMemoryProxy<'a> {
-    memory_components: &'a HashMap<ComponentId, RefCell<Box<dyn MemoryComponent>>>,
+/// Type-safe memory proxy for module-based components
+pub struct TypeSafeCentralMemoryProxy<'a> {
+    /// Memory modules
+    memory_modules: &'a HashMap<ComponentId, RefCell<Box<dyn MemoryModuleTrait>>>,
+    /// Memory connections mapping
     memory_connections: &'a HashMap<(ComponentId, String), ComponentId>,
+    /// Current component ID for context
+    component_id: ComponentId,
 }
 
-impl<'a> CentralMemoryProxy<'a> {
+impl<'a> TypeSafeCentralMemoryProxy<'a> {
+    /// Create a new type-safe memory proxy
     pub fn new(
-        memory_components: &'a HashMap<ComponentId, RefCell<Box<dyn MemoryComponent>>>,
+        memory_modules: &'a HashMap<ComponentId, RefCell<Box<dyn MemoryModuleTrait>>>,
         memory_connections: &'a HashMap<(ComponentId, String), ComponentId>,
+        component_id: ComponentId,
     ) -> Self {
         Self {
-            memory_components,
+            memory_modules,
             memory_connections,
+            component_id,
         }
     }
 }
 
-impl<'a> EngineMemoryProxy for CentralMemoryProxy<'a> {
-    fn read(&self, component_id: &ComponentId, port: &str, address: &str) -> Result<Option<Event>, MemoryError> {
+impl<'a> TypeSafeMemoryProxy for TypeSafeCentralMemoryProxy<'a> {
+    /// Read typed data from memory
+    fn read<T: MemoryData>(&self, port: &str, address: &str) -> Result<Option<T>, String> {
         let mem_id = self
             .memory_connections
-            .get(&(component_id.clone(), port.to_string()))
-            .ok_or_else(|| MemoryError::InvalidPort(format!("{}:{}", component_id, port)))?;
-        
-        let memory_ref = self
-            .memory_components
-            .get(mem_id)
-            .ok_or_else(|| MemoryError::MemoryNotFound(mem_id.clone()))?;
-        
-        Ok(memory_ref.borrow().read_snapshot(address))
-    }
+            .get(&(self.component_id.clone(), port.to_string()))
+            .ok_or_else(|| format!("Memory port '{}' not connected for component '{}'", port, self.component_id))?;
 
-    fn write(&mut self, component_id: &ComponentId, port: &str, address: &str, data: Event) -> Result<(), MemoryError> {
-        let mem_id = self
-            .memory_connections
-            .get(&(component_id.clone(), port.to_string()))
-            .ok_or_else(|| MemoryError::InvalidPort(format!("{}:{}", component_id, port)))?;
-        
-        let memory_ref = self
-            .memory_components
-            .get(mem_id)
-            .ok_or_else(|| MemoryError::MemoryNotFound(mem_id.clone()))?;
-        
-        let success = memory_ref.borrow_mut().write(address, data);
-        if success {
-            Ok(())
+        if let Some(memory_module_ref) = self.memory_modules.get(mem_id) {
+            let memory_module = memory_module_ref.borrow();
+            if let Some(any_data) = memory_module.read_any(address) {
+                // Attempt to downcast to the requested type
+                match any_data.downcast::<T>() {
+                    Ok(typed_data) => Ok(Some(*typed_data)),
+                    Err(_) => Err(format!(
+                        "Type mismatch: cannot convert memory data to {}",
+                        std::any::type_name::<T>()
+                    )),
+                }
+            } else {
+                Ok(None)
+            }
         } else {
-            Err(MemoryError::OperationFailed(format!("Write failed to {}:{}", mem_id, address)))
+            Err(format!("Memory component '{}' not found", mem_id))
         }
     }
+
+    /// Write typed data to memory
+    fn write<T: MemoryData>(&mut self, port: &str, address: &str, data: T) -> Result<(), String> {
+        let mem_id = self
+            .memory_connections
+            .get(&(self.component_id.clone(), port.to_string()))
+            .ok_or_else(|| format!("Memory port '{}' not connected for component '{}'", port, self.component_id))?;
+
+        if let Some(memory_module_ref) = self.memory_modules.get(mem_id) {
+            let mut memory_module = memory_module_ref.borrow_mut();
+            let boxed_data: Box<dyn std::any::Any + Send> = Box::new(data);
+            if memory_module.write_any(address, boxed_data) {
+                Ok(())
+            } else {
+                Err(format!("Failed to write to memory '{}' at address '{}'", mem_id, address))
+            }
+        } else {
+            Err(format!("Memory component '{}' not found", mem_id))
+        }
+    }
+
+}
+
+
+/// Direct memory proxy that operates on memory modules without connection indirection
+pub struct DirectMemoryProxy<'a> {
+    memory_module: &'a RefCell<Box<dyn MemoryModuleTrait>>,
+}
+
+impl<'a> DirectMemoryProxy<'a> {
+    /// Create a new direct memory proxy for a specific memory module
+    pub fn new(memory_module: &'a RefCell<Box<dyn MemoryModuleTrait>>) -> Self {
+        Self { memory_module }
+    }
+
+    /// Read typed data directly from the memory module
+    pub fn read<T: MemoryData>(&self, address: &str) -> Result<Option<T>, String> {
+        let memory = self.memory_module.borrow();
+        if let Some(any_data) = memory.read_any(address) {
+            match any_data.downcast::<T>() {
+                Ok(typed_data) => Ok(Some(*typed_data)),
+                Err(_) => Err(format!(
+                    "Type mismatch: cannot convert memory data to {}",
+                    std::any::type_name::<T>()
+                )),
+            }
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Write typed data directly to the memory module
+    pub fn write<T: MemoryData>(&mut self, address: &str, data: T) -> Result<(), String> {
+        let mut memory = self.memory_module.borrow_mut();
+        let boxed_data: Box<dyn std::any::Any + Send> = Box::new(data);
+        if memory.write_any(address, boxed_data) {
+            Ok(())
+        } else {
+            Err(format!("Failed to write to memory at address '{}'", address))
+        }
+    }
+
 }
