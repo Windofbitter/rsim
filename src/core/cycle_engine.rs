@@ -1,21 +1,17 @@
 use super::typed_values::{TypedValue, TypedInputMap, TypedOutputMap, TypedOutputs};
 use super::component_manager::ComponentInstance;
-use super::component_module::{ComponentModule, EvaluationContext, MemoryModuleTrait};
+use super::component_module::{ComponentModule, EvaluationContext};
+use super::component_registry::ComponentRegistry;
+use super::connection_manager::ConnectionManager;
 use super::memory_proxy::TypeSafeCentralMemoryProxy;
-use super::connection_validator::ConnectionValidator;
 use super::types::ComponentId;
-use std::cell::RefCell;
 use std::collections::HashMap;
 
 pub struct CycleEngine {
-    /// Module-based components
-    components: HashMap<ComponentId, ComponentInstance>,
-    /// Memory modules
-    memory_modules: HashMap<ComponentId, RefCell<Box<dyn MemoryModuleTrait>>>,
-    /// Component connections: (source_id, source_port) -> Vec<(target_id, target_port)>
-    connections: HashMap<(ComponentId, String), Vec<(ComponentId, String)>>,
-    /// Memory connections: (component_id, port) -> memory_id
-    memory_connections: HashMap<(ComponentId, String), ComponentId>,
+    /// Component registry for managing all components
+    component_registry: ComponentRegistry,
+    /// Connection manager for handling all connections
+    connection_manager: ConnectionManager,
     /// Store typed outputs from current cycle for next cycle inputs
     current_typed_outputs: HashMap<(ComponentId, String), TypedValue>,
     /// Execution order for processing components (topologically sorted)
@@ -27,10 +23,8 @@ pub struct CycleEngine {
 impl CycleEngine {
     pub fn new() -> Self {
         Self {
-            components: HashMap::new(),
-            memory_modules: HashMap::new(),
-            connections: HashMap::new(),
-            memory_connections: HashMap::new(),
+            component_registry: ComponentRegistry::new(),
+            connection_manager: ConnectionManager::new(),
             current_typed_outputs: HashMap::new(),
             execution_order: Vec::new(),
             current_cycle: 0,
@@ -39,17 +33,7 @@ impl CycleEngine {
 
     /// Register a component instance
     pub fn register_component(&mut self, instance: ComponentInstance) -> Result<(), String> {
-        let id = instance.id().clone();
-        
-        // Separate memory modules from other components
-        if instance.is_memory() {
-            if let ComponentModule::Memory(memory_module) = &instance.module {
-                self.memory_modules.insert(id.clone(), RefCell::new(memory_module.clone_module()));
-            }
-        }
-        
-        self.components.insert(id, instance);
-        Ok(())
+        self.component_registry.register_component(instance)
     }
 
     /// Connect two component ports
@@ -58,27 +42,7 @@ impl CycleEngine {
         source: (ComponentId, String),
         target: (ComponentId, String),
     ) -> Result<(), String> {
-        // Validate components exist
-        if !self.components.contains_key(&source.0) {
-            return Err(format!("Source component '{}' not found", source.0));
-        }
-        if !self.components.contains_key(&target.0) {
-            return Err(format!("Target component '{}' not found", target.0));
-        }
-
-        // Validate connection using centralized validator
-        let source_component = self.components.get(&source.0)
-            .ok_or_else(|| format!("Source component '{}' not found", source.0))?;
-        let target_component = self.components.get(&target.0)
-            .ok_or_else(|| format!("Target component '{}' not found", target.0))?;
-        
-        ConnectionValidator::validate_connection_direct(source_component, &source.1, target_component, &target.1)?;
-
-        // Check for input port collision
-        ConnectionValidator::check_input_port_collision(&self.connections, &target.0, &target.1)?;
-
-        self.connections.entry(source).or_default().push(target);
-        Ok(())
+        self.connection_manager.connect(&self.component_registry, source, target)
     }
 
     /// Connect component to memory
@@ -88,29 +52,7 @@ impl CycleEngine {
         port: String,
         memory_id: ComponentId,
     ) -> Result<(), String> {
-        // Validate components exist
-        if !self.components.contains_key(&component_id) {
-            return Err(format!("Component '{}' not found", component_id));
-        }
-        if !self.memory_modules.contains_key(&memory_id) && !self.components.contains_key(&memory_id) {
-            return Err(format!("Memory component '{}' not found", memory_id));
-        }
-
-        // Validate memory port exists
-        let component = self.components.get(&component_id)
-            .ok_or_else(|| format!("Component '{}' not found", component_id))?;
-        ConnectionValidator::validate_memory_connection_direct(component, &port)?;
-
-        let port_key = (component_id, port);
-        if self.memory_connections.contains_key(&port_key) {
-            return Err(format!(
-                "Memory port already connected for component '{}'",
-                port_key.0
-            ));
-        }
-
-        self.memory_connections.insert(port_key, memory_id);
-        Ok(())
+        self.connection_manager.connect_memory(&self.component_registry, component_id, port, memory_id)
     }
 
 
@@ -121,11 +63,7 @@ impl CycleEngine {
         let mut temp_visited = std::collections::HashSet::new();
 
         // Get all processing components
-        let processing_components: Vec<ComponentId> = self.components
-            .iter()
-            .filter(|(_, instance)| instance.is_processing())
-            .map(|(id, _)| id.clone())
-            .collect();
+        let processing_components: Vec<ComponentId> = self.component_registry.processing_component_ids();
 
         // Perform DFS-based topological sort
         for component_id in &processing_components {
@@ -161,10 +99,10 @@ impl CycleEngine {
         temp_visited.insert(component_id.clone());
 
         // Visit all components that this component depends on (provides input to this component)
-        for ((source_id, _), targets) in &self.connections {
+        for ((source_id, _), targets) in self.connection_manager.connections() {
             for (target_id, _) in targets {
                 if target_id == component_id && source_id != component_id {
-                    if let Some(source_instance) = self.components.get(source_id) {
+                    if let Some(source_instance) = self.component_registry.get_component(source_id) {
                         if source_instance.is_processing() {
                             self.topological_sort_visit(source_id, visited, temp_visited, order)?;
                         }
@@ -192,7 +130,7 @@ impl CycleEngine {
             
             // Get the processing module info without holding a borrow
             let (input_ports, _output_ports, evaluate_fn) = {
-                if let Some(instance) = self.components.get(comp_id) {
+                if let Some(instance) = self.component_registry.get_component(comp_id) {
                     if let ComponentModule::Processing(proc_module) = &instance.module {
                         (
                             proc_module.input_ports.clone(),
@@ -209,7 +147,7 @@ impl CycleEngine {
 
             for input_port in &input_ports {
                 // Look for connections to this input port
-                for ((source_id, source_port), targets) in &self.connections {
+                for ((source_id, source_port), targets) in self.connection_manager.connections() {
                     for (target_id, target_port) in targets {
                         if target_id == comp_id && target_port == &input_port.name {
                             // Look for typed value from previous cycle
@@ -221,15 +159,15 @@ impl CycleEngine {
                 }
             }
 
-            // Create type-safe memory proxy
+            // Create type-safe memory proxy - now safe with Rc<RefCell<...>>
             let mut memory_proxy = TypeSafeCentralMemoryProxy::new(
-                &self.memory_modules,
-                &self.memory_connections,
+                self.component_registry.memory_modules(),
+                self.connection_manager.memory_connections(),
                 comp_id.clone(),
             );
 
             // Get mutable access to the component for state
-            if let Some(instance) = self.components.get_mut(comp_id) {
+            if let Some(instance) = self.component_registry.get_component_mut(comp_id) {
                 // Create typed outputs collector (flexible to allow any type)
                 let mut typed_outputs = TypedOutputMap::new_flexible();
                 
@@ -264,12 +202,13 @@ impl CycleEngine {
         self.current_typed_outputs = new_typed_outputs;
 
         // End cycle on all memory modules
-        for memory_module_ref in self.memory_modules.values() {
+        for memory_module_ref in self.component_registry.memory_modules().values() {
             memory_module_ref.borrow_mut().create_snapshot();
         }
 
         self.current_cycle += 1;
     }
+
 
     /// Get current cycle number
     pub fn current_cycle(&self) -> u64 {
@@ -283,17 +222,17 @@ impl CycleEngine {
 
     /// Get component by ID
     pub fn get_component(&self, id: &ComponentId) -> Option<&ComponentInstance> {
-        self.components.get(id)
+        self.component_registry.get_component(id)
     }
 
     /// Get mutable component by ID
     pub fn get_component_mut(&mut self, id: &ComponentId) -> Option<&mut ComponentInstance> {
-        self.components.get_mut(id)
+        self.component_registry.get_component_mut(id)
     }
 
     /// Get all component IDs
     pub fn component_ids(&self) -> Vec<&ComponentId> {
-        self.components.keys().collect()
+        self.component_registry.component_ids()
     }
 
 }

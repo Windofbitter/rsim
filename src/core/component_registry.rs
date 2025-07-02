@@ -3,13 +3,14 @@ use super::component_module::{ComponentModule, MemoryModuleTrait};
 use super::types::ComponentId;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 /// Manages registration and storage of all module-based component types
 pub struct ComponentRegistry {
     /// All component instances
     components: HashMap<ComponentId, ComponentInstance>,
     /// Memory modules (separated for efficient access)
-    memory_modules: HashMap<ComponentId, RefCell<Box<dyn MemoryModuleTrait>>>,
+    memory_modules: HashMap<ComponentId, Rc<RefCell<Box<dyn MemoryModuleTrait>>>>,
 }
 
 impl ComponentRegistry {
@@ -31,7 +32,7 @@ impl ComponentRegistry {
         // Separate memory modules for efficient access
         if instance.is_memory() {
             if let ComponentModule::Memory(memory_module) = &instance.module {
-                self.memory_modules.insert(id.clone(), RefCell::new(memory_module.clone_module()));
+                self.memory_modules.insert(id.clone(), Rc::new(RefCell::new(memory_module.clone_module())));
             }
         }
         
@@ -60,7 +61,7 @@ impl ComponentRegistry {
     }
 
     /// Get memory modules
-    pub fn memory_modules(&self) -> &HashMap<ComponentId, RefCell<Box<dyn MemoryModuleTrait>>> {
+    pub fn memory_modules(&self) -> &HashMap<ComponentId, Rc<RefCell<Box<dyn MemoryModuleTrait>>>> {
         &self.memory_modules
     }
 

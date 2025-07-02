@@ -9,7 +9,7 @@ pub struct EvaluationContext<'a> {
     /// Typed input values from connected components
     pub inputs: &'a TypedInputMap,
     /// Memory proxy for type-safe memory access
-    pub memory: &'a mut crate::core::memory_proxy::TypeSafeCentralMemoryProxy<'a>,
+    pub memory: &'a mut crate::core::memory_proxy::TypeSafeCentralMemoryProxy,
     /// Component's current state (if any)
     pub state: Option<&'a mut dyn ComponentState>,
     /// Component ID for context

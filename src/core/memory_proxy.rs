@@ -3,33 +3,34 @@ use super::state::MemoryData;
 use super::types::ComponentId;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 /// Type-safe memory proxy for module-based components
-pub struct TypeSafeCentralMemoryProxy<'a> {
+pub struct TypeSafeCentralMemoryProxy {
     /// Memory modules
-    memory_modules: &'a HashMap<ComponentId, RefCell<Box<dyn MemoryModuleTrait>>>,
+    memory_modules: HashMap<ComponentId, Rc<RefCell<Box<dyn MemoryModuleTrait>>>>,
     /// Memory connections mapping
-    memory_connections: &'a HashMap<(ComponentId, String), ComponentId>,
+    memory_connections: HashMap<(ComponentId, String), ComponentId>,
     /// Current component ID for context
     component_id: ComponentId,
 }
 
-impl<'a> TypeSafeCentralMemoryProxy<'a> {
+impl TypeSafeCentralMemoryProxy {
     /// Create a new type-safe memory proxy
     pub fn new(
-        memory_modules: &'a HashMap<ComponentId, RefCell<Box<dyn MemoryModuleTrait>>>,
-        memory_connections: &'a HashMap<(ComponentId, String), ComponentId>,
+        memory_modules: &HashMap<ComponentId, Rc<RefCell<Box<dyn MemoryModuleTrait>>>>,
+        memory_connections: &HashMap<(ComponentId, String), ComponentId>,
         component_id: ComponentId,
     ) -> Self {
         Self {
-            memory_modules,
-            memory_connections,
+            memory_modules: memory_modules.clone(),
+            memory_connections: memory_connections.clone(),
             component_id,
         }
     }
 }
 
-impl<'a> TypeSafeMemoryProxy for TypeSafeCentralMemoryProxy<'a> {
+impl TypeSafeMemoryProxy for TypeSafeCentralMemoryProxy {
     /// Read typed data from memory
     fn read<T: MemoryData>(&self, port: &str, address: &str) -> Result<Option<T>, String> {
         let mem_id = self
