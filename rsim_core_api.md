@@ -224,52 +224,134 @@ pub enum PortType {
 }
 ```
 
-## Example: Simple Calculator
+## RSim Macros: Reducing Boilerplate
 
+RSim provides powerful macros to dramatically reduce component definition boilerplate:
+
+### Before: Manual Implementation (50+ lines)
 ```rust
-use rsim::core::{
-    builder::simulation_builder::Simulation,
-    components::{Component, React, PortType},
-    components::module::{ProcessorModule, PortSpec},
-};
+struct Adder;
 
-// Define calculator component
-struct Calculator;
-
-impl React for Calculator {
-    type Output = f64;
-    
-    fn react(&mut self) -> Option<Self::Output> {
-        Some(42.0) // Simple calculation
-    }
-}
-
-impl Component for Calculator {
+impl Component for Adder {
     fn define_ports() -> Vec<(String, PortType)> {
         vec![
-            ("input".to_string(), PortType::Input),
-            ("result".to_string(), PortType::Output),
+            ("a".to_string(), PortType::Input),
+            ("b".to_string(), PortType::Input),
+            ("sum".to_string(), PortType::Output),
         ]
     }
     
     fn into_module() -> ProcessorModule {
         let ports = Self::define_ports();
         let input_ports = ports.iter().filter(|(_, t)| *t == PortType::Input)
-            .map(|(name, t)| PortSpec::input(name)).collect();
+            .map(|(name, _)| PortSpec::input(name)).collect();
         let output_ports = ports.iter().filter(|(_, t)| *t == PortType::Output)
-            .map(|(name, t)| PortSpec::output(name)).collect();
+            .map(|(name, _)| PortSpec::output(name)).collect();
         
         ProcessorModule::new(
-            "Calculator", 
-            input_ports, 
-            output_ports, 
-            vec![], // no memory ports
+            "Adder",
+            input_ports,
+            output_ports,
+            vec![],
             |ctx, outputs| {
-                let input: f64 = ctx.inputs.get("input")?;
-                outputs.set("result", input * 2.0)?;
+                let a: i32 = ctx.inputs.get("a").unwrap_or_default();
+                let b: i32 = ctx.inputs.get("b").unwrap_or_default();
+                outputs.set("sum", a + b)?;
                 Ok(())
             }
         )
+    }
+}
+```
+
+### After: Using Macros (3 lines)
+```rust
+// Option 1: impl_component! macro
+struct Adder;
+
+impl_component!(Adder, "Adder", {
+    inputs: [a, b],
+    outputs: [sum],
+    memory: [],
+    react: |ctx, outputs| {
+        let a: i32 = ctx.inputs.get("a").unwrap_or_default();
+        let b: i32 = ctx.inputs.get("b").unwrap_or_default();
+        outputs.set("sum", a + b)?;
+        Ok(())
+    }
+});
+
+// Option 2: component! macro (complete definition)
+component! {
+    name: Calculator,
+    component_name: "Calculator",
+    inputs: [x, y],
+    outputs: [result],
+    memory: [],
+    react: |ctx, outputs| {
+        let x: f64 = ctx.inputs.get("x").unwrap_or_default();
+        let y: f64 = ctx.inputs.get("y").unwrap_or_default();
+        outputs.set("result", x * y)?;
+        Ok(())
+    }
+}
+```
+
+### Memory Access Macros
+
+Simplify verbose memory operations:
+
+```rust
+// Before: Verbose memory access
+let mut remaining_cycles = ctx.memory.read::<i64>("state", "remaining_cycles")
+    .unwrap_or(Some(0)).unwrap_or(0);
+let mut total_produced = ctx.memory.read::<i64>("state", "total_produced")
+    .unwrap_or(Some(0)).unwrap_or(0);
+
+// Process logic...
+
+ctx.memory.write("state", "remaining_cycles", remaining_cycles)?;
+ctx.memory.write("state", "total_produced", total_produced)?;
+
+// After: Using memory macros
+memory_state!(ctx, "state", {
+    remaining_cycles: i64 = 0,
+    total_produced: i64 = 0,
+});
+
+// Process logic...
+
+memory_state_write!(ctx, "state", remaining_cycles, total_produced);
+```
+
+### Available Macros
+
+- **`impl_component!`** - Generate Component trait implementation
+- **`component!`** - Create complete component with struct + implementation
+- **`impl_memory_component!`** - Generate MemoryComponent trait implementation
+- **`memory_read!`** - Simplified memory read with default
+- **`memory_write!`** - Simplified memory write
+- **`memory_state!`** - Read multiple fields from same memory port
+- **`memory_state_write!`** - Write multiple fields to same memory port
+- **`input_ports!`**, **`output_ports!`**, **`memory_ports!`** - Port specification helpers
+- **`port_definitions!`** - Generate port definitions for define_ports()
+
+## Example: Simple Calculator
+
+```rust
+use rsim::*;
+
+// Using macros for clean, concise component definition
+component! {
+    name: Calculator,
+    component_name: "Calculator",
+    inputs: [input],
+    outputs: [result],
+    memory: [],
+    react: |ctx, outputs| {
+        let input: f64 = ctx.inputs.get("input").unwrap_or_default();
+        outputs.set("result", input * 2.0)?;
+        Ok(())
     }
 }
 
@@ -279,8 +361,6 @@ fn main() -> Result<(), String> {
     
     // Add calculator
     let calc = sim.add_component(Calculator);
-    
-    // No connections needed for this simple example
     
     // Build and run
     let mut engine = sim.build()?;
