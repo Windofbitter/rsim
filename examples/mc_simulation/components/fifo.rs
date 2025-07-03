@@ -1,23 +1,22 @@
-use crate::core::components::state::MemoryData;
-use crate::core::components::{MemoryComponent, Cycle, PortType};
+use rsim::*;
 
 /// FIFO (First In, First Out) memory component for McDonald's simulation
 /// Represents a queue buffer with capacity constraints and operation tracking
 #[derive(Clone, Debug)]
 pub struct FIFOData {
     /// Current number of items in the buffer
-    pub data_count: u64,
+    pub data_count: i64,
     /// Number of items to add in this cycle
-    pub to_add: u64,
+    pub to_add: i64,
     /// Number of items to subtract in this cycle
-    pub to_subtract: u64,
+    pub to_subtract: i64,
     /// Maximum capacity of the buffer
-    pub capacity: u64,
+    pub capacity: i64,
 }
 
 impl FIFOData {
     /// Create a new FIFO with specified capacity
-    pub fn new(capacity: u64) -> Self {
+    pub fn new(capacity: i64) -> Self {
         Self {
             data_count: 0,
             to_add: 0,
@@ -37,7 +36,7 @@ impl FIFOData {
     }
 
     /// Get available space in the buffer
-    pub fn available_space(&self) -> u64 {
+    pub fn available_space(&self) -> i64 {
         self.capacity.saturating_sub(self.data_count)
     }
 
@@ -56,22 +55,21 @@ impl FIFOData {
     }
 
     /// Request to add items to the buffer
-    pub fn request_add(&mut self, count: u64) {
+    pub fn request_add(&mut self, count: i64) {
         self.to_add = self.to_add.saturating_add(count);
     }
 
     /// Request to subtract items from the buffer
-    pub fn request_subtract(&mut self, count: u64) {
+    pub fn request_subtract(&mut self, count: i64) {
         self.to_subtract = self.to_subtract.saturating_add(count);
     }
 }
 
 // Implement MemoryData trait so FIFOData can be stored in memory components
-impl MemoryData for FIFOData {}
+impl rsim::core::components::state::MemoryData for FIFOData {}
 
-// Implement Cycle trait for FIFOData to work as memory component
 impl Cycle for FIFOData {
-    type Output = u64;
+    type Output = i64;
     
     fn cycle(&mut self) -> Option<Self::Output> {
         // Apply pending operations before returning current count

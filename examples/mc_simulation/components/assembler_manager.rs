@@ -1,5 +1,6 @@
-use crate::core::components::{Component, PortType};
-use crate::core::components::module::{ProcessorModule, PortSpec};
+use rsim::core::components::{Component, PortType};
+use rsim::core::components::module::{ProcessorModule, PortSpec};
+use rsim::impl_component;
 
 /// AssemblerManager component that coordinates ingredient distribution to assemblers
 /// Reads from bread and meat manager buffers and distributes ingredient pairs
@@ -35,14 +36,14 @@ impl_component!(AssemblerManager, "AssemblerManager", {
     ],
     react: |ctx, _outputs| {
         // Check bread availability from bread manager
-        let bread_available = if let Ok(Some(count)) = ctx.memory.read::<u64>("bread_manager", "bread_count") {
+        let bread_available = if let Ok(Some(count)) = ctx.memory.read::<i64>("bread_manager", "bread_count") {
             count > 0
         } else {
             false
         };
         
         // Check meat availability from meat manager
-        let meat_available = if let Ok(Some(count)) = ctx.memory.read::<u64>("meat_manager", "meat_count") {
+        let meat_available = if let Ok(Some(count)) = ctx.memory.read::<i64>("meat_manager", "meat_count") {
             count > 0
         } else {
             false
@@ -56,15 +57,15 @@ impl_component!(AssemblerManager, "AssemblerManager", {
                 let buffer_name = format!("assembler_buffer_{}", i);
                 
                 // Check if buffer has space for both bread and meat
-                let bread_space = if let Ok(Some(bread_count)) = ctx.memory.read::<u64>(&buffer_name, "bread_count") {
-                    let bread_capacity = memory_read!(ctx, &buffer_name, "bread_capacity", u64, 10);
+                let bread_space = if let Ok(Some(bread_count)) = ctx.memory.read::<i64>(&buffer_name, "bread_count") {
+                    let bread_capacity = memory_read!(ctx, &buffer_name, "bread_capacity", i64, 10);
                     bread_count < bread_capacity
                 } else {
                     true // If can't read, assume buffer has space
                 };
                 
-                let meat_space = if let Ok(Some(meat_count)) = ctx.memory.read::<u64>(&buffer_name, "meat_count") {
-                    let meat_capacity = memory_read!(ctx, &buffer_name, "meat_capacity", u64, 10);
+                let meat_space = if let Ok(Some(meat_count)) = ctx.memory.read::<i64>(&buffer_name, "meat_count") {
+                    let meat_capacity = memory_read!(ctx, &buffer_name, "meat_capacity", i64, 10);
                     meat_count < meat_capacity
                 } else {
                     true // If can't read, assume buffer has space
@@ -78,11 +79,11 @@ impl_component!(AssemblerManager, "AssemblerManager", {
             
             // Get the maximum number of ingredient pairs we can create this cycle
             // Limited by available bread, meat, or assembler buffer space
-            let bread_count = memory_read!(ctx, "bread_manager", "bread_count", u64, 0);
-            let meat_count = memory_read!(ctx, "meat_manager", "meat_count", u64, 0);
+            let bread_count = memory_read!(ctx, "bread_manager", "bread_count", i64, 0);
+            let meat_count = memory_read!(ctx, "meat_manager", "meat_count", i64, 0);
             let max_pairs = std::cmp::min(
                 std::cmp::min(bread_count, meat_count),
-                available_assembler_buffers.len() as u64
+                available_assembler_buffers.len() as i64
             );
             
             // Distribute ingredient pairs to available assembler buffers
@@ -91,12 +92,12 @@ impl_component!(AssemblerManager, "AssemblerManager", {
                 let buffer_name = format!("assembler_buffer_{}", assembler_buffer_id);
                 
                 // Request to consume ingredients from managers
-                memory_write!(ctx, "bread_manager", "bread_to_subtract", 1u64)?;
-                memory_write!(ctx, "meat_manager", "meat_to_subtract", 1u64)?;
+                memory_write!(ctx, "bread_manager", "bread_to_subtract", 1i64)?;
+                memory_write!(ctx, "meat_manager", "meat_to_subtract", 1i64)?;
                 
                 // Request to add ingredient pair to assembler buffer
-                memory_write!(ctx, &buffer_name, "bread_to_add", 1u64)?;
-                memory_write!(ctx, &buffer_name, "meat_to_add", 1u64)?;
+                memory_write!(ctx, &buffer_name, "bread_to_add", 1i64)?;
+                memory_write!(ctx, &buffer_name, "meat_to_add", 1i64)?;
             }
         }
         

@@ -1,5 +1,6 @@
-use crate::core::components::{Component, PortType};
-use crate::core::components::module::{ProcessorModule, PortSpec};
+use rsim::core::components::{Component, PortType};
+use rsim::core::components::module::{ProcessorModule, PortSpec};
+use rsim::impl_component;
 use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
 
@@ -45,8 +46,8 @@ impl_component!(Fryer, "Fryer", {
         let max_delay = memory_read!(ctx, "fryer_state", "max_delay", u32, 7);
         
         // Read buffer status from memory (previous cycle state)
-        let buffer_full = if let Ok(Some(count)) = ctx.memory.read::<u64>("meat_buffer", "data_count") {
-            let capacity = memory_read!(ctx, "meat_buffer", "capacity", u64, 10);
+        let buffer_full = if let Ok(Some(count)) = ctx.memory.read::<i64>("meat_buffer", "data_count") {
+            let capacity = memory_read!(ctx, "meat_buffer", "capacity", i64, 10);
             count >= capacity
         } else {
             false // If can't read buffer, assume not full
@@ -58,7 +59,7 @@ impl_component!(Fryer, "Fryer", {
             remaining_cycles -= 1;
         } else if !buffer_full {
             // Timer expired and buffer not full, produce meat and start new timer
-            memory_write!(ctx, "meat_buffer", "to_add", 1u64)?;
+            memory_write!(ctx, "meat_buffer", "to_add", 1i64)?;
             total_produced += 1;
             
             // Start new production cycle with random delay

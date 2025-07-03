@@ -1,5 +1,6 @@
-use crate::core::components::{Component, PortType};
-use crate::core::components::module::{ProcessorModule, PortSpec};
+use rsim::core::components::{Component, PortType};
+use rsim::core::components::module::{ProcessorModule, PortSpec};
+use rsim::impl_component;
 
 /// MeatManager component that collects meat from all individual meat buffers
 /// and forwards to the AssemblerManager when available
@@ -37,7 +38,7 @@ impl_component!(MeatManager, "MeatManager", {
         let mut available_buffers = Vec::new();
         for i in 1..=10 {
             let buffer_name = format!("meat_buffer_{}", i);
-            if let Ok(Some(count)) = ctx.memory.read::<u64>(&buffer_name, "data_count") {
+            if let Ok(Some(count)) = ctx.memory.read::<i64>(&buffer_name, "data_count") {
                 if count > 0 {
                     available_buffers.push(i);
                 }
@@ -48,8 +49,8 @@ impl_component!(MeatManager, "MeatManager", {
         let mut available_assembler_buffers = Vec::new();
         for i in 1..=10 {
             let buffer_name = format!("assembler_buffer_{}", i);
-            if let Ok(Some(count)) = ctx.memory.read::<u64>(&buffer_name, "meat_count") {
-                let capacity = memory_read!(ctx, &buffer_name, "meat_capacity", u64, 10);
+            if let Ok(Some(count)) = ctx.memory.read::<i64>(&buffer_name, "meat_count") {
+                let capacity = memory_read!(ctx, &buffer_name, "meat_capacity", i64, 10);
                 if count < capacity {
                     available_assembler_buffers.push(i);
                 }
@@ -71,10 +72,10 @@ impl_component!(MeatManager, "MeatManager", {
             let output_buffer_name = format!("assembler_buffer_{}", output_buffer_id);
             
             // Request to consume meat from input buffer
-            memory_write!(ctx, &input_buffer_name, "to_subtract", 1u64)?;
+            memory_write!(ctx, &input_buffer_name, "to_subtract", 1i64)?;
             
             // Request to add meat to assembler buffer
-            memory_write!(ctx, &output_buffer_name, "meat_to_add", 1u64)?;
+            memory_write!(ctx, &output_buffer_name, "meat_to_add", 1i64)?;
         }
         
         Ok(())

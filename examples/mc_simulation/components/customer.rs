@@ -1,5 +1,6 @@
-use crate::core::components::{Component, PortType};
-use crate::core::components::module::{ProcessorModule, PortSpec};
+use rsim::core::components::{Component, PortType};
+use rsim::core::components::module::{ProcessorModule, PortSpec};
+use rsim::impl_component;
 use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
 
@@ -44,7 +45,7 @@ impl_component!(Customer, "Customer", {
         let max_delay = memory_read!(ctx, "customer_state", "max_delay", u32, 5);
         
         // Read burger buffer status
-        let burger_available = if let Ok(Some(count)) = ctx.memory.read::<u64>("burger_buffer", "data_count") {
+        let burger_available = if let Ok(Some(count)) = ctx.memory.read::<i64>("burger_buffer", "data_count") {
             count > 0
         } else {
             false
@@ -56,7 +57,7 @@ impl_component!(Customer, "Customer", {
             remaining_cycles -= 1;
         } else if burger_available {
             // Timer expired and burger available, consume burger and start new timer
-            memory_write!(ctx, "burger_buffer", "to_subtract", 1u64)?;
+            memory_write!(ctx, "burger_buffer", "to_subtract", 1i64)?;
             total_consumed += 1;
             
             // Start new consumption cycle with random delay

@@ -1,5 +1,6 @@
-use crate::core::components::{Component, PortType};
-use crate::core::components::module::{ProcessorModule, PortSpec};
+use rsim::core::components::{Component, PortType};
+use rsim::core::components::module::{ProcessorModule, PortSpec};
+use rsim::impl_component;
 
 /// CustomerManager component that collects burgers from all assembler outputs
 /// and distributes them to customer buffers with available space
@@ -38,7 +39,7 @@ impl_component!(CustomerManager, "CustomerManager", {
         let mut available_burger_sources = Vec::new();
         for i in 1..=10 {
             let source_name = format!("assembler_output_{}", i);
-            if let Ok(Some(count)) = ctx.memory.read::<u64>(&source_name, "data_count") {
+            if let Ok(Some(count)) = ctx.memory.read::<i64>(&source_name, "data_count") {
                 if count > 0 {
                     available_burger_sources.push(i);
                 }
@@ -49,8 +50,8 @@ impl_component!(CustomerManager, "CustomerManager", {
         let mut available_customer_buffers = Vec::new();
         for i in 1..=10 {
             let buffer_name = format!("customer_buffer_{}", i);
-            if let Ok(Some(count)) = ctx.memory.read::<u64>(&buffer_name, "data_count") {
-                let capacity = memory_read!(ctx, &buffer_name, "capacity", u64, 10);
+            if let Ok(Some(count)) = ctx.memory.read::<i64>(&buffer_name, "data_count") {
+                let capacity = memory_read!(ctx, &buffer_name, "capacity", i64, 10);
                 if count < capacity {
                     available_customer_buffers.push(i);
                 }
@@ -72,10 +73,10 @@ impl_component!(CustomerManager, "CustomerManager", {
             let customer_buffer_name = format!("customer_buffer_{}", customer_buffer_id);
             
             // Request to consume burger from assembler output
-            memory_write!(ctx, &source_name, "to_subtract", 1u64)?;
+            memory_write!(ctx, &source_name, "to_subtract", 1i64)?;
             
             // Request to add burger to customer buffer
-            memory_write!(ctx, &customer_buffer_name, "to_add", 1u64)?;
+            memory_write!(ctx, &customer_buffer_name, "to_add", 1i64)?;
         }
         
         Ok(())

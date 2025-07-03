@@ -1,5 +1,6 @@
-use crate::core::components::{Component, PortType};
-use crate::core::components::module::{ProcessorModule, PortSpec};
+use rsim::core::components::{Component, PortType};
+use rsim::core::components::module::{ProcessorModule, PortSpec};
+use rsim::impl_component;
 use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
 
@@ -45,22 +46,22 @@ impl_component!(Assembler, "Assembler", {
         let max_delay = memory_read!(ctx, "assembler_state", "max_delay", u32, 3);
         
         // Read bread buffer status
-        let bread_available = if let Ok(Some(count)) = ctx.memory.read::<u64>("bread_buffer", "data_count") {
+        let bread_available = if let Ok(Some(count)) = ctx.memory.read::<i64>("bread_buffer", "data_count") {
             count > 0
         } else {
             false
         };
         
         // Read meat buffer status
-        let meat_available = if let Ok(Some(count)) = ctx.memory.read::<u64>("meat_buffer", "data_count") {
+        let meat_available = if let Ok(Some(count)) = ctx.memory.read::<i64>("meat_buffer", "data_count") {
             count > 0
         } else {
             false
         };
         
         // Read burger buffer status
-        let burger_buffer_full = if let Ok(Some(count)) = ctx.memory.read::<u64>("burger_buffer", "data_count") {
-            let capacity = memory_read!(ctx, "burger_buffer", "capacity", u64, 10);
+        let burger_buffer_full = if let Ok(Some(count)) = ctx.memory.read::<i64>("burger_buffer", "data_count") {
+            let capacity = memory_read!(ctx, "burger_buffer", "capacity", i64, 10);
             count >= capacity
         } else {
             false
@@ -72,9 +73,9 @@ impl_component!(Assembler, "Assembler", {
             remaining_cycles -= 1;
         } else if bread_available && meat_available && !burger_buffer_full {
             // Timer expired and can assemble, consume ingredients and start new timer
-            memory_write!(ctx, "bread_buffer", "to_subtract", 1u64)?;
-            memory_write!(ctx, "meat_buffer", "to_subtract", 1u64)?;
-            memory_write!(ctx, "burger_buffer", "to_add", 1u64)?;
+            memory_write!(ctx, "bread_buffer", "to_subtract", 1i64)?;
+            memory_write!(ctx, "meat_buffer", "to_subtract", 1i64)?;
+            memory_write!(ctx, "burger_buffer", "to_add", 1i64)?;
             
             total_assembled += 1;
             

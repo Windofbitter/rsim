@@ -7,7 +7,6 @@ pub mod component_macros;
 pub mod memory_macros;
 pub mod port_macros;
 
-// Re-export all macros
-pub use component_macros::*;
-pub use memory_macros::*;
-pub use port_macros::*;
+// Re-export all macros 
+// Note: These are exported via #[macro_export] in each module
+// This re-export allows internal use within the rsim crate
