@@ -28,69 +28,49 @@ impl Fryer {
 }
 
 
-impl Component for Fryer {
-    fn define_ports() -> Vec<(String, PortType)> {
-        vec![
-            ("meat_buffer".to_string(), PortType::Memory),
-            ("fryer_state".to_string(), PortType::Memory),
-        ]
-    }
-    
-    fn into_module() -> ProcessorModule {
-        let memory_ports = vec![
-            PortSpec::memory("meat_buffer"),
-            PortSpec::memory("fryer_state"),
-        ];
+impl_component!(Fryer, "Fryer", {
+    inputs: [],
+    outputs: [],
+    memory: [meat_buffer, fryer_state],
+    react: |ctx, _outputs| {
+        // Read internal state from memory using macros
+        memory_state!(ctx, "fryer_state", {
+            remaining_cycles: u32 = 0,
+            total_produced: u64 = 0,
+            rng_state: u64 = 12345
+        });
         
-        ProcessorModule::new(
-            "Fryer", 
-            vec![], // no input ports
-            vec![], // no output ports
-            memory_ports,
-            |ctx, _outputs| {
-                // Fryer logic: check buffer status, manage timer, produce meat
-                
-                // Read internal state from memory
-                let mut remaining_cycles = ctx.memory.read::<u32>("fryer_state", "remaining_cycles").unwrap_or(Some(0)).unwrap_or(0);
-                let mut total_produced = ctx.memory.read::<u64>("fryer_state", "total_produced").unwrap_or(Some(0)).unwrap_or(0);
-                let mut rng_state = ctx.memory.read::<u64>("fryer_state", "rng_state").unwrap_or(Some(12345)).unwrap_or(12345);
-                
-                // Configuration from component (not stored in memory)
-                let min_delay = ctx.memory.read::<u32>("fryer_state", "min_delay").unwrap_or(Some(3)).unwrap_or(3);
-                let max_delay = ctx.memory.read::<u32>("fryer_state", "max_delay").unwrap_or(Some(7)).unwrap_or(7);
-                
-                // Read buffer status from memory (previous cycle state)
-                let buffer_full = if let Ok(Some(count)) = ctx.memory.read::<u64>("meat_buffer", "data_count") {
-                    let capacity = ctx.memory.read::<u64>("meat_buffer", "capacity").unwrap_or(Some(10)).unwrap_or(10);
-                    count >= capacity
-                } else {
-                    false // If can't read buffer, assume not full
-                };
-                
-                // Process timer logic
-                if remaining_cycles > 0 {
-                    // Still processing, decrement timer
-                    remaining_cycles -= 1;
-                } else if !buffer_full {
-                    // Timer expired and buffer not full, produce meat and start new timer
-                    // Write request to add one meat item
-                    ctx.memory.write("meat_buffer", "to_add", 1u64)?;
-                    total_produced += 1;
-                    
-                    // Start new production cycle with random delay
-                    let mut rng = StdRng::seed_from_u64(rng_state);
-                    remaining_cycles = rng.gen_range(min_delay..=max_delay);
-                    rng_state = rng.next_u64(); // Update RNG state
-                }
-                // If buffer is full, just wait (don't start new timer)
-                
-                // Write updated state back to memory
-                ctx.memory.write("fryer_state", "remaining_cycles", remaining_cycles)?;
-                ctx.memory.write("fryer_state", "total_produced", total_produced)?;
-                ctx.memory.write("fryer_state", "rng_state", rng_state)?;
-                
-                Ok(())
-            }
-        )
+        // Configuration from component (not stored in memory)
+        let min_delay = memory_read!(ctx, "fryer_state", "min_delay", u32, 3);
+        let max_delay = memory_read!(ctx, "fryer_state", "max_delay", u32, 7);
+        
+        // Read buffer status from memory (previous cycle state)
+        let buffer_full = if let Ok(Some(count)) = ctx.memory.read::<u64>("meat_buffer", "data_count") {
+            let capacity = memory_read!(ctx, "meat_buffer", "capacity", u64, 10);
+            count >= capacity
+        } else {
+            false // If can't read buffer, assume not full
+        };
+        
+        // Process timer logic
+        if remaining_cycles > 0 {
+            // Still processing, decrement timer
+            remaining_cycles -= 1;
+        } else if !buffer_full {
+            // Timer expired and buffer not full, produce meat and start new timer
+            memory_write!(ctx, "meat_buffer", "to_add", 1u64)?;
+            total_produced += 1;
+            
+            // Start new production cycle with random delay
+            let mut rng = StdRng::seed_from_u64(rng_state);
+            remaining_cycles = rng.gen_range(min_delay..=max_delay);
+            rng_state = rng.next_u64(); // Update RNG state
+        }
+        // If buffer is full, just wait (don't start new timer)
+        
+        // Write updated state back to memory using macro
+        memory_state_write!(ctx, "fryer_state", remaining_cycles, total_produced, rng_state);
+        
+        Ok(())
     }
-}
+});

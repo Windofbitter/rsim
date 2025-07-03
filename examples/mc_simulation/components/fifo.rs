@@ -80,15 +80,9 @@ impl Cycle for FIFOData {
     }
 }
 
-// Implement MemoryComponent trait for FIFOData
-impl MemoryComponent for FIFOData {
-    fn define_ports() -> Vec<(String, PortType)> {
-        vec![
-            ("input".to_string(), PortType::Input),
-            ("output".to_string(), PortType::Output),
-        ]
-    }
-    
-    // Note: into_memory_module() is auto-implemented with validation
-}
+// Implement MemoryComponent trait for FIFOData using macro
+impl_memory_component!(FIFOData, {
+    input: input,
+    output: output
+});
 
