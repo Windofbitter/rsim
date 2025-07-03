@@ -1,7 +1,5 @@
 use crate::core::components::state::MemoryData;
-use crate::core::components::module::MemoryModuleTrait;
-use std::collections::HashMap;
-use std::any::Any;
+use crate::core::components::{MemoryComponent, Cycle, PortType};
 
 /// FIFO (First In, First Out) memory component for McDonald's simulation
 /// Represents a queue buffer with capacity constraints and operation tracking
@@ -71,89 +69,26 @@ impl FIFOData {
 // Implement MemoryData trait so FIFOData can be stored in memory components
 impl MemoryData for FIFOData {}
 
-/// FIFO Memory Module implementation
-pub struct FIFOModule {
-    /// Memory identifier
-    pub memory_id: String,
-    /// Current state (gets written to during cycle)
-    current_state: HashMap<String, FIFOData>,
-    /// Snapshot from previous cycle (gets read from during cycle)
-    snapshot: HashMap<String, FIFOData>,
-    /// Default capacity for new FIFO instances
-    default_capacity: u64,
-}
-
-impl FIFOModule {
-    /// Create a new FIFO module with specified default capacity
-    pub fn new(memory_id: &str, default_capacity: u64) -> Self {
-        Self {
-            memory_id: memory_id.to_string(),
-            current_state: HashMap::new(),
-            snapshot: HashMap::new(),
-            default_capacity,
-        }
-    }
-
-    /// Initialize a FIFO at a specific address with custom capacity
-    pub fn initialize_fifo(&mut self, address: &str, capacity: u64) {
-        let fifo_data = FIFOData::new(capacity);
-        self.current_state.insert(address.to_string(), fifo_data.clone());
-        self.snapshot.insert(address.to_string(), fifo_data);
-    }
-
-    /// Get FIFO data from snapshot (read operation)
-    pub fn get_fifo(&self, address: &str) -> Option<&FIFOData> {
-        self.snapshot.get(address)
-    }
-
-    /// Update FIFO data in current state (write operation)
-    pub fn update_fifo(&mut self, address: &str, fifo_data: FIFOData) {
-        self.current_state.insert(address.to_string(), fifo_data);
-    }
-
-    /// Get mutable FIFO data from current state (for internal updates)
-    pub fn get_fifo_mut(&mut self, address: &str) -> Option<&mut FIFOData> {
-        self.current_state.get_mut(address)
+// Implement Cycle trait for FIFOData to work as memory component
+impl Cycle for FIFOData {
+    type Output = u64;
+    
+    fn cycle(&mut self) -> Option<Self::Output> {
+        // Apply pending operations before returning current count
+        self.update();
+        Some(self.data_count)
     }
 }
 
-impl MemoryModuleTrait for FIFOModule {
-    fn memory_id(&self) -> &str {
-        &self.memory_id
+// Implement MemoryComponent trait for FIFOData
+impl MemoryComponent for FIFOData {
+    fn define_ports() -> Vec<(String, PortType)> {
+        vec![
+            ("input".to_string(), PortType::Input),
+            ("output".to_string(), PortType::Output),
+        ]
     }
-
-    fn read_any(&self, address: &str) -> Option<Box<dyn Any + Send>> {
-        self.snapshot.get(address).map(|data| {
-            let boxed: Box<dyn Any + Send> = Box::new(data.clone());
-            boxed
-        })
-    }
-
-    fn write_any(&mut self, address: &str, data: Box<dyn Any + Send>) -> bool {
-        if let Ok(fifo_data) = data.downcast::<FIFOData>() {
-            self.current_state.insert(address.to_string(), *fifo_data);
-            true
-        } else {
-            false
-        }
-    }
-
-    fn create_snapshot(&mut self) {
-        // Update all FIFO states before creating snapshot
-        for (address, fifo_data) in self.current_state.iter_mut() {
-            fifo_data.update();
-        }
-        
-        // Create snapshot
-        self.snapshot = self.current_state.clone();
-    }
-
-    fn clone_module(&self) -> Box<dyn MemoryModuleTrait> {
-        Box::new(FIFOModule {
-            memory_id: self.memory_id.clone(),
-            current_state: self.current_state.clone(),
-            snapshot: self.snapshot.clone(),
-            default_capacity: self.default_capacity,
-        })
-    }
+    
+    // Note: into_memory_module() is auto-implemented with validation
 }
+

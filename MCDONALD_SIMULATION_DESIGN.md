@@ -86,6 +86,11 @@ struct BufferData {
 - No production when buffer is full
 - Producers resume when buffer has space
 
+### Manager Ingredient Matching
+- **BreadManager/MeatManager**: If no ingredients available, skip cycle (no output)
+- **AssemblerManager**: Only outputs to assembler buffers when both bread and meat available
+- **Assemblers**: Check both ingredient availability and output buffer capacity before processing
+
 ### Memory Read/Write Pattern
 - **Read**: From snapshot (previous cycle state)
 - **Write**: To current state (affects next cycle)
@@ -98,11 +103,26 @@ struct BufferData {
 - Random delay ranges configurable per component type
 - Components skip processing during delay periods
 
+```rust
+struct ComponentTimer {
+    current_delay: u32,
+    remaining_cycles: u32,
+    min_delay: u32,
+    max_delay: u32,
+    rng_seed: u64,  // For deterministic randomness
+}
+```
+
 ### Timing Ranges
 - **Bakers**: 1-3 cycles per bread
 - **Fryers**: 2-4 cycles per meat
 - **Assemblers**: 1-2 cycles per burger
 - **Consumers**: 1-5 cycles per burger
+
+### Component Processing Logic
+- Check if timer is active (remaining_cycles > 0)
+- If timer active: decrement and skip processing
+- If timer expired: perform operation and reset timer with new random delay
 
 ## Key Features
 

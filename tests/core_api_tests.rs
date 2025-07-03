@@ -122,6 +122,158 @@ impl MemoryComponent for Buffer {
     // Note: into_memory_module() is auto-implemented with validation
 }
 
+/// Test FIFO memory component for testing memory consumption
+#[derive(Clone, Debug)]
+struct TestFIFO {
+    data_count: u64,
+    to_add: u64,
+    to_subtract: u64,
+    capacity: u64,
+}
+
+impl TestFIFO {
+    fn new(capacity: u64) -> Self {
+        Self {
+            data_count: 0,
+            to_add: 0,
+            to_subtract: 0,
+            capacity,
+        }
+    }
+    
+    fn request_add(&mut self, count: u64) {
+        self.to_add = self.to_add.saturating_add(count);
+    }
+    
+    fn request_subtract(&mut self, count: u64) {
+        self.to_subtract = self.to_subtract.saturating_add(count);
+    }
+    
+    fn update(&mut self) {
+        self.data_count = self.data_count.saturating_sub(self.to_subtract);
+        let can_add = std::cmp::min(self.to_add, self.capacity.saturating_sub(self.data_count));
+        self.data_count += can_add;
+        self.to_add = 0;
+        self.to_subtract = 0;
+    }
+    
+    fn is_empty(&self) -> bool {
+        self.data_count == 0
+    }
+}
+
+impl MemoryData for TestFIFO {}
+
+impl Cycle for TestFIFO {
+    type Output = u64;
+    
+    fn cycle(&mut self) -> Option<Self::Output> {
+        self.update();
+        Some(self.data_count)
+    }
+}
+
+impl MemoryComponent for TestFIFO {
+    fn define_ports() -> Vec<(String, PortType)> {
+        vec![
+            ("input".to_string(), PortType::Input),
+            ("output".to_string(), PortType::Output),
+        ]
+    }
+}
+
+/// Test component: FIFO Producer (adds items to FIFO)
+struct FIFOProducer;
+
+impl Component for FIFOProducer {
+    fn define_ports() -> Vec<(String, PortType)> {
+        vec![
+            ("items_to_add".to_string(), PortType::Input),
+            ("fifo_memory".to_string(), PortType::Memory),
+            ("added_count".to_string(), PortType::Output),
+        ]
+    }
+    
+    fn into_module() -> ProcessorModule {
+        let ports = Self::define_ports();
+        let input_ports = ports.iter().filter(|(_, t)| *t == PortType::Input)
+            .map(|(name, _)| PortSpec::input(name)).collect();
+        let output_ports = ports.iter().filter(|(_, t)| *t == PortType::Output)
+            .map(|(name, _)| PortSpec::output(name)).collect();
+        let memory_ports = ports.iter().filter(|(_, t)| *t == PortType::Memory)
+            .map(|(name, _)| PortSpec::memory(name)).collect();
+        
+        ProcessorModule::new(
+            "FIFOProducer", 
+            input_ports, 
+            output_ports, 
+            memory_ports,
+            |ctx, outputs| {
+                // Read current FIFO state
+                if let Ok(Some(mut fifo_data)) = ctx.memory.read::<TestFIFO>("fifo_memory", "buffer") {
+                    // Get items to add from input
+                    let items_to_add: u64 = ctx.inputs.get("items_to_add").unwrap_or(0);
+                    
+                    // Request to add items
+                    fifo_data.request_add(items_to_add);
+                    
+                    // Output how many we're trying to add
+                    outputs.set("added_count", items_to_add)?;
+                    
+                    // Write back updated FIFO
+                    ctx.memory.write("fifo_memory", "buffer", fifo_data)?;
+                }
+                Ok(())
+            }
+        )
+    }
+}
+
+/// Test component: FIFO Consumer (removes items from FIFO)
+struct FIFOConsumer;
+
+impl Component for FIFOConsumer {
+    fn define_ports() -> Vec<(String, PortType)> {
+        vec![
+            ("fifo_memory".to_string(), PortType::Memory),
+            ("consumed_count".to_string(), PortType::Output),
+        ]
+    }
+    
+    fn into_module() -> ProcessorModule {
+        let ports = Self::define_ports();
+        let input_ports = ports.iter().filter(|(_, t)| *t == PortType::Input)
+            .map(|(name, _)| PortSpec::input(name)).collect();
+        let output_ports = ports.iter().filter(|(_, t)| *t == PortType::Output)
+            .map(|(name, _)| PortSpec::output(name)).collect();
+        let memory_ports = ports.iter().filter(|(_, t)| *t == PortType::Memory)
+            .map(|(name, _)| PortSpec::memory(name)).collect();
+        
+        ProcessorModule::new(
+            "FIFOConsumer", 
+            input_ports, 
+            output_ports, 
+            memory_ports,
+            |ctx, outputs| {
+                // Read current FIFO state
+                if let Ok(Some(mut fifo_data)) = ctx.memory.read::<TestFIFO>("fifo_memory", "buffer") {
+                    // Only consume if items available
+                    if !fifo_data.is_empty() {
+                        fifo_data.request_subtract(1);
+                        outputs.set("consumed_count", 1u64)?;
+                    } else {
+                        outputs.set("consumed_count", 0u64)?;
+                    }
+                    
+                    // Write back updated FIFO
+                    ctx.memory.write("fifo_memory", "buffer", fifo_data)?;
+                }
+                Ok(())
+            }
+        )
+    }
+}
+
 /// Test component: Calculator from rsim_core_api.md
 struct Calculator;
 
@@ -318,5 +470,57 @@ mod tests {
         
         // Connection to nonexistent port should fail
         assert!(sim.connect_component(adder1.output("nonexistent"), adder2.input("a")).is_err());
+    }
+
+    #[test]
+    fn test_fifo_producer_consumer() -> Result<(), String> {
+        let mut sim = Simulation::new();
+        
+        // Add components
+        let producer = sim.add_component(FIFOProducer);
+        let consumer = sim.add_component(FIFOConsumer);
+        let fifo_buffer = sim.add_memory_component(TestFIFO::new(10));
+        
+        // Connect both components to the same FIFO memory
+        sim.connect_memory(producer.output("fifo_memory"), fifo_buffer.clone())?;
+        sim.connect_memory(consumer.output("fifo_memory"), fifo_buffer.clone())?;
+        
+        // Build and run simulation
+        let mut engine = sim.build()?;
+        engine.build_execution_order()?;
+        
+        // Run a few cycles to test producer/consumer interaction
+        for _ in 0..5 {
+            engine.cycle()?;
+        }
+        
+        assert_eq!(engine.current_cycle(), 5);
+        Ok(())
+    }
+
+    #[test]
+    fn test_fifo_memory_consumption_pattern() -> Result<(), String> {
+        let mut sim = Simulation::new();
+        
+        // Create a test FIFO memory component
+        let fifo_buffer = sim.add_memory_component(TestFIFO::new(5));
+        
+        // Create a producer that will add items
+        let producer = sim.add_component(FIFOProducer);
+        
+        // Connect producer to FIFO memory
+        sim.connect_memory(producer.output("fifo_memory"), fifo_buffer.clone())?;
+        
+        // Build and execute
+        let mut engine = sim.build()?;
+        engine.build_execution_order()?;
+        
+        // Execute cycles to test memory consumption
+        for _ in 0..3 {
+            engine.cycle()?;
+        }
+        
+        assert_eq!(engine.current_cycle(), 3);
+        Ok(())
     }
 }
