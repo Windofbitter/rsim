@@ -1,158 +1,108 @@
-use crate::core::components::registry::ComponentRegistry;
-use crate::core::components::module::ComponentModule;
-use crate::core::connections::connection_validator::ConnectionValidator;
 use crate::core::types::ComponentId;
 use std::collections::HashMap;
 
-/// Manages all connections between components and validates connection rules
+/// Simplified connection manager for the new direct API
+/// 
+/// This manager handles regular port connections and memory connections
+/// in the new simulation system.
 pub struct ConnectionManager {
-    /// Memory connections: (component_id, port) -> memory_component_id
-    memory_connections: HashMap<(ComponentId, String), ComponentId>,
-
-    /// Port connections: (source_id, port) -> Vec<(target_id, port)>
+    /// Regular port connections: (source_id, source_port) -> Vec<(target_id, target_port)>
     connections: HashMap<(ComponentId, String), Vec<(ComponentId, String)>>,
+    /// Memory connections: (component_id, port) -> memory_id
+    memory_connections: HashMap<(ComponentId, String), ComponentId>,
 }
 
 impl ConnectionManager {
+    /// Create a new connection manager
     pub fn new() -> Self {
         Self {
-            memory_connections: HashMap::new(),
             connections: HashMap::new(),
+            memory_connections: HashMap::new(),
         }
     }
 
-    /// Connect a processing component memory port to a memory component
-    pub fn connect_memory(
+    /// Add a regular port connection
+    pub fn add_connection(
         &mut self,
-        registry: &ComponentRegistry,
-        proc_id: ComponentId,
+        source_id: ComponentId,
+        source_port: String,
+        target_id: ComponentId,
+        target_port: String,
+    ) -> Result<(), String> {
+        self.connections
+            .entry((source_id, source_port))
+            .or_insert_with(Vec::new)
+            .push((target_id, target_port));
+        Ok(())
+    }
+
+    /// Add a memory connection
+    pub fn add_memory_connection(
+        &mut self,
+        component_id: ComponentId,
         port: String,
-        mem_id: ComponentId,
+        memory_id: ComponentId,
     ) -> Result<(), String> {
-        // Validate the memory connection
-        ConnectionValidator::validate_memory_connection(registry, &proc_id, &port, &mem_id)?;
-
-        // Check if this port is already connected to a memory component
-        ConnectionValidator::check_memory_port_collision(&self.memory_connections, &proc_id, &port)?;
-
-        self.memory_connections.insert((proc_id, port), mem_id);
-        Ok(())
-    }
-
-    /// Connect two component ports
-    pub fn connect(
-        &mut self,
-        registry: &ComponentRegistry,
-        source: (ComponentId, String),
-        target: (ComponentId, String),
-    ) -> Result<(), String> {
-        let (source_id, source_port) = &source;
-        let (target_id, target_port) = &target;
-
-        // Validate the connection
-        ConnectionValidator::validate_connection(registry, source_id, source_port, target_id, target_port)?;
-
-        // Check for input port collision
-        ConnectionValidator::check_input_port_collision(&self.connections, target_id, target_port)?;
-
-        self.connections.entry(source).or_default().push(target);
-        Ok(())
-    }
-
-
-
-    /// Validate all connections in the manager
-    pub fn validate_all_connections(&self, registry: &ComponentRegistry) -> Result<(), String> {
-        // Validate regular connections
-        ConnectionValidator::validate_all_connections(registry, &self.connections)?;
-
-        // Validate memory connections
-        ConnectionValidator::validate_all_memory_connections(registry, &self.memory_connections)?;
-
-
-        Ok(())
-    }
-
-    /// Check if all required input ports are connected
-    pub fn validate_required_connections(&self, registry: &ComponentRegistry) -> Result<(), String> {
-        for (component_id, instance) in registry.components() {
-            if let ComponentModule::Processing(proc_module) = &instance.module {
-                for port_spec in &proc_module.input_ports {
-                    if port_spec.required {
-                        // Check if this port is connected
-                        let is_connected = self.connections.values()
-                            .any(|targets| targets.iter()
-                                .any(|(target_id, target_port)| 
-                                    target_id == component_id && target_port == &port_spec.name));
-                        
-                        if !is_connected {
-                            return Err(format!(
-                                "Required input port '{}' on component '{}' is not connected",
-                                port_spec.name, component_id
-                            ));
-                        }
-                    }
-                }
-            }
+        if self.memory_connections.contains_key(&(component_id.clone(), port.clone())) {
+            return Err(format!(
+                "Memory port '{}' on component '{}' is already connected",
+                port, component_id
+            ));
         }
+
+        self.memory_connections.insert((component_id, port), memory_id);
         Ok(())
     }
 
-    /// Get connection statistics
-    pub fn connection_stats(&self) -> ConnectionStats {
-        let total_targets: usize = self.connections.values()
-            .map(|targets| targets.len())
-            .sum();
-
-        ConnectionStats {
-            total_connections: total_targets,
-            memory_connections: self.memory_connections.len(),
-            unique_sources: self.connections.len(),
-        }
-    }
-
-    // Getters for connection data
-    pub fn memory_connections(&self) -> &HashMap<(ComponentId, String), ComponentId> {
-        &self.memory_connections
-    }
-
+    /// Get all regular connections
     pub fn connections(&self) -> &HashMap<(ComponentId, String), Vec<(ComponentId, String)>> {
         &self.connections
     }
 
+    /// Get all memory connections
+    pub fn memory_connections(&self) -> &HashMap<(ComponentId, String), ComponentId> {
+        &self.memory_connections
+    }
 
-    /// Remove all connections involving a specific component
-    pub fn remove_component_connections(&mut self, component_id: &ComponentId) {
-        // Remove as source
-        self.connections.retain(|(source_id, _), _| source_id != component_id);
-        self.memory_connections.retain(|(comp_id, _), _| comp_id != component_id);
+    /// Get targets for a source port
+    pub fn get_targets(&self, source_id: &ComponentId, source_port: &str) -> Option<&Vec<(ComponentId, String)>> {
+        self.connections.get(&(source_id.clone(), source_port.to_string()))
+    }
 
-        // Remove as target
-        for targets in self.connections.values_mut() {
-            targets.retain(|(target_id, _)| target_id != component_id);
+    /// Get memory connection for a component port
+    pub fn get_memory_connection(&self, component_id: &ComponentId, port: &str) -> Option<&ComponentId> {
+        self.memory_connections.get(&(component_id.clone(), port.to_string()))
+    }
+
+    /// Check if a port has any connections
+    pub fn is_connected(&self, component_id: &ComponentId, port: &str) -> bool {
+        // Check regular connections (both as source and target)
+        let has_output_connections = self.connections.contains_key(&(component_id.clone(), port.to_string()));
+        
+        let has_input_connections = self.connections.values()
+            .any(|targets| targets.iter()
+                .any(|(target_id, target_port)| target_id == component_id && target_port == port));
+
+        // Check memory connections
+        let has_memory_connection = self.memory_connections.contains_key(&(component_id.clone(), port.to_string()));
+
+        has_output_connections || has_input_connections || has_memory_connection
+    }
+
+    /// Get connection statistics
+    pub fn stats(&self) -> ConnectionStats {
+        ConnectionStats {
+            regular_connections: self.connections.len(),
+            memory_connections: self.memory_connections.len(),
+            total_targets: self.connections.values().map(|v| v.len()).sum(),
         }
-
-        // Remove as memory target
-        self.memory_connections.retain(|_, memory_id| memory_id != component_id);
-    }
-
-    /// Clear all connections
-    pub fn clear(&mut self) {
-        self.connections.clear();
-        self.memory_connections.clear();
     }
 }
 
-/// Statistics about connections
-#[derive(Debug, Clone)]
+/// Connection statistics for debugging
+#[derive(Debug)]
 pub struct ConnectionStats {
-    pub total_connections: usize,
+    pub regular_connections: usize,
     pub memory_connections: usize,
-    pub unique_sources: usize,
-}
-
-impl Default for ConnectionManager {
-    fn default() -> Self {
-        Self::new()
-    }
+    pub total_targets: usize,
 }

@@ -1,10 +1,10 @@
-pub mod manager;
-pub mod registry;
 pub mod module;
 pub mod state;
+pub mod traits;
+pub mod types;
 
 // Re-export commonly used types
-pub use manager::ComponentManager;
-pub use registry::{ComponentRegistry, ComponentType};
-pub use module::{ComponentModule, ProcessorModule, MemoryModule, PortSpec, PortType, EvaluationContext, LegacyEvaluationContext, TypeSafeMemoryProxy};
+pub use module::{ProcessorModule, MemoryModule, ModuleTrait, MemoryStats};
 pub use state::{ComponentState, MemoryData};
+pub use traits::{React, Cycle, Component, MemoryComponent, ReactHelper, SimulationComponent};
+pub use types::{PortType, SimulationContext, Inputs, InputsExt, Outputs, OutputsExt, ComponentError};

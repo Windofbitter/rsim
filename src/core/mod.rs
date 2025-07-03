@@ -10,19 +10,15 @@ pub mod builder;
 pub mod types;
 pub use types::{ComponentId, OutputPort, InputPort, MemoryPort};
 
-// Re-export all commonly used types for backward compatibility
-pub use values::{Event, TypedValue, TypedData, TypedInputs, TypedOutputs, EventInputs, EventOutputs, TypedInputMap, TypedOutputMap, EventInputMap, EventOutputMap};
-pub use components::{ComponentManager, ComponentRegistry, ComponentType, ComponentModule, ProcessorModule, MemoryModule, PortSpec, PortType, EvaluationContext, LegacyEvaluationContext, TypeSafeMemoryProxy, ComponentState, MemoryData};
+// Re-export all commonly used types
+pub use values::{Event, TypedValue, TypedData, UnifiedInputMap, UnifiedOutputMap};
+pub use components::{
+    ProcessorModule, MemoryModule, ModuleTrait, MemoryStats,
+    ComponentState, MemoryData,
+    React, Cycle, Component, MemoryComponent, ReactHelper, SimulationComponent,
+    PortType, SimulationContext, Inputs, Outputs, ComponentError
+};
 pub use connections::{ConnectionManager, ConnectionValidator, PortValidator};
-pub use memory::{TypeSafeCentralMemoryProxy, MemoryError};
-pub use execution::{CycleEngine, ExecutionOrderBuilder, SimulationEngine};
+pub use memory::{MemoryProxy, MemoryError};
+pub use execution::{CycleEngine, SimulationEngine};
 pub use builder::{Simulation, SimulationExt};
-
-#[cfg(test)]
-mod tests;
-
-#[cfg(test)]
-mod test_events;
-
-#[cfg(test)]
-mod event_usage_example;

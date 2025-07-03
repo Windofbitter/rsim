@@ -1,269 +1,243 @@
-use crate::core::components::manager::{ComponentManager, ComponentInstance};
 use crate::core::components::module::ComponentModule;
+use crate::core::components::state::MemoryData;
+use crate::core::components::traits::{Component, MemoryComponent};
 use crate::core::execution::cycle_engine::CycleEngine;
-use crate::core::connections::connection_validator::ConnectionValidator;
-use crate::core::types::{ComponentId, OutputPort, InputPort, MemoryPort};
+use crate::core::types::{ComponentId, OutputPort, InputPort};
 use std::collections::HashMap;
 
-/// Imperative API for creating and configuring simulations
+/// Simplified component instance for direct module usage
+pub struct ComponentInstance {
+    pub id: ComponentId,
+    pub module: ComponentModule,
+}
+
+/// Imperative API for creating and configuring simulations with direct module creation
+/// 
+/// This simplified builder removes the component manager registration system
+/// and allows direct addition of component modules.
 pub struct Simulation {
-    /// Component manager for creating instances
-    component_manager: ComponentManager,
-    /// Created component instances  
+    /// Created component instances mapped by ID
     components: HashMap<ComponentId, ComponentInstance>,
     /// Port connections: (source_id, source_port) -> Vec<(target_id, target_port)>
     connections: HashMap<(ComponentId, String), Vec<(ComponentId, String)>>,
     /// Memory connections: (component_id, port) -> memory_id
     memory_connections: HashMap<(ComponentId, String), ComponentId>,
+    /// Counter for automatic ID generation
+    id_counter: std::sync::atomic::AtomicU64,
 }
 
 impl Simulation {
     /// Create a new simulation
     pub fn new() -> Self {
         Self {
-            component_manager: ComponentManager::new(),
             components: HashMap::new(),
             connections: HashMap::new(),
             memory_connections: HashMap::new(),
+            id_counter: std::sync::atomic::AtomicU64::new(0),
         }
     }
 
-    /// Register a component module template
-    pub fn register_module(&mut self, name: &str, module: ComponentModule) -> Result<(), String> {
-        self.component_manager.register_module(name, module)
-    }
-
-    /// Create a component with automatic ID generation
-    pub fn create_component(&mut self, module_name: &str) -> Result<ComponentId, String> {
-        let instance = self.component_manager.create_component_auto_id(module_name)?;
-        let id = instance.id().clone();
-        self.components.insert(id.clone(), instance);
-        Ok(id)
-    }
-
-    /// Create a component with a specific ID
-    pub fn create_component_with_id(&mut self, module_name: &str, id_string: String) -> Result<ComponentId, String> {
-        let temp_id = ComponentId::new(id_string.clone(), module_name.to_string());
-        if self.components.contains_key(&temp_id) {
-            return Err(format!("Component with ID '{}' already exists", id_string));
-        }
+    /// Add a component directly using the Component trait
+    pub fn add_component<T: Component>(&mut self, _component: T) -> ComponentId {
+        let counter = self.id_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let type_name = std::any::type_name::<T>();
+        let clean_type_name = type_name.split("::").last().unwrap_or(type_name);
+        let id = format!("{}{}", clean_type_name, counter);
         
-        let instance = self.component_manager.create_component(module_name, id_string)?;
-        let component_id = instance.id().clone();
+        let module = T::into_module();
+        let component_id = ComponentId::new(id, type_name.to_string());
+        
+        let instance = ComponentInstance {
+            id: component_id.clone(),
+            module: ComponentModule::Processing(module),
+        };
+        
         self.components.insert(component_id.clone(), instance);
-        Ok(component_id)
+        component_id
     }
 
-    /// Create multiple components of the same type
-    pub fn create_components(&mut self, module_name: &str, count: usize) -> Result<Vec<ComponentId>, String> {
-        let instances = self.component_manager.create_components(module_name, count)?;
-        let mut component_ids = Vec::new();
-        for instance in instances {
-            let id = instance.id().clone();
-            component_ids.push(id.clone());
-            self.components.insert(id, instance);
-        }
-        Ok(component_ids)
+    /// Add a memory component directly using the MemoryComponent trait
+    pub fn add_memory_component<T: MemoryComponent + MemoryData>(&mut self, _component: T) -> ComponentId {
+        let counter = self.id_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let type_name = std::any::type_name::<T>();
+        let clean_type_name = type_name.split("::").last().unwrap_or(type_name);
+        let id = format!("{}{}", clean_type_name, counter);
+        
+        let module = T::into_memory_module();
+        let component_id = ComponentId::new(id, type_name.to_string());
+        
+        let instance = ComponentInstance {
+            id: component_id.clone(),
+            module: ComponentModule::Memory(Box::new(module)),
+        };
+        
+        self.components.insert(component_id.clone(), instance);
+        component_id
     }
 
-    /// Create components with custom prefix
-    pub fn create_components_with_prefix(&mut self, module_name: &str, prefix: &str, count: usize) -> Result<Vec<ComponentId>, String> {
-        let instances = self.component_manager.create_components_with_prefix(module_name, prefix, count)?;
-        let mut component_ids = Vec::new();
-        for instance in instances {
-            let id = instance.id().clone();
-            component_ids.push(id.clone());
-            self.components.insert(id, instance);
-        }
-        Ok(component_ids)
-    }
+    // Old auto methods removed - new add_component methods auto-generate IDs
 
     /// Connect two component ports using port handles
-    pub fn connect(&mut self, output: OutputPort, input: InputPort) -> Result<(), String> {
-        let source_id = output.component_id();
-        let source_port = output.port_name();
-        let target_id = input.component_id();
-        let target_port = input.port_name();
-
-        // Validate components exist
-        if !self.components.contains_key(source_id) {
+    pub fn connect_component(&mut self, source: OutputPort, target: InputPort) -> Result<(), String> {
+        let source_id = source.component_id().clone();
+        let source_port = source.port_name().to_string();
+        let target_id = target.component_id().clone();
+        let target_port = target.port_name().to_string();
+        
+        // Validate that both components exist
+        if !self.components.contains_key(&source_id) {
             return Err(format!("Source component '{}' not found", source_id));
         }
-        if !self.components.contains_key(target_id) {
+        if !self.components.contains_key(&target_id) {
             return Err(format!("Target component '{}' not found", target_id));
         }
-
-        // Validate ports exist
-        let source_component = self.components.get(source_id)
-            .ok_or_else(|| format!("Source component '{}' not found", source_id))?;
-        let target_component = self.components.get(target_id)
-            .ok_or_else(|| format!("Target component '{}' not found", target_id))?;
         
-        ConnectionValidator::validate_connection_direct(source_component, source_port, target_component, target_port)?;
-
-        // Check for input port collision
+        // Validate that the source component has the specified output port
+        let source_component = self.components.get(&source_id).unwrap();
+        if let Some(processor) = source_component.module.as_processing() {
+            if !processor.has_output_port(&source_port) {
+                return Err(format!("Component '{}' does not have output port '{}'", 
+                                  source_id, source_port));
+            }
+        } else {
+            return Err(format!("Source component '{}' is not a processing component", source_id));
+        }
+        
+        // Validate that the target component has the specified input port
+        let target_component = self.components.get(&target_id).unwrap();
+        if let Some(processor) = target_component.module.as_processing() {
+            if !processor.has_input_port(&target_port) {
+                return Err(format!("Component '{}' does not have input port '{}'", 
+                                  target_id, target_port));
+            }
+        } else {
+            return Err(format!("Target component '{}' is not a processing component", target_id));
+        }
+        
+        // Validate 1-to-1 connections: Check if output port is already connected
+        if self.connections.contains_key(&(source_id.clone(), source_port.clone())) {
+            return Err(format!("Output port '{}' on component '{}' is already connected", 
+                              source_port, source_id));
+        }
+        
+        // Validate 1-to-1 connections: Check if input port is already connected
         for targets in self.connections.values() {
-            for (existing_target_id, existing_target_port) in targets {
-                if existing_target_id == target_id && existing_target_port == target_port {
-                    return Err(format!(
-                        "Input port '{}' on component '{}' is already connected. Multiple drivers not allowed.",
-                        target_port, target_id
-                    ));
-                }
+            if targets.iter().any(|(tid, tport)| tid == &target_id && tport == &target_port) {
+                return Err(format!("Input port '{}' on component '{}' is already connected", 
+                                  target_port, target_id));
             }
         }
-
-        let source_key = (source_id.clone(), source_port.to_string());
-        let target_tuple = (target_id.clone(), target_port.to_string());
         
-        self.connections.entry(source_key).or_default().push(target_tuple);
+        // If all validations pass, make the connection (single target per output)
+        self.connections.insert((source_id, source_port), vec![(target_id, target_port)]);
         Ok(())
     }
 
-    /// Connect a component memory port to a memory component using port handles
-    pub fn connect_memory(&mut self, memory_port: MemoryPort, memory_component: &ComponentId) -> Result<(), String> {
-        let component_id = memory_port.component_id();
-        let port = memory_port.port_name();
+    /// Connect a component port to a memory component using port handle
+    pub fn connect_memory(&mut self, component_port: OutputPort, memory_id: ComponentId) -> Result<(), String> {
+        let comp_id = component_port.component_id().clone();
+        let port_name = component_port.port_name().to_string();
         
-        // Validate components exist
-        if !self.components.contains_key(component_id) {
-            return Err(format!("Component '{}' not found", component_id));
+        // Validate that the memory component exists
+        if !self.components.contains_key(&memory_id) {
+            return Err(format!("Memory component '{}' not found", memory_id));
         }
-        if !self.components.contains_key(memory_component) {
-            return Err(format!("Memory component '{}' not found", memory_component));
+        
+        // Validate that the memory component is actually a memory component
+        let memory_component = self.components.get(&memory_id).unwrap();
+        if !memory_component.module.is_memory() {
+            return Err(format!("Component '{}' is not a memory component", memory_id));
         }
-
-        // Validate the component has the memory port
-        let component = self.components.get(component_id)
-            .ok_or_else(|| format!("Component '{}' not found", component_id))?;
-        ConnectionValidator::validate_memory_connection_direct(component, port)?;
-
-        // Validate the target is a memory component
-        let memory_instance = &self.components[memory_component];
-        if !memory_instance.is_memory() {
-            return Err(format!("Component '{}' is not a memory component", memory_component));
+        
+        // Validate that the source component exists
+        if !self.components.contains_key(component_port.component_id()) {
+            return Err(format!("Source component '{}' not found", component_port.component_id()));
         }
-
-        // Check if this port is already connected
-        let port_key = (component_id.clone(), port.to_string());
-        if self.memory_connections.contains_key(&port_key) {
-            return Err(format!(
-                "Memory port '{}' on component '{}' is already connected",
-                port, component_id
-            ));
+        
+        // Check for duplicate connections (each memory port can only be connected once)
+        let connection_key = (comp_id.clone(), port_name.clone());
+        if self.memory_connections.contains_key(&connection_key) {
+            return Err(format!("Memory port '{}' on component '{}' is already connected", 
+                              port_name, comp_id));
         }
-
-        self.memory_connections.insert(port_key, memory_component.clone());
-        Ok(())
-    }
-
-
-    /// Validate all connections and required ports
-    pub fn validate_connections(&self) -> Result<(), String> {
-        // Check that all required input ports are connected
-        for (component_id, instance) in &self.components {
-            if let Some(proc_module) = instance.module.as_processing() {
-                for port_spec in &proc_module.input_ports {
-                    if port_spec.required {
-                        let port_connected = self.connections.values()
-                            .any(|targets| targets.iter()
-                                .any(|(target_id, target_port)| 
-                                    target_id == component_id && target_port == &port_spec.name));
-                        
-                        if !port_connected {
-                            return Err(format!(
-                                "Required input port '{}' on component '{}' is not connected",
-                                port_spec.name, component_id
-                            ));
-                        }
-                    }
-                }
+        
+        // Validate that the source component has the specified port
+        let source_component = self.components.get(component_port.component_id()).unwrap();
+        if let Some(processor) = source_component.module.as_processing() {
+            if !processor.has_memory_port(&port_name) {
+                return Err(format!("Component '{}' does not have memory port '{}'", 
+                                  component_port.component_id(), port_name));
             }
+        } else {
+            return Err(format!("Only processing components can connect to memory components"));
         }
-
+        
+        // If all validations pass, make the connection
+        self.memory_connections.insert(connection_key, memory_id);
         Ok(())
     }
 
-    /// Validate that required ports are connected for specific components
-    pub fn validate_required_ports(&self) -> Result<(), String> {
-        for (component_id, instance) in &self.components {
-            if let Some(proc_module) = instance.module.as_processing() {
-                let connected_ports: Vec<String> = self.connections.values()
-                    .flatten()
-                    .filter_map(|(target_id, target_port)| {
-                        if target_id == component_id {
-                            Some(target_port.clone())
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-
-                self.component_manager.validate_component_ports(
-                    proc_module.name.as_str(),
-                    &connected_ports
-                )?;
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Build a CycleEngine from the configured components and connections
+    /// Build the simulation into a CycleEngine
     pub fn build(self) -> Result<CycleEngine, String> {
-        // Final validation
+        // Validate connections
         self.validate_connections()?;
-        self.validate_required_ports()?;
-
-        // Create the engine and register components
-        let mut engine = CycleEngine::new();
-
-        // Register all components
+        
+        // Create and configure cycle engine
+        let mut cycle_engine = CycleEngine::new();
+        
+        // Add all components to the cycle engine
         for (_, instance) in self.components {
-            engine.register_component(instance)?;
+            cycle_engine.register_component_instance(instance)?;
         }
-
-        // Set up connections
+        
+        // Add all connections
         for ((source_id, source_port), targets) in self.connections {
             for (target_id, target_port) in targets {
-                engine.connect(
-                    (source_id.clone(), source_port.clone()),
-                    (target_id, target_port),
-                )?;
+                cycle_engine.connect((source_id.clone(), source_port.clone()), (target_id, target_port))?;
             }
         }
-
-        // Set up memory connections
+        
+        // Add all memory connections
         for ((component_id, port), memory_id) in self.memory_connections {
-            engine.connect_memory(component_id, port, memory_id)?;
+            cycle_engine.connect_memory((component_id, port), memory_id)?;
         }
-
-        // Build execution order
-        engine.build_execution_order()?;
-
-        Ok(engine)
+        
+        Ok(cycle_engine)
     }
 
-    /// Get component statistics
-    pub fn component_stats(&self) -> SimulationStats {
-        let mut processing_count = 0;
-        let mut memory_count = 0;
+    // parse_port_reference removed - using port handles directly now
 
-        for instance in self.components.values() {
-            if instance.is_processing() {
-                processing_count += 1;
-            } else if instance.is_memory() {
-                memory_count += 1;
+    /// Validate all connections
+    fn validate_connections(&self) -> Result<(), String> {
+        use crate::core::connections::port_validator::PortValidator;
+        
+        for ((source_id, source_port), targets) in &self.connections {
+            // Check source component exists
+            let source_component = self.components.get(source_id)
+                .ok_or_else(|| format!("Source component '{}' not found", source_id))?;
+            
+            // Check source port exists and is output
+            PortValidator::validate_source_port(source_component, source_port)?;
+            
+            for (target_id, target_port) in targets {
+                // Check target component exists
+                let target_component = self.components.get(target_id)
+                    .ok_or_else(|| format!("Target component '{}' not found", target_id))?;
+                
+                // Check target port exists and is input
+                PortValidator::validate_target_port(target_component, target_port)?;
             }
         }
-
-        SimulationStats {
-            total_components: self.components.len(),
-            processing_components: processing_count,
-            memory_components: memory_count,
-            total_connections: self.connections.len(),
-            memory_connections: self.memory_connections.len(),
+        
+        // Validate memory connections
+        for ((comp_id, port), _memory_id) in &self.memory_connections {
+            let component = self.components.get(comp_id)
+                .ok_or_else(|| format!("Component '{}' not found", comp_id))?;
+            
+            PortValidator::validate_memory_port(component, port)?;
         }
+        
+        Ok(())
     }
 
     /// Get all component IDs
@@ -271,21 +245,15 @@ impl Simulation {
         self.components.keys().collect()
     }
 
-    /// Get a component instance by ID
+    /// Get component by ID
     pub fn get_component(&self, id: &ComponentId) -> Option<&ComponentInstance> {
         self.components.get(id)
     }
 
-}
-
-/// Statistics about the simulation configuration
-#[derive(Debug, Clone)]
-pub struct SimulationStats {
-    pub total_components: usize,
-    pub processing_components: usize,
-    pub memory_components: usize,
-    pub total_connections: usize,
-    pub memory_connections: usize,
+    /// Check if component exists
+    pub fn has_component(&self, id: &ComponentId) -> bool {
+        self.components.contains_key(id)
+    }
 }
 
 impl Default for Simulation {
@@ -294,22 +262,14 @@ impl Default for Simulation {
     }
 }
 
-/// Extension trait to provide additional convenience methods
+/// Extension trait for fluent simulation building
 pub trait SimulationExt {
-    /// Create multiple components with their IDs
-    fn create_components_batch(&mut self, specs: Vec<(&str, Option<&str>)>) -> Result<Vec<ComponentId>, String>;
-}
-
-impl SimulationExt for Simulation {
-    fn create_components_batch(&mut self, specs: Vec<(&str, Option<&str>)>) -> Result<Vec<ComponentId>, String> {
-        let mut component_ids = Vec::new();
-        for (module_name, component_id) in specs {
-            let id = match component_id {
-                Some(id) => self.create_component_with_id(module_name, id.to_string())?,
-                None => self.create_component(module_name)?,
-            };
-            component_ids.push(id);
-        }
-        Ok(component_ids)
+    /// Start building a simulation
+    fn simulation() -> Simulation {
+        Simulation::new()
     }
 }
+
+// Blanket implementation
+impl SimulationExt for () {}
+

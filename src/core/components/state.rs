@@ -12,7 +12,7 @@ pub trait ComponentState: Send {
 
 /// Marker trait for data types that can be stored in memory components.
 /// This provides compile-time type safety for memory operations.
-pub trait MemoryData: Send + Clone + 'static {}
+pub trait MemoryData: Send + Sync + Clone + 'static {}
 
 /// Errors that can occur during state management operations
 #[derive(Debug, Clone)]

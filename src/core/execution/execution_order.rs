@@ -1,4 +1,3 @@
-use crate::core::components::registry::{ComponentRegistry, ComponentType};
 use crate::core::types::ComponentId;
 use std::collections::{HashMap, VecDeque};
 
@@ -9,27 +8,27 @@ impl ExecutionOrderBuilder {
     /// Analyzes the graph of processing components to build a topologically sorted execution order.
     /// Uses Kahn's algorithm to detect cycles and ensure deterministic execution.
     pub fn build_execution_order(
-        registry: &ComponentRegistry,
+        component_ids: &[ComponentId],
         connections: &HashMap<(ComponentId, String), Vec<(ComponentId, String)>>,
     ) -> Result<Vec<ComponentId>, String> {
         let mut adj_list: HashMap<ComponentId, Vec<ComponentId>> = HashMap::new();
         let mut in_degree: HashMap<ComponentId, usize> = HashMap::new();
 
-        // Initialize graph data structures for all processing components
-        for comp_id in registry.components_by_type(ComponentType::Processing).keys() {
+        // Initialize graph data structures for all components
+        for comp_id in component_ids {
             in_degree.insert(comp_id.clone(), 0);
             adj_list.insert(comp_id.clone(), Vec::new());
         }
 
         // Build adjacency list and in-degrees from connections
         for ((source_id, _source_port), targets) in connections {
-            // Only consider connections between processing components
-            if !registry.has_component_of_type(source_id, ComponentType::Processing) {
+            // Only consider connections between components we're tracking
+            if !in_degree.contains_key(source_id) {
                 continue;
             }
 
             for (target_id, _target_port) in targets {
-                if !registry.has_component_of_type(target_id, ComponentType::Processing) {
+                if !in_degree.contains_key(target_id) {
                     continue;
                 }
 
@@ -75,10 +74,10 @@ impl ExecutionOrderBuilder {
         }
 
         // Check for cycles
-        if sorted_order.len() == registry.components_by_type(ComponentType::Processing).len() {
+        if sorted_order.len() == component_ids.len() {
             Ok(sorted_order)
         } else {
-            Err("Cycle detected in processing component dependencies".to_string())
+            Err("Cycle detected in component dependencies".to_string())
         }
     }
 }

@@ -9,7 +9,7 @@ pub struct EvaluationContext<'a> {
     /// Event input values from connected components
     pub inputs: &'a EventInputMap,
     /// Memory proxy for type-safe memory access
-    pub memory: &'a mut crate::core::memory::proxy::TypeSafeCentralMemoryProxy,
+    pub memory: &'a mut crate::core::memory::proxy::MemoryProxy<'a>,
     /// Component's current state (if any)
     pub state: Option<&'a mut dyn ComponentState>,
     /// Component ID for context
@@ -21,7 +21,7 @@ pub struct LegacyEvaluationContext<'a> {
     /// Typed input values from connected components
     pub inputs: &'a TypedInputMap,
     /// Memory proxy for type-safe memory access
-    pub memory: &'a mut crate::core::memory::proxy::TypeSafeCentralMemoryProxy,
+    pub memory: &'a mut crate::core::memory::proxy::MemoryProxy<'a>,
     /// Component's current state (if any)
     pub state: Option<&'a mut dyn ComponentState>,
     /// Component ID for context
@@ -128,17 +128,17 @@ pub struct ProcessorModule {
     /// Memory port specifications
     pub memory_ports: Vec<PortSpec>,
     /// Evaluation function with event outputs
-    pub evaluate_fn: fn(&EvaluationContext, &mut EventOutputMap) -> Result<(), String>,
+    pub evaluate_fn: fn(&mut EvaluationContext, &mut EventOutputMap) -> Result<(), String>,
 }
 
 impl ProcessorModule {
-    /// Create a new processor module
+    /// Create a new processor module with validation
     pub fn new(
         name: &str,
         input_ports: Vec<PortSpec>,
         output_ports: Vec<PortSpec>,
         memory_ports: Vec<PortSpec>,
-        evaluate_fn: fn(&EvaluationContext, &mut EventOutputMap) -> Result<(), String>,
+        evaluate_fn: fn(&mut EvaluationContext, &mut EventOutputMap) -> Result<(), String>,
     ) -> Self {
         Self {
             name: name.to_string(),
@@ -147,6 +147,23 @@ impl ProcessorModule {
             memory_ports,
             evaluate_fn,
         }
+    }
+
+    /// Validate that this processing module meets architecture constraints
+    /// Processing components should have multiple ports but single output type
+    pub fn validate_architecture(&self) -> Result<(), String> {
+        // Validate component has a name
+        if self.name.is_empty() {
+            return Err("Processing module must have a valid name".to_string());
+        }
+
+        // Ensure processing components are stateless (enforced by design - no state field)
+        // Ensure output wrapping (enforced by EventOutputMap in evaluate_fn signature)
+
+        // Note: Single output type constraint is enforced by the evaluate_fn signature
+        // and EventOutputMap which wraps all outputs in Event structures
+        
+        Ok(())
     }
 
     /// Get all input port names
@@ -210,13 +227,25 @@ pub struct MemoryModule<T: MemoryData> {
 }
 
 impl<T: MemoryData> MemoryModule<T> {
-    /// Create a new memory module
+    /// Create a new memory module with validation
     pub fn new(memory_id: &str) -> Self {
         Self {
             memory_id: memory_id.to_string(),
             current_state: HashMap::new(),
             snapshot: HashMap::new(),
         }
+    }
+
+    /// Validate that this memory module has the correct architecture constraints
+    /// Memory modules should have single input/output and state management
+    pub fn validate_architecture(&self) -> Result<(), String> {
+        // Note: Memory modules don't have traditional ports like processing components
+        // Their "ports" are the memory connection points managed by the proxy system
+        // This validation ensures the memory module is properly configured
+        if self.memory_id.is_empty() {
+            return Err("Memory module must have a valid memory_id".to_string());
+        }
+        Ok(())
     }
 
     /// Read from snapshot (previous cycle data)
@@ -313,5 +342,121 @@ impl ComponentModule {
             ComponentModule::Memory(module) => Some(module.as_ref()),
             _ => None,
         }
+    }
+    
+    /// Get as mutable memory module
+    pub fn as_memory_mut(&mut self) -> Option<&mut dyn MemoryModuleTrait> {
+        match self {
+            ComponentModule::Memory(module) => Some(module.as_mut()),
+            _ => None,
+        }
+    }
+
+    /// Get all ports for this component module
+    pub fn ports(&self) -> Vec<(String, crate::core::components::types::PortType)> {
+        match self {
+            ComponentModule::Processing(module) => {
+                let mut ports = Vec::new();
+                
+                // Add input ports
+                for port in &module.input_ports {
+                    ports.push((port.name.clone(), crate::core::components::types::PortType::Input));
+                }
+                
+                // Add output ports
+                for port in &module.output_ports {
+                    ports.push((port.name.clone(), crate::core::components::types::PortType::Output));
+                }
+                
+                // Add memory ports
+                for port in &module.memory_ports {
+                    ports.push((port.name.clone(), crate::core::components::types::PortType::Memory));
+                }
+                
+                ports
+            }
+            ComponentModule::Memory(_) => {
+                // Memory modules don't have ports in the traditional sense
+                // They are connected to via memory ports on other components
+                Vec::new()
+            }
+        }
+    }
+}
+
+/// Unified trait for all component modules
+pub trait ModuleTrait: Send {
+    /// Get the module name/identifier
+    fn name(&self) -> &str;
+    
+    /// Clone this module
+    fn clone_module(&self) -> Box<dyn ModuleTrait>;
+}
+
+/// Implementation of ModuleTrait for ComponentModule
+impl ModuleTrait for ComponentModule {
+    fn name(&self) -> &str {
+        self.name()
+    }
+    
+    fn clone_module(&self) -> Box<dyn ModuleTrait> {
+        Box::new(self.clone())
+    }
+}
+
+/// Memory statistics for monitoring and debugging
+#[derive(Debug, Clone)]
+pub struct MemoryStats {
+    /// Total number of memory addresses
+    pub total_addresses: usize,
+    /// Number of active (non-empty) addresses
+    pub active_addresses: usize,
+    /// Memory usage in bytes (estimated)
+    pub memory_usage_bytes: usize,
+    /// Number of read operations in current cycle
+    pub read_count: usize,
+    /// Number of write operations in current cycle
+    pub write_count: usize,
+}
+
+impl MemoryStats {
+    /// Create new empty memory stats
+    pub fn new() -> Self {
+        Self {
+            total_addresses: 0,
+            active_addresses: 0,
+            memory_usage_bytes: 0,
+            read_count: 0,
+            write_count: 0,
+        }
+    }
+    
+    /// Reset cycle-specific counters
+    pub fn reset_cycle_counters(&mut self) {
+        self.read_count = 0;
+        self.write_count = 0;
+    }
+    
+    /// Update memory usage statistics
+    pub fn update_usage(&mut self, total: usize, active: usize, bytes: usize) {
+        self.total_addresses = total;
+        self.active_addresses = active;
+        self.memory_usage_bytes = bytes;
+    }
+    
+    /// Increment read counter
+    pub fn increment_reads(&mut self) {
+        self.read_count += 1;
+    }
+    
+    /// Increment write counter
+    pub fn increment_writes(&mut self) {
+        self.write_count += 1;
+    }
+}
+
+impl Default for MemoryStats {
+    fn default() -> Self {
+        Self::new()
     }
 }

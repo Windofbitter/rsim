@@ -1,197 +1,250 @@
-use crate::core::values::events::Event;
-use crate::core::values::implementations::{EventInputMap, EventOutputMap};
-use crate::core::values::traits::EventOutputs;
-use crate::core::components::manager::ComponentInstance;
-use crate::core::components::module::{ComponentModule, EvaluationContext};
-use crate::core::components::registry::ComponentRegistry;
-use crate::core::connections::manager::ConnectionManager;
-use crate::core::execution::execution_order::ExecutionOrderBuilder;
-use crate::core::memory::proxy::TypeSafeCentralMemoryProxy;
+use crate::core::builder::simulation_builder::ComponentInstance;
 use crate::core::types::ComponentId;
+use crate::core::execution::execution_order::ExecutionOrderBuilder;
+use crate::core::components::module::{EvaluationContext, MemoryModuleTrait};
+use crate::core::values::implementations::{EventInputMap, EventOutputMap};
+use crate::core::values::events::Event;
+use crate::core::values::traits::EventOutputs;
+use crate::core::memory::proxy::MemoryProxy;
 use std::collections::HashMap;
 
+/// Simplified cycle engine for the new direct API
+/// 
+/// This engine manages the execution of component evaluation functions
+/// in a deterministic order for each simulation cycle.
 pub struct CycleEngine {
-    /// Component registry for managing all components
-    component_registry: ComponentRegistry,
-    /// Connection manager for handling all connections
-    connection_manager: ConnectionManager,
-    /// Store event outputs from current cycle for next cycle inputs
-    current_event_outputs: HashMap<(ComponentId, String), Event>,
+    /// All component instances
+    components: HashMap<ComponentId, ComponentInstance>,
+    /// Port connections: (source_id, source_port) -> Vec<(target_id, target_port)>
+    connections: HashMap<(ComponentId, String), Vec<(ComponentId, String)>>,
+    /// Current cycle number
+    current_cycle: u64,
     /// Execution order for processing components (topologically sorted)
     execution_order: Vec<ComponentId>,
-    /// Current cycle counter
-    current_cycle: u64,
+    /// Output buffer for current cycle
+    output_buffer: HashMap<(ComponentId, String), Event>,
+    /// Memory connections: (component_id, port) -> memory_id
+    memory_connections: HashMap<(ComponentId, String), ComponentId>,
 }
 
 impl CycleEngine {
+    /// Create a new cycle engine
     pub fn new() -> Self {
         Self {
-            component_registry: ComponentRegistry::new(),
-            connection_manager: ConnectionManager::new(),
-            current_event_outputs: HashMap::new(),
-            execution_order: Vec::new(),
+            components: HashMap::new(),
+            connections: HashMap::new(),
             current_cycle: 0,
+            execution_order: Vec::new(),
+            output_buffer: HashMap::new(),
+            memory_connections: HashMap::new(),
         }
     }
 
     /// Register a component instance
-    pub fn register_component(&mut self, instance: ComponentInstance) -> Result<(), String> {
-        self.component_registry.register_component(instance)
+    pub fn register_component_instance(&mut self, instance: ComponentInstance) -> Result<(), String> {
+        let id = instance.id.clone();
+        self.components.insert(id, instance);
+        Ok(())
     }
 
-    /// Connect two component ports
+    /// Add a connection between components
     pub fn connect(
         &mut self,
         source: (ComponentId, String),
         target: (ComponentId, String),
     ) -> Result<(), String> {
-        self.connection_manager.connect(&self.component_registry, source, target)
-    }
+        // Validate that both components exist
+        if !self.components.contains_key(&source.0) {
+            return Err(format!("Source component '{}' not found", source.0));
+        }
+        if !self.components.contains_key(&target.0) {
+            return Err(format!("Target component '{}' not found", target.0));
+        }
 
-    /// Connect component to memory
-    pub fn connect_memory(
-        &mut self,
-        component_id: ComponentId,
-        port: String,
-        memory_id: ComponentId,
-    ) -> Result<(), String> {
-        self.connection_manager.connect_memory(&self.component_registry, component_id, port, memory_id)
-    }
+        // Add the connection
+        self.connections
+            .entry(source)
+            .or_insert_with(Vec::new)
+            .push(target);
 
-
-    /// Build execution order using topological sort
-    pub fn build_execution_order(&mut self) -> Result<(), String> {
-        // Use the well-designed Kahn's algorithm implementation
-        let order = ExecutionOrderBuilder::build_execution_order(
-            &self.component_registry,
-            self.connection_manager.connections(),
-        )?;
-        
-        self.execution_order = order;
         Ok(())
     }
 
-    /// Run a single simulation cycle
-    pub fn run_cycle(&mut self) {
-        let mut new_event_outputs: HashMap<(ComponentId, String), Event> = HashMap::new();
-
-        // Execute processing components in topological order
-        let execution_order = self.execution_order.clone();
-        for comp_id in &execution_order {
-            // Gather event inputs from previous cycle outputs
-            let mut event_inputs = EventInputMap::new();
-            
-            // Get the processing module info without holding a borrow
-            let (input_ports, _output_ports, evaluate_fn) = {
-                if let Some(instance) = self.component_registry.get_component(comp_id) {
-                    if let ComponentModule::Processing(proc_module) = &instance.module {
-                        (
-                            proc_module.input_ports.clone(),
-                            proc_module.output_ports.clone(),
-                            proc_module.evaluate_fn
-                        )
-                    } else {
-                        continue;
-                    }
-                } else {
-                    continue;
-                }
-            };
-
-            for input_port in &input_ports {
-                // Look for connections to this input port
-                for ((source_id, source_port), targets) in self.connection_manager.connections() {
-                    for (target_id, target_port) in targets {
-                        if target_id == comp_id && target_port == &input_port.name {
-                            // Look for event from previous cycle
-                            if let Some(event) = self.current_event_outputs.get(&(source_id.clone(), source_port.clone())) {
-                                event_inputs.insert_event(input_port.name.clone(), event.clone());
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Create type-safe memory proxy - now safe with Rc<RefCell<...>>
-            let mut memory_proxy = TypeSafeCentralMemoryProxy::new(
-                self.component_registry.memory_modules(),
-                self.connection_manager.memory_connections(),
-                comp_id.clone(),
-            );
-
-            // Get mutable access to the component for state
-            if let Some(instance) = self.component_registry.get_component_mut(comp_id) {
-                // Create event outputs collector (flexible to allow any type)
-                let mut event_outputs = EventOutputMap::new_flexible(self.current_cycle);
-                
-                // Create evaluation context
-                let eval_context = EvaluationContext {
-                    inputs: &event_inputs,
-                    memory: &mut memory_proxy,
-                    state: instance.state_mut(),
-                    component_id: comp_id,
-                };
-
-                // Evaluate the component
-                match evaluate_fn(&eval_context, &mut event_outputs) {
-                    Ok(()) => {
-                        // Store event outputs for next cycle
-                        let output_map = event_outputs.into_event_map();
-                        for (port_name, event) in output_map {
-                            new_event_outputs.insert(
-                                (comp_id.clone(), port_name),
-                                event,
-                            );
-                        }
-                    },
-                    Err(error) => {
-                        eprintln!("Error evaluating component '{}': {}", comp_id, error);
-                    }
-                }
-            }
+    /// Add a memory connection between a component port and a memory module
+    pub fn connect_memory(
+        &mut self,
+        component_port: (ComponentId, String),
+        memory_id: ComponentId,
+    ) -> Result<(), String> {
+        // Validate that both components exist
+        if !self.components.contains_key(&component_port.0) {
+            return Err(format!("Component '{}' not found", component_port.0));
+        }
+        if !self.components.contains_key(&memory_id) {
+            return Err(format!("Memory component '{}' not found", memory_id));
         }
 
-        // Update event outputs for next cycle
-        self.current_event_outputs = new_event_outputs;
+        // Add the memory connection
+        self.memory_connections.insert(component_port, memory_id);
 
-        // End cycle on all memory modules
-        for memory_module_ref in self.component_registry.memory_modules().values() {
-            memory_module_ref.borrow_mut().create_snapshot();
-        }
-
-        self.current_cycle += 1;
+        Ok(())
     }
 
+    /// Execute one simulation cycle
+    pub fn cycle(&mut self) -> Result<(), String> {
+        self.current_cycle += 1;
 
-    /// Get current cycle number
+        // Collect all component IDs and their types first to avoid borrowing conflicts
+        let memory_components: Vec<ComponentId> = self.components
+            .iter()
+            .filter_map(|(id, comp)| {
+                if comp.module.is_memory() {
+                    Some(id.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // Execute processing components in topological order
+        for component_id in &self.execution_order.clone() {
+            self.execute_processing_component(component_id)?;
+        }
+
+        // Update memory components
+        for component_id in memory_components {
+            self.execute_memory_component(&component_id)?;
+        }
+
+        Ok(())
+    }
+
+    /// Execute a processing component
+    fn execute_processing_component(&mut self, component_id: &ComponentId) -> Result<(), String> {
+        // First, collect inputs from connected outputs
+        let inputs = self.collect_inputs(component_id)?;
+        
+        // Extract processor info and evaluate function
+        let processor = {
+            let component = self.components.get(component_id)
+                .ok_or_else(|| format!("Component '{}' not found", component_id))?;
+            component.module.as_processing()
+                .ok_or_else(|| format!("Component '{}' is not a processing component", component_id))?
+                .clone()
+        };
+        
+        // Create memory proxy with references to actual memory modules
+        let memory_modules: HashMap<ComponentId, &mut dyn MemoryModuleTrait> = self.components
+            .iter_mut()
+            .filter_map(|(id, comp)| {
+                if let Some(memory_module) = comp.module.as_memory_mut() {
+                    Some((id.clone(), memory_module))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        
+        let mut memory_proxy = MemoryProxy::new(
+            self.memory_connections.clone(),
+            component_id.clone(),
+            memory_modules,
+        );
+        
+        // Create evaluation context
+        let mut context = EvaluationContext {
+            inputs: &inputs,
+            memory: &mut memory_proxy,
+            state: None, // Processing components have no state
+            component_id,
+        };
+        
+        // Create output map for this component
+        let mut outputs = EventOutputMap::new_flexible(self.current_cycle);
+        
+        // Execute the component's evaluation function
+        (processor.evaluate_fn)(&mut context, &mut outputs)?;
+        
+        // Store outputs in buffer for next cycle
+        for (port, event) in outputs.into_event_map() {
+            self.output_buffer.insert((component_id.clone(), port), event);
+        }
+        
+        Ok(())
+    }
+
+    /// Execute a memory component
+    fn execute_memory_component(&mut self, component_id: &ComponentId) -> Result<(), String> {
+        let component = self.components.get_mut(component_id)
+            .ok_or_else(|| format!("Component '{}' not found", component_id))?;
+        
+        if let Some(memory_module) = component.module.as_memory_mut() {
+            // Update memory state: current → snapshot for next cycle
+            memory_module.create_snapshot();
+        }
+        
+        Ok(())
+    }
+
+    /// Get the current cycle number
     pub fn current_cycle(&self) -> u64 {
         self.current_cycle
     }
 
-    /// Get execution order
-    pub fn execution_order(&self) -> &[ComponentId] {
-        &self.execution_order
-    }
-
-    /// Get component by ID
-    pub fn get_component(&self, id: &ComponentId) -> Option<&ComponentInstance> {
-        self.component_registry.get_component(id)
-    }
-
-    /// Get mutable component by ID
-    pub fn get_component_mut(&mut self, id: &ComponentId) -> Option<&mut ComponentInstance> {
-        self.component_registry.get_component_mut(id)
-    }
-
     /// Get all component IDs
     pub fn component_ids(&self) -> Vec<&ComponentId> {
-        self.component_registry.component_ids()
+        self.components.keys().collect()
     }
 
-}
+    /// Check if a component exists
+    pub fn has_component(&self, id: &ComponentId) -> bool {
+        self.components.contains_key(id)
+    }
 
-impl Default for CycleEngine {
-    fn default() -> Self {
-        Self::new()
+    /// Build execution order for deterministic simulation
+    pub fn build_execution_order(&mut self) -> Result<(), String> {
+        // Get all processing component IDs
+        let processing_components: Vec<ComponentId> = self.components
+            .iter()
+            .filter_map(|(id, comp)| {
+                if comp.module.is_processing() {
+                    Some(id.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        
+        // Build topologically sorted execution order
+        self.execution_order = ExecutionOrderBuilder::build_execution_order(
+            &processing_components,
+            &self.connections,
+        )?;
+        
+        Ok(())
+    }
+
+    /// Run a single simulation cycle (alias for cycle method)
+    pub fn run_cycle(&mut self) -> Result<(), String> {
+        self.cycle()
+    }
+    
+    /// Collect inputs for a component from connected outputs
+    fn collect_inputs(&self, component_id: &ComponentId) -> Result<EventInputMap, String> {
+        let mut inputs = EventInputMap::new();
+        
+        // Find all connections that target this component
+        for ((source_id, source_port), targets) in &self.connections {
+            for (target_id, target_port) in targets {
+                if target_id == component_id {
+                    // Get the output event from the buffer
+                    if let Some(event) = self.output_buffer.get(&(source_id.clone(), source_port.clone())) {
+                        inputs.insert_event(target_port.clone(), event.clone());
+                    }
+                }
+            }
+        }
+        
+        Ok(inputs)
     }
 }

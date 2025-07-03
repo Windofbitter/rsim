@@ -1,7 +1,5 @@
-use crate::core::components::module::ComponentModule;
-use crate::core::components::manager::ComponentInstance;
-use crate::core::components::registry::ComponentRegistry;
-use crate::core::types::ComponentId;
+use crate::core::builder::simulation_builder::ComponentInstance;
+use crate::core::components::types::PortType;
 
 /// Port validation utilities for components
 pub struct PortValidator;
@@ -12,24 +10,23 @@ impl PortValidator {
         component: &ComponentInstance,
         port: &str,
     ) -> Result<(), String> {
-        match &component.module {
-            ComponentModule::Processing(proc_module) => {
-                if !proc_module.has_output_port(port) {
-                    return Err(format!(
-                        "Output port '{}' not found on processing component '{}'. Valid ports: {:?}",
-                        port, component.id(), proc_module.output_port_names()
-                    ));
-                }
-            },
-            ComponentModule::Memory(_) => {
-                // Memory components have a standard output port "out"
-                if port != "out" {
-                    return Err(format!(
-                        "Output port '{}' not found on memory component '{}'. Valid port: 'out'",
-                        port, component.id()
-                    ));
-                }
-            },
+        // Check if port exists in module's port list
+        let has_output_port = component.module.ports()
+            .iter()
+            .any(|(name, port_type)| name == port && *port_type == PortType::Output);
+        
+        if !has_output_port {
+            let ports = component.module.ports();
+            let valid_outputs: Vec<&str> = ports
+                .iter()
+                .filter(|(_, port_type)| *port_type == PortType::Output)
+                .map(|(name, _)| name.as_str())
+                .collect();
+            
+            return Err(format!(
+                "Output port '{}' not found on component '{}'. Valid output ports: {:?}",
+                port, component.id.id(), valid_outputs
+            ));
         }
         Ok(())
     }
@@ -39,24 +36,23 @@ impl PortValidator {
         component: &ComponentInstance,
         port: &str,
     ) -> Result<(), String> {
-        match &component.module {
-            ComponentModule::Processing(proc_module) => {
-                if !proc_module.has_input_port(port) {
-                    return Err(format!(
-                        "Input port '{}' not found on processing component '{}'. Valid ports: {:?}",
-                        port, component.id(), proc_module.input_port_names()
-                    ));
-                }
-            },
-            ComponentModule::Memory(_) => {
-                // Memory components have a standard input port "in"
-                if port != "in" {
-                    return Err(format!(
-                        "Input port '{}' not found on memory component '{}'. Valid port: 'in'",
-                        port, component.id()
-                    ));
-                }
-            },
+        // Check if port exists in module's port list
+        let has_input_port = component.module.ports()
+            .iter()
+            .any(|(name, port_type)| name == port && *port_type == PortType::Input);
+        
+        if !has_input_port {
+            let ports = component.module.ports();
+            let valid_inputs: Vec<&str> = ports
+                .iter()
+                .filter(|(_, port_type)| *port_type == PortType::Input)
+                .map(|(name, _)| name.as_str())
+                .collect();
+            
+            return Err(format!(
+                "Input port '{}' not found on component '{}'. Valid input ports: {:?}",
+                port, component.id.id(), valid_inputs
+            ));
         }
         Ok(())
     }
@@ -66,58 +62,33 @@ impl PortValidator {
         component: &ComponentInstance,
         port: &str,
     ) -> Result<(), String> {
-        if let ComponentModule::Processing(proc_module) = &component.module {
-            if !proc_module.has_memory_port(port) {
-                return Err(format!(
-                    "Memory port '{}' not found on component '{}'. Valid ports: {:?}",
-                    port, component.id(), proc_module.memory_port_names()
-                ));
-            }
-        } else {
+        if !component.module.is_processing() {
             return Err(format!(
                 "Component '{}' is not a processing component and cannot have memory ports",
-                component.id()
+                component.id.id()
+            ));
+        }
+        
+        // Check if port exists in module's port list as memory port
+        let has_memory_port = component.module.ports()
+            .iter()
+            .any(|(name, port_type)| name == port && *port_type == PortType::Memory);
+        
+        if !has_memory_port {
+            let ports = component.module.ports();
+            let valid_memory_ports: Vec<&str> = ports
+                .iter()
+                .filter(|(_, port_type)| *port_type == PortType::Memory)
+                .map(|(name, _)| name.as_str())
+                .collect();
+            
+            return Err(format!(
+                "Memory port '{}' not found on component '{}'. Valid memory ports: {:?}",
+                port, component.id.id(), valid_memory_ports
             ));
         }
         Ok(())
     }
 
-    /// Validate source port with registry lookup
-    pub fn validate_source_port_with_registry(
-        registry: &ComponentRegistry,
-        component_id: &ComponentId,
-        port: &str,
-    ) -> Result<(), String> {
-        if let Some(component) = registry.get_component(component_id) {
-            Self::validate_source_port(component, port)
-        } else {
-            Err(format!("Component '{}' not found", component_id))
-        }
-    }
-
-    /// Validate target port with registry lookup
-    pub fn validate_target_port_with_registry(
-        registry: &ComponentRegistry,
-        component_id: &ComponentId,
-        port: &str,
-    ) -> Result<(), String> {
-        if let Some(component) = registry.get_component(component_id) {
-            Self::validate_target_port(component, port)
-        } else {
-            Err(format!("Component '{}' not found", component_id))
-        }
-    }
-
-    /// Validate memory port with registry lookup
-    pub fn validate_memory_port_with_registry(
-        registry: &ComponentRegistry,
-        component_id: &ComponentId,
-        port: &str,
-    ) -> Result<(), String> {
-        if let Some(component) = registry.get_component(component_id) {
-            Self::validate_memory_port(component, port)
-        } else {
-            Err(format!("Component '{}' not found", component_id))
-        }
-    }
+    // Registry-based validation methods removed - using direct component instances now
 }
