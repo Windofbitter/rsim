@@ -99,52 +99,52 @@ fn main() -> Result<(), String> {
     
     // Connect Bakers to Bread Buffers (1:1)
     for i in 0..10 {
-        sim.connect_memory(bakers[i].memory_port("bread_buffer"), bread_buffers[i])?;
+        sim.connect_memory(bakers[i].memory_port("bread_buffer"), bread_buffers[i].clone())?;
     }
     
     // Connect Fryers to Meat Buffers (1:1)
     for i in 0..10 {
-        sim.connect_memory(fryers[i].memory_port("meat_buffer"), meat_buffers[i])?;
+        sim.connect_memory(fryers[i].memory_port("meat_buffer"), meat_buffers[i].clone())?;
     }
     
     // Connect Bread Buffers to Bread Manager (10:1)
     for i in 0..10 {
-        sim.connect_memory(bread_manager.memory_port(&format!("bread_buffer_{}", i + 1)), bread_buffers[i])?;
+        sim.connect_memory(bread_manager.memory_port(&format!("bread_buffer_{}", i + 1)), bread_buffers[i].clone())?;
     }
     
     // Connect Meat Buffers to Meat Manager (10:1)
     for i in 0..10 {
-        sim.connect_memory(meat_manager.memory_port(&format!("meat_buffer_{}", i + 1)), meat_buffers[i])?;
+        sim.connect_memory(meat_manager.memory_port(&format!("meat_buffer_{}", i + 1)), meat_buffers[i].clone())?;
     }
     
     // Connect Managers to Assembler Manager
-    sim.connect_memory(assembler_manager.memory_port("bread_manager"), bread_manager)?;
-    sim.connect_memory(assembler_manager.memory_port("meat_manager"), meat_manager)?;
+    sim.connect_memory(assembler_manager.memory_port("bread_manager"), bread_manager.clone())?;
+    sim.connect_memory(assembler_manager.memory_port("meat_manager"), meat_manager.clone())?;
     
     // Connect Assembler Manager to Assembler Buffers (1:10)
     for i in 0..10 {
-        sim.connect_memory(assembler_manager.memory_port(&format!("assembler_buffer_{}", i + 1)), assembler_buffers[i])?;
+        sim.connect_memory(assembler_manager.memory_port(&format!("assembler_buffer_{}", i + 1)), assembler_buffers[i].clone())?;
     }
     
     // Connect Assembler Buffers to Assemblers (1:1)
     for i in 0..10 {
-        sim.connect_memory(assemblers[i].memory_port("bread_buffer"), assembler_buffers[i])?;
-        sim.connect_memory(assemblers[i].memory_port("meat_buffer"), assembler_buffers[i])?;
+        sim.connect_memory(assemblers[i].memory_port("bread_buffer"), assembler_buffers[i].clone())?;
+        sim.connect_memory(assemblers[i].memory_port("meat_buffer"), assembler_buffers[i].clone())?;
     }
     
     // Connect Assemblers to Customer Manager (10:1)
     for i in 0..10 {
-        sim.connect_memory(customer_manager.memory_port(&format!("assembler_output_{}", i + 1)), assemblers[i])?;
+        sim.connect_memory(customer_manager.memory_port(&format!("assembler_output_{}", i + 1)), assemblers[i].clone())?;
     }
     
     // Connect Customer Manager to Customer Buffers (1:10)
     for i in 0..10 {
-        sim.connect_memory(customer_manager.memory_port(&format!("customer_buffer_{}", i + 1)), customer_buffers[i])?;
+        sim.connect_memory(customer_manager.memory_port(&format!("customer_buffer_{}", i + 1)), customer_buffers[i].clone())?;
     }
     
     // Connect Customer Buffers to Customers (1:1)
     for i in 0..10 {
-        sim.connect_memory(customers[i].memory_port("burger_buffer"), customer_buffers[i])?;
+        sim.connect_memory(customers[i].memory_port("burger_buffer"), customer_buffers[i].clone())?;
     }
     
     // =========================

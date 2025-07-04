@@ -2,7 +2,7 @@ use crate::core::components::module::ComponentModule;
 use crate::core::components::state::MemoryData;
 use crate::core::components::traits::{Component, MemoryComponent};
 use crate::core::execution::cycle_engine::CycleEngine;
-use crate::core::types::{ComponentId, OutputPort, InputPort};
+use crate::core::types::{ComponentId, OutputPort, InputPort, MemoryPort};
 use std::collections::HashMap;
 
 /// Simplified component instance for direct module usage
@@ -133,8 +133,8 @@ impl Simulation {
         Ok(())
     }
 
-    /// Connect a component port to a memory component using port handle
-    pub fn connect_memory(&mut self, component_port: OutputPort, memory_id: ComponentId) -> Result<(), String> {
+    /// Connect a component memory port to a memory component using port handle
+    pub fn connect_memory(&mut self, component_port: MemoryPort, memory_id: ComponentId) -> Result<(), String> {
         let comp_id = component_port.component_id().clone();
         let port_name = component_port.port_name().to_string();
         

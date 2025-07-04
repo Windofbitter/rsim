@@ -21,6 +21,22 @@ macro_rules! memory_read {
     };
 }
 
+/// Macro for reading from memory with error propagation
+/// 
+/// This variant propagates errors instead of using default values:
+/// ```rust
+/// // Use for critical reads where defaults aren't appropriate:
+/// memory_read_or_error!(ctx, "port", "address", value: Type)?;
+/// ```
+#[macro_export]
+macro_rules! memory_read_or_error {
+    ($ctx:expr, $port:expr, $address:expr, $var:ident: $type:ty) => {
+        let mut $var: $type = $ctx.memory.read::<$type>($port, $address)
+            .map_err(|e| format!("Failed to read memory port '{}' address '{}': {}", $port, $address, e))?
+            .ok_or_else(|| format!("No value found at memory port '{}' address '{}'", $port, $address))?;
+    };
+}
+
 /// Macro for writing to memory
 /// 
 /// This macro simplifies memory write operations:

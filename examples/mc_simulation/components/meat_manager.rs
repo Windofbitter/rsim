@@ -1,6 +1,4 @@
-use rsim::core::components::{Component, PortType};
-use rsim::core::components::module::{ProcessorModule, PortSpec};
-use rsim::impl_component;
+use rsim::*;
 
 /// MeatManager component that collects meat from all individual meat buffers
 /// and forwards to the AssemblerManager when available
@@ -8,6 +6,7 @@ use rsim::impl_component;
 #[derive(Debug)]
 pub struct MeatManager {
     /// Total meat collected from all buffers
+    #[allow(dead_code)]
     total_collected: u64,
 }
 
@@ -20,6 +19,7 @@ impl MeatManager {
     }
 
     /// Get total meat collected by this manager
+    #[allow(dead_code)]
     pub fn total_collected(&self) -> u64 {
         self.total_collected
     }
@@ -50,7 +50,7 @@ impl_component!(MeatManager, "MeatManager", {
         for i in 1..=10 {
             let buffer_name = format!("assembler_buffer_{}", i);
             if let Ok(Some(count)) = ctx.memory.read::<i64>(&buffer_name, "meat_count") {
-                let capacity = memory_read!(ctx, &buffer_name, "meat_capacity", i64, 10);
+                memory_read!(ctx, &buffer_name, "meat_capacity", capacity: i64 = 10);
                 if count < capacity {
                     available_assembler_buffers.push(i);
                 }
@@ -72,10 +72,10 @@ impl_component!(MeatManager, "MeatManager", {
             let output_buffer_name = format!("assembler_buffer_{}", output_buffer_id);
             
             // Request to consume meat from input buffer
-            memory_write!(ctx, &input_buffer_name, "to_subtract", 1i64)?;
+            memory_write!(ctx, &input_buffer_name, "to_subtract", 1i64);
             
             // Request to add meat to assembler buffer
-            memory_write!(ctx, &output_buffer_name, "meat_to_add", 1i64)?;
+            memory_write!(ctx, &output_buffer_name, "meat_to_add", 1i64);
         }
         
         Ok(())

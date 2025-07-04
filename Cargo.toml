@@ -15,3 +15,7 @@ serde = { version = "1.0", features = ["derive"] }
 name = "mcdonald_simple_test"
 path = "examples/mc_simulation/simple_test.rs"
 
+[[bin]]
+name = "mcdonald_complete_test"
+path = "examples/mc_simulation/complete_test.rs"
+

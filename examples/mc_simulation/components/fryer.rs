@@ -1,7 +1,5 @@
-use rsim::core::components::{Component, PortType};
-use rsim::core::components::module::{ProcessorModule, PortSpec};
-use rsim::impl_component;
-use rand::{Rng, SeedableRng};
+use rsim::*;
+use rand::{Rng, RngCore, SeedableRng};
 use rand::rngs::StdRng;
 
 /// Fryer component that produces meat with random timing delays
@@ -10,10 +8,13 @@ use rand::rngs::StdRng;
 #[derive(Debug)]
 pub struct Fryer {
     /// Minimum delay in cycles
+    #[allow(dead_code)]
     min_delay: u32,
     /// Maximum delay in cycles
+    #[allow(dead_code)]
     max_delay: u32,
     /// RNG seed for deterministic timing
+    #[allow(dead_code)]
     rng_seed: u64,
 }
 
@@ -36,19 +37,22 @@ impl_component!(Fryer, "Fryer", {
     react: |ctx, _outputs| {
         // Read internal state from memory using macros
         memory_state!(ctx, "fryer_state", {
-            remaining_cycles: u32 = 0,
-            total_produced: u64 = 0,
-            rng_state: u64 = 12345
+            remaining_cycles: i64 = 0,
+            total_produced: i64 = 0,
+            rng_state: i64 = 12345
         });
         
-        // Configuration from component (not stored in memory)
-        let min_delay = memory_read!(ctx, "fryer_state", "min_delay", u32, 3);
-        let max_delay = memory_read!(ctx, "fryer_state", "max_delay", u32, 7);
+        // Configuration values - could be stored in memory or use instance values
+        let min_delay = 3i64;  // In real impl, could use self.min_delay
+        let max_delay = 7i64;
         
         // Read buffer status from memory (previous cycle state)
         let buffer_full = if let Ok(Some(count)) = ctx.memory.read::<i64>("meat_buffer", "data_count") {
-            let capacity = memory_read!(ctx, "meat_buffer", "capacity", i64, 10);
-            count >= capacity
+            if let Ok(Some(capacity)) = ctx.memory.read::<i64>("meat_buffer", "capacity") {
+                count >= capacity
+            } else {
+                false
+            }
         } else {
             false // If can't read buffer, assume not full
         };
@@ -59,13 +63,13 @@ impl_component!(Fryer, "Fryer", {
             remaining_cycles -= 1;
         } else if !buffer_full {
             // Timer expired and buffer not full, produce meat and start new timer
-            memory_write!(ctx, "meat_buffer", "to_add", 1i64)?;
+            memory_write!(ctx, "meat_buffer", "to_add", 1i64);
             total_produced += 1;
             
             // Start new production cycle with random delay
-            let mut rng = StdRng::seed_from_u64(rng_state);
+            let mut rng = StdRng::seed_from_u64(rng_state as u64);
             remaining_cycles = rng.gen_range(min_delay..=max_delay);
-            rng_state = rng.next_u64(); // Update RNG state
+            rng_state = rng.next_u64() as i64; // Update RNG state
         }
         // If buffer is full, just wait (don't start new timer)
         

@@ -1,6 +1,4 @@
-use rsim::core::components::{Component, PortType};
-use rsim::core::components::module::{ProcessorModule, PortSpec};
-use rsim::impl_component;
+use rsim::*;
 
 /// CustomerManager component that collects burgers from all assembler outputs
 /// and distributes them to customer buffers with available space
@@ -8,6 +6,7 @@ use rsim::impl_component;
 #[derive(Debug)]
 pub struct CustomerManager {
     /// Total burgers distributed
+    #[allow(dead_code)]
     total_distributed: u64,
 }
 
@@ -20,6 +19,7 @@ impl CustomerManager {
     }
 
     /// Get total burgers distributed by this manager
+    #[allow(dead_code)]
     pub fn total_distributed(&self) -> u64 {
         self.total_distributed
     }
@@ -51,7 +51,7 @@ impl_component!(CustomerManager, "CustomerManager", {
         for i in 1..=10 {
             let buffer_name = format!("customer_buffer_{}", i);
             if let Ok(Some(count)) = ctx.memory.read::<i64>(&buffer_name, "data_count") {
-                let capacity = memory_read!(ctx, &buffer_name, "capacity", i64, 10);
+                memory_read!(ctx, &buffer_name, "capacity", capacity: i64 = 10);
                 if count < capacity {
                     available_customer_buffers.push(i);
                 }
@@ -73,10 +73,10 @@ impl_component!(CustomerManager, "CustomerManager", {
             let customer_buffer_name = format!("customer_buffer_{}", customer_buffer_id);
             
             // Request to consume burger from assembler output
-            memory_write!(ctx, &source_name, "to_subtract", 1i64)?;
+            memory_write!(ctx, &source_name, "to_subtract", 1i64);
             
             // Request to add burger to customer buffer
-            memory_write!(ctx, &customer_buffer_name, "to_add", 1i64)?;
+            memory_write!(ctx, &customer_buffer_name, "to_add", 1i64);
         }
         
         Ok(())

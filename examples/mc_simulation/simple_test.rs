@@ -4,7 +4,7 @@ fn main() -> Result<(), String> {
     println!("🍔 Testing McDonald's Simulation Structure 🍔");
     
     // Create a simple simulation to test basic structure
-    let mut sim = Simulation::new();
+    let sim = Simulation::new();
     
     println!("✅ Simulation created successfully!");
     

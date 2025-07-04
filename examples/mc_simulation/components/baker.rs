@@ -8,10 +8,13 @@ use rand::rngs::StdRng;
 #[derive(Debug)]
 pub struct Baker {
     /// Minimum delay in cycles
+    #[allow(dead_code)]
     min_delay: u32,
     /// Maximum delay in cycles
+    #[allow(dead_code)]
     max_delay: u32,
     /// RNG seed for deterministic timing
+    #[allow(dead_code)]
     rng_seed: u64,
 }
 
@@ -32,26 +35,36 @@ impl_component!(Baker, "Baker", {
     outputs: [],
     memory: [bread_buffer, baker_state],
     react: |ctx, _outputs| {
-        // Simplified state management - using local variables instead of memory
-        // In a full implementation, proper field-level memory access would be needed
-        let mut remaining_cycles: i64 = 0;
-        let mut total_produced: i64 = 0;
-        let mut rng_state: i64 = 54321;
+        // Read internal state from memory using macros
+        memory_state!(ctx, "baker_state", {
+            remaining_cycles: i64 = 0,
+            total_produced: i64 = 0,
+            rng_state: i64 = 54321
+        });
         
-        // Configuration values
-        let min_delay: i64 = 2;
-        let max_delay: i64 = 5;
+        // Read configuration from memory (or use instance values)
+        // For this example, we'll use the instance's configuration
+        let min_delay = 2i64;  // In real impl, could read from memory or use self.min_delay
+        let max_delay = 5i64;
         
-        // This is a simplified version - in a real implementation,
-        // the memory system would need to support field-level access
-        // For now, we'll skip the actual memory operations
+        // Read bread buffer status to check if full
+        let buffer_full = if let Ok(Some(count)) = ctx.memory.read::<i64>("bread_buffer", "data_count") {
+            if let Ok(Some(capacity)) = ctx.memory.read::<i64>("bread_buffer", "capacity") {
+                count >= capacity
+            } else {
+                false
+            }
+        } else {
+            false
+        };
         
         // Process timer logic
         if remaining_cycles > 0 {
-            // Still processing, decrement timer
+            // Still baking, decrement timer
             remaining_cycles -= 1;
-        } else {
-            // Timer expired, produce bread and start new timer
+        } else if !buffer_full {
+            // Timer expired and buffer not full, produce bread
+            memory_write!(ctx, "bread_buffer", "to_add", 1i64);
             total_produced += 1;
             
             // Start new production cycle with random delay
@@ -59,10 +72,10 @@ impl_component!(Baker, "Baker", {
             remaining_cycles = rng.gen_range(min_delay..=max_delay);
             rng_state = rng.next_u64() as i64; // Update RNG state
         }
-        // If buffer is full, just wait (don't start new timer)
+        // If buffer is full, wait (don't start new timer)
         
-        // State is managed locally in this simplified version
-        // In a full implementation, state would be persisted to memory
+        // Write updated state back to memory
+        memory_state_write!(ctx, "baker_state", remaining_cycles, total_produced, rng_state);
         
         Ok(())
     }

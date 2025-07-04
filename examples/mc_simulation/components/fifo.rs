@@ -26,11 +26,13 @@ impl FIFOData {
     }
 
     /// Check if the buffer is full
+    #[allow(dead_code)]
     pub fn is_full(&self) -> bool {
         self.data_count >= self.capacity
     }
 
     /// Check if the buffer is empty
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.data_count == 0
     }
@@ -55,11 +57,13 @@ impl FIFOData {
     }
 
     /// Request to add items to the buffer
+    #[allow(dead_code)]
     pub fn request_add(&mut self, count: i64) {
         self.to_add = self.to_add.saturating_add(count);
     }
 
     /// Request to subtract items from the buffer
+    #[allow(dead_code)]
     pub fn request_subtract(&mut self, count: i64) {
         self.to_subtract = self.to_subtract.saturating_add(count);
     }
