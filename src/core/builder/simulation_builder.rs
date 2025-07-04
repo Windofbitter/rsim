@@ -78,7 +78,7 @@ impl Simulation {
     // Old auto methods removed - new add_component methods auto-generate IDs
 
     /// Connect two component ports using port handles
-    pub fn connect_component(&mut self, source: OutputPort, target: InputPort) -> Result<(), String> {
+    pub fn connect(&mut self, source: OutputPort, target: InputPort) -> Result<(), String> {
         let source_id = source.component_id().clone();
         let source_port = source.port_name().to_string();
         let target_id = target.component_id().clone();
@@ -133,8 +133,13 @@ impl Simulation {
         Ok(())
     }
 
-    /// Connect a component memory port to a memory component using port handle
-    pub fn connect_memory(&mut self, component_port: MemoryPort, memory_id: ComponentId) -> Result<(), String> {
+    /// Connect two component ports using port handles (alias for connect)
+    pub fn connect_component(&mut self, source: OutputPort, target: InputPort) -> Result<(), String> {
+        self.connect(source, target)
+    }
+
+    /// Connect a component memory port to a memory component using output port handle
+    pub fn connect_memory(&mut self, component_port: OutputPort, memory_id: ComponentId) -> Result<(), String> {
         let comp_id = component_port.component_id().clone();
         let port_name = component_port.port_name().to_string();
         
@@ -170,6 +175,50 @@ impl Simulation {
             }
         } else {
             return Err(format!("Only processing components can connect to memory components"));
+        }
+        
+        // If all validations pass, make the connection
+        self.memory_connections.insert(connection_key, memory_id);
+        Ok(())
+    }
+
+    /// Connect a component memory port to a memory component using memory port handle
+    pub fn connect_memory_port(&mut self, component_port: MemoryPort, memory_id: ComponentId) -> Result<(), String> {
+        let comp_id = component_port.component_id().clone();
+        let port_name = component_port.port_name().to_string();
+        
+        // Validate that the memory component exists
+        if !self.components.contains_key(&memory_id) {
+            return Err(format!("Memory component '{}' not found", memory_id));
+        }
+        
+        // Validate that the memory component is actually a memory component
+        let memory_component = self.components.get(&memory_id).unwrap();
+        if !memory_component.module.is_memory() {
+            return Err(format!("Component '{}' is not a memory component", memory_id));
+        }
+        
+        // Validate that the source component exists
+        if !self.components.contains_key(component_port.component_id()) {
+            return Err(format!("Source component '{}' not found", component_port.component_id()));
+        }
+        
+        // Check for duplicate connections (each memory port can only be connected once)
+        let connection_key = (comp_id.clone(), port_name.clone());
+        if self.memory_connections.contains_key(&connection_key) {
+            return Err(format!("Memory port '{}' on component '{}' is already connected", 
+                              port_name, comp_id));
+        }
+        
+        // Validate that the source component has the specified port
+        let source_component = self.components.get(component_port.component_id()).unwrap();
+        if let Some(processor) = source_component.module.as_processing() {
+            if !processor.has_memory_port(&port_name) {
+                return Err(format!("Component '{}' does not have memory port '{}'", 
+                                  component_port.component_id(), port_name));
+            }
+        } else {
+            return Err(format!("Source component '{}' is not a processing component", component_port.component_id()));
         }
         
         // If all validations pass, make the connection

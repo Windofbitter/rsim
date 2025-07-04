@@ -13,7 +13,7 @@ pub struct MemoryProxy<'a> {
     /// Current component ID for context
     component_id: ComponentId,
     /// Registry of actual memory modules (integrated with snapshot system)
-    memory_modules: HashMap<ComponentId, &'a mut dyn MemoryModuleTrait>,
+    memory_modules: &'a mut HashMap<ComponentId, Box<dyn MemoryModuleTrait>>,
 }
 
 impl<'a> MemoryProxy<'a> {
@@ -21,7 +21,7 @@ impl<'a> MemoryProxy<'a> {
     pub fn new(
         memory_connections: HashMap<(ComponentId, String), ComponentId>,
         component_id: ComponentId,
-        memory_modules: HashMap<ComponentId, &'a mut dyn MemoryModuleTrait>,
+        memory_modules: &'a mut HashMap<ComponentId, Box<dyn MemoryModuleTrait>>,
     ) -> Self {
         Self {
             memory_connections,
@@ -83,7 +83,7 @@ impl<'a> MemoryProxy<'a> {
     }
 
     /// Add a memory module to the proxy registry
-    pub fn register_memory_module(&mut self, memory_id: ComponentId, module: &'a mut dyn MemoryModuleTrait) {
+    pub fn register_memory_module(&mut self, memory_id: ComponentId, module: Box<dyn MemoryModuleTrait>) {
         self.memory_modules.insert(memory_id, module);
     }
 
