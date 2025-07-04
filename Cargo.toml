@@ -23,3 +23,7 @@ path = "examples/mc_simulation/complete_test.rs"
 name = "mcdonald_main"
 path = "examples/mc_simulation/main.rs"
 
+[[bin]]
+name = "timing_benchmark"
+path = "examples/mc_simulation/timing_benchmark.rs"
+
