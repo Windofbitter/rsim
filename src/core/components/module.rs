@@ -277,6 +277,9 @@ impl<T: MemoryData> MemoryModuleTrait for MemoryModule<T> {
             self.current_state.insert(address.to_string(), *typed_data);
             true
         } else {
+            // Log type mismatch error for debugging
+            eprintln!("Type mismatch error in memory module '{}' at address '{}': expected type '{}', got different type", 
+                     self.memory_id, address, std::any::type_name::<T>());
             false
         }
     }

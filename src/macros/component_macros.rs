@@ -34,8 +34,8 @@ macro_rules! impl_component {
             react: $react_fn:expr
         }
     ) => {
-        impl rsim::core::components::Component for $struct_name {
-            fn define_ports() -> Vec<(String, rsim::core::components::types::PortType)> {
+        impl $crate::core::components::Component for $struct_name {
+            fn define_ports() -> Vec<(String, $crate::core::components::types::PortType)> {
                 port_definitions![
                     inputs: [$($input),*],
                     outputs: [$($output),*],
@@ -43,12 +43,12 @@ macro_rules! impl_component {
                 ]
             }
             
-            fn into_module() -> rsim::core::components::ProcessorModule {
+            fn into_module() -> $crate::core::components::ProcessorModule {
                 let input_ports = input_ports![$($input),*];
                 let output_ports = output_ports![$($output),*];
                 let memory_ports = memory_ports![$($memory),*];
                 
-                rsim::core::components::ProcessorModule::new(
+                $crate::core::components::ProcessorModule::new(
                     $component_name,
                     input_ports,
                     output_ports,
@@ -84,8 +84,8 @@ macro_rules! impl_memory_component {
             output: $output:ident
         }
     ) => {
-        impl rsim::core::components::MemoryComponent for $struct_name {
-            fn define_ports() -> Vec<(String, rsim::core::components::types::PortType)> {
+        impl $crate::core::components::MemoryComponent for $struct_name {
+            fn define_ports() -> Vec<(String, $crate::core::components::types::PortType)> {
                 port_definitions![
                     inputs: [$input],
                     outputs: [$output],
@@ -193,9 +193,9 @@ macro_rules! memory_component {
             $(pub $field: $field_type),*
         }
         
-        impl rsim::core::components::state::MemoryData for $struct_name {}
+        impl $crate::core::components::state::MemoryData for $struct_name {}
         
-        impl rsim::core::components::Cycle for $struct_name {
+        impl $crate::core::components::Cycle for $struct_name {
             type Output = i32; // You may need to customize this type
             
             fn cycle(&mut self) -> Option<Self::Output> {

@@ -51,6 +51,11 @@ fn main() -> Result<(), String> {
     
     let bread_manager = sim.add_component(BreadManager::new());
     let meat_manager = sim.add_component(MeatManager::new());
+    
+    // Create intermediate memory buffers for manager coordination
+    let bread_manager_buffer = sim.add_memory_component(FIFOData::new(100)); // Large capacity for aggregated bread
+    let meat_manager_buffer = sim.add_memory_component(FIFOData::new(100)); // Large capacity for aggregated meat
+    
     let assembler_manager = sim.add_component(AssemblerManager::new());
     
     // =========================
@@ -117,9 +122,13 @@ fn main() -> Result<(), String> {
         sim.connect_memory(meat_manager.memory_port(&format!("meat_buffer_{}", i + 1)), meat_buffers[i].clone())?;
     }
     
-    // Connect Managers to Assembler Manager
-    sim.connect_memory(assembler_manager.memory_port("bread_manager"), bread_manager.clone())?;
-    sim.connect_memory(assembler_manager.memory_port("meat_manager"), meat_manager.clone())?;
+    // Connect Managers to their coordination buffers
+    sim.connect_memory(bread_manager.memory_port("assembler_manager"), bread_manager_buffer.clone())?;
+    sim.connect_memory(meat_manager.memory_port("assembler_manager"), meat_manager_buffer.clone())?;
+    
+    // Connect Assembler Manager to the coordination buffers  
+    sim.connect_memory(assembler_manager.memory_port("bread_manager"), bread_manager_buffer.clone())?;
+    sim.connect_memory(assembler_manager.memory_port("meat_manager"), meat_manager_buffer.clone())?;
     
     // Connect Assembler Manager to Assembler Buffers (1:10)
     for i in 0..10 {

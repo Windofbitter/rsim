@@ -94,6 +94,9 @@ impl CycleEngine {
     pub fn cycle(&mut self) -> Result<(), String> {
         self.current_cycle += 1;
 
+        // Clear output buffer from previous cycle to prevent unbounded growth
+        self.output_buffer.clear();
+
         // Collect all component IDs and their types first to avoid borrowing conflicts
         let memory_components: Vec<ComponentId> = self.components
             .iter()

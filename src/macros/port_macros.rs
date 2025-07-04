@@ -19,7 +19,7 @@ macro_rules! input_ports {
     ($($port:ident),* $(,)?) => {
         vec![
             $(
-                rsim::core::components::module::PortSpec::input(stringify!($port))
+                $crate::core::components::module::PortSpec::input(stringify!($port))
             ),*
         ]
     };
@@ -36,7 +36,7 @@ macro_rules! output_ports {
     ($($port:ident),* $(,)?) => {
         vec![
             $(
-                rsim::core::components::module::PortSpec::output(stringify!($port))
+                $crate::core::components::module::PortSpec::output(stringify!($port))
             ),*
         ]
     };
@@ -53,7 +53,7 @@ macro_rules! memory_ports {
     ($($port:ident),* $(,)?) => {
         vec![
             $(
-                rsim::core::components::module::PortSpec::memory(stringify!($port))
+                $crate::core::components::module::PortSpec::memory(stringify!($port))
             ),*
         ]
     };
@@ -82,17 +82,17 @@ macro_rules! port_definitions {
             let mut ports = Vec::new();
             $(
                 $(
-                    ports.push((stringify!($input).to_string(), rsim::core::components::types::PortType::Input));
+                    ports.push((stringify!($input).to_string(), $crate::core::components::types::PortType::Input));
                 )*
             )?
             $(
                 $(
-                    ports.push((stringify!($output).to_string(), rsim::core::components::types::PortType::Output));
+                    ports.push((stringify!($output).to_string(), $crate::core::components::types::PortType::Output));
                 )*
             )?
             $(
                 $(
-                    ports.push((stringify!($memory).to_string(), rsim::core::components::types::PortType::Memory));
+                    ports.push((stringify!($memory).to_string(), $crate::core::components::types::PortType::Memory));
                 )*
             )?
             ports
