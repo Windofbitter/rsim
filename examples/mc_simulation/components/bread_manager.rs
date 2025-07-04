@@ -36,6 +36,7 @@ impl_component!(BreadManager, "BreadManager", {
     react: |ctx, _outputs| {
         use crate::components::fifo_memory::FIFOMemory;
         
+        
         // Find all buffers with available bread
         let mut available_buffers = Vec::new();
         for i in 1..=10 {
@@ -55,6 +56,7 @@ impl_component!(BreadManager, "BreadManager", {
         };
         
         // Transfer bread from available input buffers to inventory
+        let mut transferred = 0;
         for buffer_idx in available_buffers {
             let input_buffer_name = format!("bread_buffer_{}", buffer_idx);
             
@@ -64,12 +66,17 @@ impl_component!(BreadManager, "BreadManager", {
                     // Transfer one bread from input to inventory
                     input_buffer.to_subtract += 1;
                     inventory_buffer.to_add += 1;
+                    transferred += 1;
                     
                     // Write updated input buffer back
                     memory_write!(ctx, &input_buffer_name, "buffer", input_buffer);
                 }
             }
         }
+        // Debug: uncomment to see bread collection
+        // if transferred > 0 {
+        //     println!("[BreadManager] Collected {} bread", transferred);
+        // }
         
         // Write updated inventory buffer back
         memory_write!(ctx, "bread_inventory_out", "buffer", inventory_buffer);

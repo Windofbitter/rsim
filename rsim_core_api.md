@@ -11,6 +11,55 @@ RSim is a type-safe, deterministic simulation engine for component-based systems
 ### Memory Architecture
 Memory components store **structured objects of their own type**, not individual fields. This ensures type safety and proper data encapsulation.
 
+## API Reference
+
+### Macros
+
+#### `impl_component!(Type, "Name", { fields })`
+Implements the `Component` trait for processing components.
+- **inputs**: Array of input port names
+- **outputs**: Array of output port names  
+- **memory**: Array of memory port names
+- **react**: Function `|ctx, outputs| -> Result<(), String>` that executes each cycle
+
+#### `impl_memory_component!(Type, { fields })`
+Implements the `MemoryComponent` trait for memory components.
+- **input**: Name of the single input port
+- **output**: Name of the single output port
+
+#### `memory_write!(ctx, "port", "key", value)`
+Writes a complete object to memory. Returns `Result<(), String>`.
+
+#### `memory_read!(ctx, "port", "key", var: Type = default)`
+Reads from memory with a default value if not found.
+
+### Core Traits
+
+#### `Component`
+```rust
+pub trait Component {
+    fn into_module() -> ProcessorModule;
+}
+```
+
+#### `MemoryComponent`
+```rust
+pub trait MemoryComponent {
+    fn into_memory_module() -> impl MemoryModuleTrait;
+}
+```
+
+#### `Cycle`
+```rust
+pub trait Cycle {
+    type Output;
+    fn cycle(&mut self) -> Option<Self::Output>;
+}
+```
+
+#### `MemoryData`
+Marker trait for types that can be stored in memory components.
+
 ## Quick Start
 
 ### Basic Processing Component
@@ -164,37 +213,39 @@ impl_memory_component!(FIFOMemory, {
 
 ## Simulation Setup
 
+### Building and Running
+
 ```rust
 use rsim::core::builder::simulation_builder::Simulation;
 
-fn main() -> Result<(), String> {
-    let mut sim = Simulation::new();
-    
-    // Add processing components
-    let baker = sim.add_component(Baker::new(2, 5, 1000));
-    
-    // Add memory components
-    let bread_buffer = sim.add_memory_component(FIFOMemory::new(10));
-    let baker_state = sim.add_memory_component(BakerState::new());
-    
-    // Connect memory ports
-    sim.connect_memory_port(baker.memory_port("bread_buffer"), bread_buffer)?;
-    sim.connect_memory_port(baker.memory_port("baker_state"), baker_state)?;
-    
-    // Build and run
-    let mut engine = sim.build()?;
-    engine.build_execution_order()?;
-    
-    for cycle in 1..=100 {
-        engine.cycle()?;
-        if cycle % 20 == 0 {
-            println!("Cycle {}: Running...", cycle);
-        }
-    }
-    
-    println!("Completed {} cycles", engine.current_cycle());
-    Ok(())
+let mut sim = Simulation::new();
+
+// Add components
+let baker = sim.add_component(Baker::new(2, 5, 1000));
+let bread_buffer = sim.add_memory_component(FIFOMemory::new(10));
+let baker_state = sim.add_memory_component(BakerState::new());
+
+// Connect memory ports
+sim.connect_memory_port(baker.memory_port("bread_buffer"), bread_buffer)?;
+sim.connect_memory_port(baker.memory_port("baker_state"), baker_state)?;
+
+// Build and run manually
+let mut engine = sim.build()?;
+engine.build_execution_order()?;
+
+for cycle in 1..=100 {
+    engine.cycle()?;
 }
+```
+
+### Alternative: Using SimulationEngine
+
+```rust
+use rsim::core::execution::simulation_engine::SimulationEngine;
+
+let cycle_engine = sim.build()?;
+let mut sim_engine = SimulationEngine::new(cycle_engine, Some(100))?;
+sim_engine.run()?;  // Runs up to 100 cycles automatically
 ```
 
 ## Memory Access Patterns
@@ -223,32 +274,22 @@ let cycles = ctx.memory.read::<i64>("baker_state", "remaining_cycles")?;
 ctx.memory.write("baker_state", "remaining_cycles", cycles - 1)?;
 ```
 
-## Available Macros
 
-### Component Definition
-- **`impl_component!(Type, "Name", { ... })`** - Implement Component trait
-- **`impl_memory_component!(Type, { ... })`** - Implement MemoryComponent trait
-
-### Memory Operations
-- **`memory_write!(ctx, "port", "key", value)`** - Write to memory
-- **`memory_read!(ctx, "port", "key", var: Type = default)`** - Read with default
-
-## Connection API
+## Connection Methods
 
 ```rust
-// Processing component to processing component
+// Component to component
 sim.connect_component(comp1.output("out"), comp2.input("in"))?;
 
-// Processing component to memory component
+// Component to memory
 sim.connect_memory_port(comp.memory_port("mem"), memory_comp)?;
 ```
 
-## Validation Rules
+## Key Rules
 
-1. **1-to-1 Connections**: Each port connects to exactly one other port
-2. **Type Safety**: Memory components enforce strict type matching
-3. **Port Validation**: Connections validated at creation time
-4. **Memory Constraints**: Memory components have exactly one input and one output
+- **1-to-1 Connections**: Each port connects to exactly one other port
+- **Type Safety**: Memory components enforce strict type matching
+- **Memory Access**: Always read/write complete objects, not individual fields
 
 ## Complete Example
 
@@ -259,10 +300,9 @@ See `examples/mc_simulation/` for a comprehensive production line simulation dem
 - FIFO buffer operations
 - Complex component interconnection patterns
 
-## Architecture Principles
+## Architecture
 
-- **Deterministic Execution**: Topological ordering ensures reproducible results
-- **Type Safety**: Compile-time and runtime type validation
-- **Memory Isolation**: Double-buffered memory prevents race conditions
-- **Structured Data**: Memory components store cohesive objects, not key-value pairs
-- **Connection Constraints**: Enforced 1-to-1 port relationships prevent complex debugging issues
+- **Deterministic**: Topological ordering ensures reproducible results
+- **Type-Safe**: Compile-time and runtime validation
+- **Memory-Isolated**: Double-buffering prevents race conditions
+- **Object-Oriented**: Memory stores complete objects, not key-value pairs

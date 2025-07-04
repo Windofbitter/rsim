@@ -82,11 +82,12 @@ impl_component!(Assembler, "Assembler", {
             burger_buffer.to_add += 1;
             
             state.total_assembled += 1;
-            
             // Start new assembly cycle with random delay
             let mut rng = StdRng::seed_from_u64(state.rng_state as u64);
             state.remaining_cycles = rng.gen_range(min_delay..=max_delay);
             state.rng_state = rng.next_u64() as i64; // Update RNG state
+        } else {
+            // Waiting for ingredients or burger buffer space
         }
         
         // Write updated buffer states back

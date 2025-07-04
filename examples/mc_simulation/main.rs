@@ -2,6 +2,8 @@ use rsim::core::builder::simulation_builder::Simulation;
 
 mod components;
 use components::*;
+use components::component_states::*;
+use components::fifo_memory::FIFOMemory;
 
 fn main() -> Result<(), String> {
     println!("🍔 Starting McDonald's Complete Simulation 🍔");
@@ -206,18 +208,101 @@ fn main() -> Result<(), String> {
     
     println!("🚀 Running McDonald's simulation for 100 cycles...\n");
     
-    // Run simulation and print periodic status
+    // Run simulation
     for cycle in 1..=100 {
         engine.cycle()?;
         
         if cycle % 20 == 0 {
-            println!("📊 Cycle {}: Simulation running...", cycle);
+            println!("📊 Cycle {}: Running...", cycle);
         }
     }
     
     println!("\n✅ McDonald's simulation completed successfully!");
     println!("🎯 Executed {} cycles", engine.current_cycle());
     println!("🏭 All components connected and functioning properly");
+    
+    // =========================
+    // 8. QUERY SIMULATION RESULTS  
+    // =========================
+    
+    println!("\n📊 SIMULATION RESULTS:");
+    println!("======================");
+    
+    // Query baker production
+    let mut total_bread_produced = 0;
+    for i in 0..10 {
+        if let Ok(Some(state)) = engine.query_memory_component_state::<BakerState>(&baker_states[i]) {
+            total_bread_produced += state.total_produced;
+            println!("Baker {}: {} bread produced", i, state.total_produced);
+        }
+    }
+    println!("📊 Total bread produced: {}", total_bread_produced);
+    
+    // Query fryer production  
+    let mut total_meat_produced = 0;
+    for i in 0..10 {
+        if let Ok(Some(state)) = engine.query_memory_component_state::<FryerState>(&fryer_states[i]) {
+            total_meat_produced += state.total_produced;
+            println!("Fryer {}: {} meat produced", i, state.total_produced);
+        }
+    }
+    println!("🥩 Total meat produced: {}", total_meat_produced);
+    
+    // Query assembler production
+    let mut total_burgers_assembled = 0;
+    for i in 0..10 {
+        if let Ok(Some(state)) = engine.query_memory_component_state::<AssemblerState>(&assembler_states[i]) {
+            total_burgers_assembled += state.total_assembled;
+            println!("Assembler {}: {} burgers assembled", i, state.total_assembled);
+        }
+    }
+    println!("🍔 Total burgers assembled: {}", total_burgers_assembled);
+    
+    // Query customer consumption
+    let mut total_burgers_consumed = 0;
+    for i in 0..10 {
+        if let Ok(Some(state)) = engine.query_memory_component_state::<CustomerState>(&consumer_states[i]) {
+            total_burgers_consumed += state.total_consumed;
+            println!("Customer {}: {} burgers consumed", i, state.total_consumed);
+        }
+    }
+    println!("😋 Total burgers consumed: {}", total_burgers_consumed);
+    
+    // Query buffer states - check all bread and meat buffers
+    println!("\n📦 INDIVIDUAL BUFFER STATUS:");
+    for i in 0..3 {  // Check first 3 of each
+        if let Ok(Some(bread_buffer_state)) = engine.query_memory_component_data::<FIFOMemory>(&bread_buffers[i], "buffer") {
+            println!("🍞 Bread buffer {}: {}/{} bread", i, bread_buffer_state.data_count, bread_buffer_state.capacity);
+        }
+        if let Ok(Some(meat_buffer_state)) = engine.query_memory_component_data::<FIFOMemory>(&meat_buffers[i], "buffer") {
+            println!("🥩 Meat buffer {}: {}/{} meat", i, meat_buffer_state.data_count, meat_buffer_state.capacity);
+        }
+    }
+    
+    // Check inventory buffers
+    println!("\n📦 INVENTORY BUFFERS:");
+    if let Ok(Some(bread_inventory_state)) = engine.query_memory_component_data::<FIFOMemory>(&bread_inventory_buffer, "buffer") {
+        println!("🍞 Bread inventory: {}/{} bread", bread_inventory_state.data_count, bread_inventory_state.capacity);
+    }
+    if let Ok(Some(meat_inventory_state)) = engine.query_memory_component_data::<FIFOMemory>(&meat_inventory_buffer, "buffer") {
+        println!("🥩 Meat inventory: {}/{} meat", meat_inventory_state.data_count, meat_inventory_state.capacity);
+    }
+    
+    // Check assembler buffers
+    println!("\n📦 ASSEMBLER BUFFERS:");
+    for i in 0..3 {  // Check first 3
+        if let Ok(Some(assembler_buffer_state)) = engine.query_memory_component_data::<FIFOMemory>(&assembler_buffers[i], "buffer") {
+            println!("🔧 Assembler buffer {}: {}/{} ingredients", i, assembler_buffer_state.data_count, assembler_buffer_state.capacity);
+        }
+    }
+    
+    // Check final burger buffer
+    println!("\n📦 FINAL BUFFER:");
+    if let Ok(Some(burger_buffer_state)) = engine.query_memory_component_data::<FIFOMemory>(&burger_buffer, "buffer") {
+        println!("🍔 Burger buffer: {}/{} burgers", burger_buffer_state.data_count, burger_buffer_state.capacity);
+    }
+    
+    println!("\n🎉 Query functionality test completed successfully!");
     
     Ok(())
 }

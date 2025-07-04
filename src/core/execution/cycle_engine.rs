@@ -187,6 +187,9 @@ impl CycleEngine {
         let memory_module = self.memory_components.get_mut(component_id)
             .ok_or_else(|| format!("Memory component '{}' not found", component_id))?;
         
+        // Call cycle() on stored data objects to process pending operations
+        memory_module.cycle()?;
+        
         // Update memory state: current → snapshot for next cycle
         memory_module.create_snapshot();
         
@@ -245,6 +248,31 @@ impl CycleEngine {
     /// Run a single simulation cycle (alias for cycle method)
     pub fn run_cycle(&mut self) -> Result<(), String> {
         self.cycle()
+    }
+    
+    /// Query the current state of a memory component
+    /// Returns the data stored at the "state" address in the memory component
+    pub fn query_memory_component_state<T: crate::core::components::state::MemoryData>(&self, memory_component_id: &ComponentId) -> Result<Option<T>, String> {
+        self.query_memory_component_data::<T>(memory_component_id, "state")
+    }
+    
+    /// Query data from a memory component at a specific address
+    pub fn query_memory_component_data<T: crate::core::components::state::MemoryData>(&self, memory_component_id: &ComponentId, address: &str) -> Result<Option<T>, String> {
+        // Get the memory component
+        let memory_component = self.memory_components.get(memory_component_id)
+            .ok_or_else(|| format!("Memory component '{}' not found", memory_component_id))?;
+        
+        // Use read_any and downcast to the requested type
+        if let Some(any_data) = memory_component.read_any(address) {
+            if let Ok(typed_data) = any_data.downcast::<T>() {
+                Ok(Some(*typed_data))
+            } else {
+                Err(format!("Type mismatch: expected {}, found different type at address '{}' in memory component '{}'", 
+                           std::any::type_name::<T>(), address, memory_component_id))
+            }
+        } else {
+            Ok(None)
+        }
     }
     
     /// Collect inputs for a component from connected outputs (optimized for hot path)

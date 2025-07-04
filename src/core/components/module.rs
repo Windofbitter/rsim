@@ -212,6 +212,9 @@ pub trait MemoryModuleTrait: Send {
     /// Create a snapshot for next cycle
     fn create_snapshot(&mut self);
     
+    /// Execute cycle method on stored data objects that implement Cycle
+    fn cycle(&mut self) -> Result<(), String>;
+    
     /// Get a clone of this memory module
     fn clone_module(&self) -> Box<dyn MemoryModuleTrait>;
 }
@@ -260,7 +263,7 @@ impl<T: MemoryData> MemoryModule<T> {
     }
 }
 
-impl<T: MemoryData> MemoryModuleTrait for MemoryModule<T> {
+impl<T: MemoryData + crate::core::components::traits::Cycle> MemoryModuleTrait for MemoryModule<T> {
     fn memory_id(&self) -> &str {
         &self.memory_id
     }
@@ -286,6 +289,14 @@ impl<T: MemoryData> MemoryModuleTrait for MemoryModule<T> {
 
     fn create_snapshot(&mut self) {
         self.snapshot = self.current_state.clone();
+    }
+    
+    fn cycle(&mut self) -> Result<(), String> {
+        // Call cycle() on all stored data objects
+        for (_address, data) in &mut self.current_state {
+            data.cycle();
+        }
+        Ok(())
     }
 
     fn clone_module(&self) -> Box<dyn MemoryModuleTrait> {

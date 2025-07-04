@@ -51,6 +51,7 @@ impl_component!(AssemblerManager, "AssemblerManager", {
             FIFOMemory::new(100)
         };
         
+        
         // Only proceed if both bread and meat are available
         if bread_inventory.data_count > 0 && meat_inventory.data_count > 0 {
             // Find all assembler buffers with available space for ingredient pairs
@@ -77,7 +78,9 @@ impl_component!(AssemblerManager, "AssemblerManager", {
             
             // Only proceed if we can actually create at least one pair
             if max_pairs > 0 {
+                         
                 // Distribute ingredient pairs to available assembler buffers
+                let mut distributed = 0;
                 for pair_idx in 0..(max_pairs as usize) {
                     let assembler_buffer_id = available_assembler_buffers[pair_idx];
                     let buffer_name = format!("assembler_buffer_{}", assembler_buffer_id);
@@ -91,12 +94,18 @@ impl_component!(AssemblerManager, "AssemblerManager", {
                             
                             // Add ingredient pair to assembler buffer
                             assembler_buffer.to_add += 1;
+                            distributed += 1;
                             
                             // Write updated assembler buffer back
                             memory_write!(ctx, &buffer_name, "buffer", assembler_buffer);
                         }
                     }
                 }
+                
+                // Debug: uncomment to see distribution
+                // if distributed > 0 {
+                //     println!("[AssemblerManager] Distributed {} pairs", distributed);
+                // }
             }
         }
         

@@ -66,11 +66,12 @@ impl_component!(Baker, "Baker", {
             // Timer expired and buffer not full, request to produce bread
             buffer_state.to_add += 1;
             state.total_produced += 1;
-            
             // Start new production cycle with random delay
             let mut rng = StdRng::seed_from_u64(state.rng_state as u64);
             state.remaining_cycles = rng.gen_range(min_delay..=max_delay);
             state.rng_state = rng.next_u64() as i64; // Update RNG state
+        } else {
+            // Buffer is full, wait
         }
         // If buffer is full, wait (don't start new timer)
         

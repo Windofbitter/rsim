@@ -35,6 +35,7 @@ impl_component!(Customer, "Customer", {
     memory: [burger_buffer, customer_state],
     react: |ctx, _outputs| {
         use crate::components::component_states::CustomerState;
+        use crate::components::fifo_memory::FIFOMemory;
         
         // Read current state from memory (previous cycle)
         let mut state = if let Ok(Some(current_state)) = ctx.memory.read::<CustomerState>("customer_state", "state") {
@@ -49,27 +50,31 @@ impl_component!(Customer, "Customer", {
         let max_delay = 5i64;
         
         // Read burger buffer status
-        let burger_available = if let Ok(Some(count)) = ctx.memory.read::<i64>("burger_buffer", "data_count") {
-            count > 0
+        let mut burger_buffer = if let Ok(Some(buffer)) = ctx.memory.read::<FIFOMemory>("burger_buffer", "buffer") {
+            buffer
         } else {
-            false
+            FIFOMemory::new(50) // Default capacity
         };
         
         // Process timer logic
         if state.remaining_cycles > 0 {
             // Still consuming, decrement timer
             state.remaining_cycles -= 1;
-        } else if burger_available {
+        } else if burger_buffer.data_count > 0 {
             // Timer expired and burger available, consume burger and start new timer
-            memory_write!(ctx, "burger_buffer", "to_subtract", 1i64);
+            burger_buffer.to_subtract += 1;
             state.total_consumed += 1;
-            
             // Start new consumption cycle with random delay
             let mut rng = StdRng::seed_from_u64(state.rng_state as u64);
             state.remaining_cycles = rng.gen_range(min_delay..=max_delay);
             state.rng_state = rng.next_u64() as i64; // Update RNG state
+        } else {
+            // Waiting for burger
         }
         // If no burger available, just wait
+        
+        // Write updated burger buffer back
+        memory_write!(ctx, "burger_buffer", "buffer", burger_buffer);
         
         // Write updated state back to memory
         memory_write!(ctx, "customer_state", "state", state);
