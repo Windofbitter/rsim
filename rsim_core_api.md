@@ -2,395 +2,267 @@
 
 RSim is a type-safe, deterministic simulation engine for component-based systems.
 
-## Core API for Developers
+## Core Concepts
 
-### Component Creation
+### Component Types
+- **Processing Components**: Stateless logic with input/output/memory ports
+- **Memory Components**: Stateful storage with exactly one input and one output port
 
-#### Processing Components (Stateless)
+### Memory Architecture
+Memory components store **structured objects of their own type**, not individual fields. This ensures type safety and proper data encapsulation.
+
+## Quick Start
+
+### Basic Processing Component
 ```rust
-use rsim::core::{
-    components::{Component, React, PortType},
-    components::module::{ProcessorModule, PortSpec},
-};
+use rsim::*;
 
-struct Adder {
-    a: i32,
-    b: i32,
+#[derive(Debug)]
+struct Baker {
+    min_delay: u32,
+    max_delay: u32,
+    seed: u64,
 }
 
-impl React for Adder {
-    type Output = i32;
-    
-    fn react(&mut self) -> Option<Self::Output> {
-        Some(self.a + self.b)
+impl Baker {
+    pub fn new(min_delay: u32, max_delay: u32, seed: u64) -> Self {
+        Self { min_delay, max_delay, seed }
     }
 }
 
-impl Component for Adder {
-    fn define_ports() -> Vec<(String, PortType)> {
-        vec![
-            ("a".to_string(), PortType::Input),
-            ("b".to_string(), PortType::Input),
-            ("sum".to_string(), PortType::Output),
-        ]
-    }
-    
-    fn into_module() -> ProcessorModule {
-        let ports = Self::define_ports();
-        let input_ports = ports.iter().filter(|(_, t)| *t == PortType::Input)
-            .map(|(name, t)| PortSpec::input(name)).collect();
-        let output_ports = ports.iter().filter(|(_, t)| *t == PortType::Output)
-            .map(|(name, t)| PortSpec::output(name)).collect();
+impl_component!(Baker, "Baker", {
+    inputs: [],
+    outputs: [],
+    memory: [bread_buffer, baker_state],
+    react: |ctx, _outputs| {
+        use rand::{Rng, SeedableRng};
+        use rand::rngs::StdRng;
         
-        ProcessorModule::new(
-            "Adder", 
-            input_ports, 
-            output_ports, 
-            vec![], // no memory ports
-            |ctx, outputs| {
-                let a: i32 = ctx.inputs.get("a")?;
-                let b: i32 = ctx.inputs.get("b")?;
-                outputs.set("sum", a + b)?;
-                Ok(())
-            }
-        )
+        // Read complete state object from memory
+        let mut state = if let Ok(Some(current_state)) = ctx.memory.read::<BakerState>("baker_state", "state") {
+            current_state
+        } else {
+            BakerState::new()
+        };
+        
+        // Read complete buffer object from memory
+        let mut buffer = if let Ok(Some(current_buffer)) = ctx.memory.read::<FIFOMemory>("bread_buffer", "buffer") {
+            current_buffer
+        } else {
+            FIFOMemory::new(10)
+        };
+        
+        // Process logic
+        if state.remaining_cycles > 0 {
+            state.remaining_cycles -= 1;
+        } else if !buffer.is_full() {
+            buffer.to_add += 1;
+            state.total_produced += 1;
+            
+            let mut rng = StdRng::seed_from_u64(state.rng_state as u64);
+            state.remaining_cycles = rng.gen_range(2..=5);
+            state.rng_state = rng.next_u64() as i64;
+        }
+        
+        // Write complete objects back to memory
+        memory_write!(ctx, "bread_buffer", "buffer", buffer);
+        memory_write!(ctx, "baker_state", "state", state);
+        
+        Ok(())
     }
-}
+});
 ```
 
-#### Processing Components with Memory Access
+### Structured State Components
 ```rust
-struct MemoryProcessor;
-
-impl Component for MemoryProcessor {
-    fn define_ports() -> Vec<(String, PortType)> {
-        vec![
-            ("input".to_string(), PortType::Input),
-            ("output".to_string(), PortType::Output),
-            ("memory".to_string(), PortType::Memory),  // Memory port
-        ]
-    }
-    
-    fn into_module() -> ProcessorModule {
-        let ports = Self::define_ports();
-        let input_ports = ports.iter().filter(|(_, t)| *t == PortType::Input)
-            .map(|(name, t)| PortSpec::input(name)).collect();
-        let output_ports = ports.iter().filter(|(_, t)| *t == PortType::Output)
-            .map(|(name, t)| PortSpec::output(name)).collect();
-        let memory_ports = ports.iter().filter(|(_, t)| *t == PortType::Memory)
-            .map(|(name, t)| PortSpec::memory(name)).collect();
-        
-        ProcessorModule::new(
-            "MemoryProcessor", 
-            input_ports, 
-            output_ports, 
-            memory_ports,
-            |ctx, outputs| {
-                // Read from memory (previous cycle data)
-                if let Ok(Some(stored_value)) = ctx.memory.read::<i32>("memory", "addr1") {
-                    outputs.set("output", stored_value)?;
-                }
-                
-                // Write to memory (affects next cycle)
-                if let Ok(input_value) = ctx.inputs.get::<i32>("input") {
-                    ctx.memory.write("memory", "addr1", input_value)?;
-                }
-                
-                Ok(())
-            }
-        )
-    }
-}
-```
-
-#### Memory Components (Stateful)
-```rust
-use rsim::core::{
-    components::{MemoryComponent, Cycle, PortType},
-    components::state::MemoryData,
-    components::module::MemoryModule,
-};
-
-#[derive(Clone)]
-struct Buffer {
-    data: i32,
+#[derive(Clone, Debug)]
+pub struct BakerState {
+    pub remaining_cycles: i64,
+    pub total_produced: i64,
+    pub rng_state: i64,
 }
 
-impl MemoryData for Buffer {}
+impl BakerState {
+    pub fn new() -> Self {
+        Self {
+            remaining_cycles: 0,
+            total_produced: 0,
+            rng_state: 42,
+        }
+    }
+}
 
-impl Cycle for Buffer {
-    type Output = i32;
+impl rsim::core::components::state::MemoryData for BakerState {}
+
+impl Cycle for BakerState {
+    type Output = i64;
     
     fn cycle(&mut self) -> Option<Self::Output> {
-        Some(self.data)
+        Some(self.total_produced)
     }
 }
 
-impl MemoryComponent for Buffer {
-    fn define_ports() -> Vec<(String, PortType)> {
-        vec![
-            ("input".to_string(), PortType::Input),
-            ("output".to_string(), PortType::Output),
-        ]
-    }
-    
-    // Note: into_memory_module() is auto-implemented with validation
-}
+impl_memory_component!(BakerState, {
+    input: input,
+    output: output
+});
 ```
 
-### Simulation Setup
+### FIFO Memory Component
+```rust
+#[derive(Clone, Debug)]
+pub struct FIFOMemory {
+    pub data_count: i64,
+    pub to_add: i64,
+    pub to_subtract: i64,
+    pub capacity: i64,
+}
+
+impl FIFOMemory {
+    pub fn new(capacity: i64) -> Self {
+        Self {
+            data_count: 0,
+            to_add: 0,
+            to_subtract: 0,
+            capacity,
+        }
+    }
+
+    pub fn is_full(&self) -> bool {
+        self.data_count >= self.capacity
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.data_count == 0
+    }
+
+    pub fn update(&mut self) {
+        self.data_count = self.data_count.saturating_sub(self.to_subtract);
+        let can_add = std::cmp::min(self.to_add, self.capacity - self.data_count);
+        self.data_count += can_add;
+        self.to_add = 0;
+        self.to_subtract = 0;
+    }
+}
+
+impl rsim::core::components::state::MemoryData for FIFOMemory {}
+
+impl Cycle for FIFOMemory {
+    type Output = i64;
+    
+    fn cycle(&mut self) -> Option<Self::Output> {
+        self.update();
+        Some(self.data_count)
+    }
+}
+
+impl_memory_component!(FIFOMemory, {
+    input: input,
+    output: output
+});
+```
+
+## Simulation Setup
 
 ```rust
 use rsim::core::builder::simulation_builder::Simulation;
 
-// Create simulation
-let mut sim = Simulation::new();
-
-// Add components (auto-generates IDs)
-let adder1 = sim.add_component(Adder { a: 0, b: 0 });
-let adder2 = sim.add_component(Adder { a: 0, b: 0 });
-let memory_proc = sim.add_component(MemoryProcessor);
-let buffer = sim.add_memory_component(Buffer { data: 0 });
-
-// Connect processor-to-processor (1-to-1 port connections)
-sim.connect_component(adder1.output("sum"), adder2.input("a"))?;
-
-// Connect processor to memory (processor memory port -> memory component)
-sim.connect_memory(memory_proc.output("memory"), buffer)?;
-
-// Build cycle engine
-let cycle_engine = sim.build()?;
-```
-
-### Connection Validation
-
-All connections are validated at connection-time with detailed error messages:
-
-```rust
-// ✅ Valid connections
-sim.connect_component(adder1.output("sum"), adder2.input("a"))?;
-sim.connect_memory(memory_proc.output("memory"), buffer)?;
-
-// ❌ These will return validation errors:
-sim.connect_component(adder1.output("sum"), adder2.input("a"))?;  // First connection ✓
-sim.connect_component(adder1.output("sum"), adder3.input("b"))?;  // ❌ Output already connected
-
-sim.connect_component(adder1.output("result"), adder2.input("x"))?; // First connection ✓
-sim.connect_component(adder3.output("value"), adder2.input("x"))?;  // ❌ Input already connected
-
-sim.connect_component(adder1.output("nonexistent"), adder2.input("a"))?; // ❌ Port doesn't exist
-```
-
-### Execution
-
-```rust
-use rsim::core::execution::cycle_engine::CycleEngine;
-
-let mut engine = cycle_engine;
-
-// Build execution order (topological sort)
-engine.build_execution_order()?;
-
-// Run simulation cycles
-for _ in 0..10 {
-    engine.cycle()?;
-}
-```
-
-## Core Types
-
-### Events
-All component outputs are wrapped in events with timestamps:
-```rust
-pub struct Event {
-    pub timestamp: u64,
-    pub event_id: u64,
-    pub payload: TypedValue,
-}
-```
-
-### Component Traits
-- **`React`**: Stateless processing logic
-- **`Cycle`**: Stateful memory updates  
-- **`Component`**: Processing component definition
-- **`MemoryComponent`**: Memory component definition (enforces single I/O ports, no memory ports)
-
-### Port Types
-```rust
-pub enum PortType {
-    Input,   // Receives data
-    Output,  // Sends data
-    Memory,  // Memory access
-}
-```
-
-## RSim Macros: Reducing Boilerplate
-
-RSim provides powerful macros to dramatically reduce component definition boilerplate:
-
-### Before: Manual Implementation (50+ lines)
-```rust
-struct Adder;
-
-impl Component for Adder {
-    fn define_ports() -> Vec<(String, PortType)> {
-        vec![
-            ("a".to_string(), PortType::Input),
-            ("b".to_string(), PortType::Input),
-            ("sum".to_string(), PortType::Output),
-        ]
-    }
-    
-    fn into_module() -> ProcessorModule {
-        let ports = Self::define_ports();
-        let input_ports = ports.iter().filter(|(_, t)| *t == PortType::Input)
-            .map(|(name, _)| PortSpec::input(name)).collect();
-        let output_ports = ports.iter().filter(|(_, t)| *t == PortType::Output)
-            .map(|(name, _)| PortSpec::output(name)).collect();
-        
-        ProcessorModule::new(
-            "Adder",
-            input_ports,
-            output_ports,
-            vec![],
-            |ctx, outputs| {
-                let a: i32 = ctx.inputs.get("a").unwrap_or_default();
-                let b: i32 = ctx.inputs.get("b").unwrap_or_default();
-                outputs.set("sum", a + b)?;
-                Ok(())
-            }
-        )
-    }
-}
-```
-
-### After: Using Macros (3 lines)
-```rust
-// Option 1: impl_component! macro
-struct Adder;
-
-impl_component!(Adder, "Adder", {
-    inputs: [a, b],
-    outputs: [sum],
-    memory: [],
-    react: |ctx, outputs| {
-        let a: i32 = ctx.inputs.get("a").unwrap_or_default();
-        let b: i32 = ctx.inputs.get("b").unwrap_or_default();
-        outputs.set("sum", a + b)?;
-        Ok(())
-    }
-});
-
-// Option 2: component! macro (complete definition)
-component! {
-    name: Calculator,
-    component_name: "Calculator",
-    inputs: [x, y],
-    outputs: [result],
-    memory: [],
-    react: |ctx, outputs| {
-        let x: f64 = ctx.inputs.get("x").unwrap_or_default();
-        let y: f64 = ctx.inputs.get("y").unwrap_or_default();
-        outputs.set("result", x * y)?;
-        Ok(())
-    }
-}
-```
-
-### Memory Access Macros
-
-Simplify verbose memory operations:
-
-```rust
-// Before: Verbose memory access
-let mut remaining_cycles = ctx.memory.read::<i64>("state", "remaining_cycles")
-    .unwrap_or(Some(0)).unwrap_or(0);
-let mut total_produced = ctx.memory.read::<i64>("state", "total_produced")
-    .unwrap_or(Some(0)).unwrap_or(0);
-
-// Process logic...
-
-ctx.memory.write("state", "remaining_cycles", remaining_cycles)?;
-ctx.memory.write("state", "total_produced", total_produced)?;
-
-// After: Using memory macros
-memory_state!(ctx, "state", {
-    remaining_cycles: i64 = 0,
-    total_produced: i64 = 0,
-});
-
-// Process logic...
-
-memory_state_write!(ctx, "state", remaining_cycles, total_produced);
-```
-
-### Available Macros
-
-- **`impl_component!`** - Generate Component trait implementation
-- **`component!`** - Create complete component with struct + implementation
-- **`impl_memory_component!`** - Generate MemoryComponent trait implementation
-- **`memory_read!`** - Simplified memory read with default
-- **`memory_write!`** - Simplified memory write
-- **`memory_state!`** - Read multiple fields from same memory port
-- **`memory_state_write!`** - Write multiple fields to same memory port
-- **`input_ports!`**, **`output_ports!`**, **`memory_ports!`** - Port specification helpers
-- **`port_definitions!`** - Generate port definitions for define_ports()
-
-## Example: Simple Calculator
-
-```rust
-use rsim::*;
-
-// Using macros for clean, concise component definition
-component! {
-    name: Calculator,
-    component_name: "Calculator",
-    inputs: [input],
-    outputs: [result],
-    memory: [],
-    react: |ctx, outputs| {
-        let input: f64 = ctx.inputs.get("input").unwrap_or_default();
-        outputs.set("result", input * 2.0)?;
-        Ok(())
-    }
-}
-
 fn main() -> Result<(), String> {
-    // Create simulation
     let mut sim = Simulation::new();
     
-    // Add calculator
-    let calc = sim.add_component(Calculator);
+    // Add processing components
+    let baker = sim.add_component(Baker::new(2, 5, 1000));
+    
+    // Add memory components
+    let bread_buffer = sim.add_memory_component(FIFOMemory::new(10));
+    let baker_state = sim.add_memory_component(BakerState::new());
+    
+    // Connect memory ports
+    sim.connect_memory_port(baker.memory_port("bread_buffer"), bread_buffer)?;
+    sim.connect_memory_port(baker.memory_port("baker_state"), baker_state)?;
     
     // Build and run
     let mut engine = sim.build()?;
     engine.build_execution_order()?;
     
-    // Execute 5 cycles
-    for _ in 0..5 {
+    for cycle in 1..=100 {
         engine.cycle()?;
+        if cycle % 20 == 0 {
+            println!("Cycle {}: Running...", cycle);
+        }
     }
     
-    println!("Simulation completed {} cycles", engine.current_cycle());
+    println!("Completed {} cycles", engine.current_cycle());
     Ok(())
 }
 ```
 
-## Architecture
+## Memory Access Patterns
 
-- **Processing Components**: Stateless, multiple I/O ports, single output type, 1-to-1 port connections
-- **Memory Components**: Stateful, exactly one input and one output port, no memory ports, validated at creation
-- **Connection Validation**: Real-time validation prevents invalid port connections and duplicates
-- **Execution Order**: Topological sorting ensures deterministic execution
-- **Memory Model**: Read from previous state, write to current state
-- **Type Safety**: Compile-time type checking with runtime type erasure and connection validation
+### ✅ Correct: Structured Object Access
+```rust
+// Read complete object
+let mut state = if let Ok(Some(current_state)) = ctx.memory.read::<BakerState>("baker_state", "state") {
+    current_state
+} else {
+    BakerState::new()
+};
 
-## Key Features
+// Modify object
+state.remaining_cycles -= 1;
+state.total_produced += 1;
 
-1. **Type Safety**: Automatic type checking for component connections
-2. **Connection Validation**: Real-time validation of port connections with detailed error messages
-3. **1-to-1 Port Constraints**: Each port connects to exactly one other port (no fan-out/fan-in)
-4. **Deterministic**: Topological execution order ensures reproducible results  
-5. **Event-Based**: All outputs are timestamped events
-6. **Memory Safety**: Double-buffered memory prevents race conditions
-7. **Modular**: Components are self-contained and reusable
+// Write complete object back
+memory_write!(ctx, "baker_state", "state", state);
+```
+
+### ❌ Incorrect: Individual Field Access
+```rust
+// This causes type mismatch errors
+let cycles = ctx.memory.read::<i64>("baker_state", "remaining_cycles")?;
+ctx.memory.write("baker_state", "remaining_cycles", cycles - 1)?;
+```
+
+## Available Macros
+
+### Component Definition
+- **`impl_component!(Type, "Name", { ... })`** - Implement Component trait
+- **`impl_memory_component!(Type, { ... })`** - Implement MemoryComponent trait
+
+### Memory Operations
+- **`memory_write!(ctx, "port", "key", value)`** - Write to memory
+- **`memory_read!(ctx, "port", "key", var: Type = default)`** - Read with default
+
+## Connection API
+
+```rust
+// Processing component to processing component
+sim.connect_component(comp1.output("out"), comp2.input("in"))?;
+
+// Processing component to memory component
+sim.connect_memory_port(comp.memory_port("mem"), memory_comp)?;
+```
+
+## Validation Rules
+
+1. **1-to-1 Connections**: Each port connects to exactly one other port
+2. **Type Safety**: Memory components enforce strict type matching
+3. **Port Validation**: Connections validated at creation time
+4. **Memory Constraints**: Memory components have exactly one input and one output
+
+## Complete Example
+
+See `examples/mc_simulation/` for a comprehensive production line simulation demonstrating:
+- Multiple processing components (Baker, Fryer, Assembler, Customer)
+- Manager components coordinating data flow
+- Structured state memory (BakerState, FryerState, etc.)
+- FIFO buffer operations
+- Complex component interconnection patterns
+
+## Architecture Principles
+
+- **Deterministic Execution**: Topological ordering ensures reproducible results
+- **Type Safety**: Compile-time and runtime type validation
+- **Memory Isolation**: Double-buffered memory prevents race conditions
+- **Structured Data**: Memory components store cohesive objects, not key-value pairs
+- **Connection Constraints**: Enforced 1-to-1 port relationships prevent complex debugging issues
