@@ -56,6 +56,7 @@ pub trait Cycle {
     fn cycle(&mut self) -> Option<Self::Output>;
 }
 ```
+Implemented by memory components to perform internal state updates each simulation cycle. The cycle method processes pending operations and manages data structure invariants.
 
 #### `MemoryData`
 Marker trait for types that can be stored in memory components.
@@ -147,6 +148,7 @@ impl Cycle for BakerState {
     type Output = i64;
     
     fn cycle(&mut self) -> Option<Self::Output> {
+        // Memory components use cycle() for internal state management
         Some(self.total_produced)
     }
 }
@@ -185,6 +187,7 @@ impl FIFOMemory {
         self.data_count == 0
     }
 
+    // Process pending operations during cycle() execution
     pub fn update(&mut self) {
         self.data_count = self.data_count.saturating_sub(self.to_subtract);
         let can_add = std::cmp::min(self.to_add, self.capacity - self.data_count);
@@ -200,6 +203,7 @@ impl Cycle for FIFOMemory {
     type Output = i64;
     
     fn cycle(&mut self) -> Option<Self::Output> {
+        // Process pending operations: apply buffered adds/subtracts
         self.update();
         Some(self.data_count)
     }
