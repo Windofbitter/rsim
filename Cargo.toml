@@ -19,3 +19,7 @@ path = "examples/mc_simulation/simple_test.rs"
 name = "mcdonald_complete_test"
 path = "examples/mc_simulation/complete_test.rs"
 
+[[bin]]
+name = "mcdonald_main"
+path = "examples/mc_simulation/main.rs"
+

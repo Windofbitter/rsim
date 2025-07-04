@@ -31,52 +31,48 @@ impl_component!(BreadManager, "BreadManager", {
     memory: [
         bread_buffer_1, bread_buffer_2, bread_buffer_3, bread_buffer_4, bread_buffer_5,
         bread_buffer_6, bread_buffer_7, bread_buffer_8, bread_buffer_9, bread_buffer_10,
-        assembler_manager
+        bread_inventory_out
     ],
     react: |ctx, _outputs| {
+        use crate::components::fifo_memory::FIFOMemory;
+        
         // Find all buffers with available bread
         let mut available_buffers = Vec::new();
         for i in 1..=10 {
             let buffer_name = format!("bread_buffer_{}", i);
-            if let Ok(Some(count)) = ctx.memory.read::<i64>(&buffer_name, "data_count") {
-                if count > 0 {
+            if let Ok(Some(buffer)) = ctx.memory.read::<FIFOMemory>(&buffer_name, "buffer") {
+                if buffer.data_count > 0 {
                     available_buffers.push(i);
                 }
             }
         }
         
-        // Find all assembler buffers with available space
-        let mut available_assembler_buffers = Vec::new();
-        for i in 1..=10 {
-            let buffer_name = format!("assembler_buffer_{}", i);
-            if let Ok(Some(count)) = ctx.memory.read::<i64>(&buffer_name, "bread_count") {
-                memory_read!(ctx, &buffer_name, "bread_capacity", capacity: i64 = 10);
-                if count < capacity {
-                    available_assembler_buffers.push(i);
+        // Read current inventory buffer state
+        let mut inventory_buffer = if let Ok(Some(current_buffer)) = ctx.memory.read::<FIFOMemory>("bread_inventory_out", "buffer") {
+            current_buffer
+        } else {
+            FIFOMemory::new(100) // Large capacity for aggregated bread
+        };
+        
+        // Transfer bread from available input buffers to inventory
+        for buffer_idx in available_buffers {
+            let input_buffer_name = format!("bread_buffer_{}", buffer_idx);
+            
+            // Read input buffer state
+            if let Ok(Some(mut input_buffer)) = ctx.memory.read::<FIFOMemory>(&input_buffer_name, "buffer") {
+                if input_buffer.data_count > 0 && !inventory_buffer.is_full() {
+                    // Transfer one bread from input to inventory
+                    input_buffer.to_subtract += 1;
+                    inventory_buffer.to_add += 1;
+                    
+                    // Write updated input buffer back
+                    memory_write!(ctx, &input_buffer_name, "buffer", input_buffer);
                 }
-            } else {
-                // If can't read, assume buffer has space
-                available_assembler_buffers.push(i);
             }
         }
         
-        // Distribute bread from available input buffers to available assembler buffers
-        // Each cycle, distribute one bread per available assembler buffer
-        let pairs_to_transfer = std::cmp::min(available_buffers.len(), available_assembler_buffers.len());
-        
-        for pair_idx in 0..pairs_to_transfer {
-            let input_buffer_id = available_buffers[pair_idx];
-            let output_buffer_id = available_assembler_buffers[pair_idx];
-            
-            let input_buffer_name = format!("bread_buffer_{}", input_buffer_id);
-            let output_buffer_name = format!("assembler_buffer_{}", output_buffer_id);
-            
-            // Request to consume bread from input buffer
-            memory_write!(ctx, &input_buffer_name, "to_subtract", 1i64);
-            
-            // Request to add bread to assembler buffer
-            memory_write!(ctx, &output_buffer_name, "bread_to_add", 1i64);
-        }
+        // Write updated inventory buffer back
+        memory_write!(ctx, "bread_inventory_out", "buffer", inventory_buffer);
         
         Ok(())
     }

@@ -35,46 +35,51 @@ impl_component!(Fryer, "Fryer", {
     outputs: [],
     memory: [meat_buffer, fryer_state],
     react: |ctx, _outputs| {
-        // Read internal state from memory using macros
-        memory_state!(ctx, "fryer_state", {
-            remaining_cycles: i64 = 0,
-            total_produced: i64 = 0,
-            rng_state: i64 = 12345
-        });
+        use crate::components::component_states::FryerState;
+        use crate::components::fifo_memory::FIFOMemory;
+        
+        // Read current state from memory (previous cycle)
+        let mut state = if let Ok(Some(current_state)) = ctx.memory.read::<FryerState>("fryer_state", "state") {
+            current_state
+        } else {
+            // Initialize with default state if no previous state exists
+            FryerState::new()
+        };
         
         // Configuration values - could be stored in memory or use instance values
-        let min_delay = 3i64;  // In real impl, could use self.min_delay
+        let min_delay = 3i64;
         let max_delay = 7i64;
         
-        // Read buffer status from memory (previous cycle state)
-        let buffer_full = if let Ok(Some(count)) = ctx.memory.read::<i64>("meat_buffer", "data_count") {
-            if let Ok(Some(capacity)) = ctx.memory.read::<i64>("meat_buffer", "capacity") {
-                count >= capacity
-            } else {
-                false
-            }
+        // Read current meat buffer state
+        let mut buffer_state = if let Ok(Some(current_buffer)) = ctx.memory.read::<FIFOMemory>("meat_buffer", "buffer") {
+            current_buffer
         } else {
-            false // If can't read buffer, assume not full
+            // Initialize buffer if doesn't exist
+            FIFOMemory::new(10) // Default capacity of 10
         };
         
         // Process timer logic
-        if remaining_cycles > 0 {
+        if state.remaining_cycles > 0 {
             // Still processing, decrement timer
-            remaining_cycles -= 1;
-        } else if !buffer_full {
-            // Timer expired and buffer not full, produce meat and start new timer
-            memory_write!(ctx, "meat_buffer", "to_add", 1i64);
-            total_produced += 1;
+            state.remaining_cycles -= 1;
+        } else if !buffer_state.is_full() {
+            // Timer expired and buffer not full, request to produce meat
+            buffer_state.to_add += 1;
+            state.total_produced += 1;
             
             // Start new production cycle with random delay
-            let mut rng = StdRng::seed_from_u64(rng_state as u64);
-            remaining_cycles = rng.gen_range(min_delay..=max_delay);
-            rng_state = rng.next_u64() as i64; // Update RNG state
+            let mut rng = StdRng::seed_from_u64(state.rng_state as u64);
+            state.remaining_cycles = rng.gen_range(min_delay..=max_delay);
+            state.rng_state = rng.next_u64() as i64; // Update RNG state
         }
+        // If buffer is full, wait (don't start new timer)
+        
+        // Write updated buffer state back
+        memory_write!(ctx, "meat_buffer", "buffer", buffer_state);
         // If buffer is full, just wait (don't start new timer)
         
-        // Write updated state back to memory using macro
-        memory_state_write!(ctx, "fryer_state", remaining_cycles, total_produced, rng_state);
+        // Write updated state back to memory
+        memory_write!(ctx, "fryer_state", "state", state);
         
         Ok(())
     }

@@ -35,63 +35,68 @@ impl_component!(Assembler, "Assembler", {
     outputs: [],
     memory: [bread_buffer, meat_buffer, burger_buffer, assembler_state],
     react: |ctx, _outputs| {
-        // Read internal state from memory using macros
-        memory_state!(ctx, "assembler_state", {
-            remaining_cycles: i64 = 0,
-            total_assembled: i64 = 0,
-            rng_state: i64 = 98765
-        });
+        use crate::components::component_states::AssemblerState;
+        use crate::components::fifo_memory::FIFOMemory;
+        
+        // Read current state from memory (previous cycle)
+        let mut state = if let Ok(Some(current_state)) = ctx.memory.read::<AssemblerState>("assembler_state", "state") {
+            current_state
+        } else {
+            // Initialize with default state if no previous state exists
+            AssemblerState::new()
+        };
         
         // Configuration values - could be stored in memory or use instance values
-        let min_delay = 1i64;  // In real impl, could use self.min_delay
+        let min_delay = 1i64;
         let max_delay = 3i64;
         
         // Read bread buffer status
-        let bread_available = if let Ok(Some(count)) = ctx.memory.read::<i64>("bread_buffer", "data_count") {
-            count > 0
+        let mut bread_buffer = if let Ok(Some(buffer)) = ctx.memory.read::<FIFOMemory>("bread_buffer", "buffer") {
+            buffer
         } else {
-            false
+            FIFOMemory::new(5) // Default capacity
         };
         
         // Read meat buffer status
-        let meat_available = if let Ok(Some(count)) = ctx.memory.read::<i64>("meat_buffer", "data_count") {
-            count > 0
+        let mut meat_buffer = if let Ok(Some(buffer)) = ctx.memory.read::<FIFOMemory>("meat_buffer", "buffer") {
+            buffer
         } else {
-            false
+            FIFOMemory::new(5) // Default capacity
         };
         
         // Read burger buffer status
-        let burger_buffer_full = if let Ok(Some(count)) = ctx.memory.read::<i64>("burger_buffer", "data_count") {
-            if let Ok(Some(capacity)) = ctx.memory.read::<i64>("burger_buffer", "capacity") {
-                count >= capacity
-            } else {
-                false
-            }
+        let mut burger_buffer = if let Ok(Some(buffer)) = ctx.memory.read::<FIFOMemory>("burger_buffer", "buffer") {
+            buffer
         } else {
-            false
+            FIFOMemory::new(50) // Default capacity
         };
         
         // Process timer logic
-        if remaining_cycles > 0 {
+        if state.remaining_cycles > 0 {
             // Still assembling, decrement timer
-            remaining_cycles -= 1;
-        } else if bread_available && meat_available && !burger_buffer_full {
-            // Timer expired and can assemble, consume ingredients and start new timer
-            memory_write!(ctx, "bread_buffer", "to_subtract", 1i64);
-            memory_write!(ctx, "meat_buffer", "to_subtract", 1i64);
-            memory_write!(ctx, "burger_buffer", "to_add", 1i64);
+            state.remaining_cycles -= 1;
+        } else if bread_buffer.data_count > 0 && meat_buffer.data_count > 0 && !burger_buffer.is_full() {
+            // Timer expired and can assemble, consume ingredients and produce burger
+            bread_buffer.to_subtract += 1;
+            meat_buffer.to_subtract += 1;
+            burger_buffer.to_add += 1;
             
-            total_assembled += 1;
+            state.total_assembled += 1;
             
             // Start new assembly cycle with random delay
-            let mut rng = StdRng::seed_from_u64(rng_state as u64);
-            remaining_cycles = rng.gen_range(min_delay..=max_delay);
-            rng_state = rng.next_u64() as i64; // Update RNG state
+            let mut rng = StdRng::seed_from_u64(state.rng_state as u64);
+            state.remaining_cycles = rng.gen_range(min_delay..=max_delay);
+            state.rng_state = rng.next_u64() as i64; // Update RNG state
         }
+        
+        // Write updated buffer states back
+        memory_write!(ctx, "bread_buffer", "buffer", bread_buffer);
+        memory_write!(ctx, "meat_buffer", "buffer", meat_buffer);
+        memory_write!(ctx, "burger_buffer", "buffer", burger_buffer);
         // If ingredients not available or buffer full, just wait
         
-        // Write updated state back to memory using macro
-        memory_state_write!(ctx, "assembler_state", remaining_cycles, total_assembled, rng_state);
+        // Write updated state back to memory
+        memory_write!(ctx, "assembler_state", "state", state);
         
         Ok(())
     }
