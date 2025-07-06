@@ -13,18 +13,18 @@ serde = { version = "1.0", features = ["derive"] }
 rayon = "1.7"
 
 [[bin]]
-name = "mcdonald_simple_test"
-path = "examples/mc_simulation/simple_test.rs"
-
-[[bin]]
-name = "mcdonald_complete_test"
-path = "examples/mc_simulation/complete_test.rs"
-
-[[bin]]
 name = "mcdonald_main"
 path = "examples/mc_simulation/main.rs"
 
 [[bin]]
 name = "timing_benchmark"
 path = "examples/mc_simulation/timing_benchmark.rs"
+
+[[bin]]
+name = "large_scale_benchmark"
+path = "examples/mc_simulation/large_scale_benchmark.rs"
+
+[[bin]]
+name = "massive_scale_benchmark"
+path = "examples/mc_simulation/massive_scale_benchmark.rs"
 

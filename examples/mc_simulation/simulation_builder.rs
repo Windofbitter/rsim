@@ -1,4 +1,5 @@
 use rsim::core::builder::simulation_builder::Simulation;
+use rsim::core::execution::config::SimulationConfig;
 use rsim::core::types::{ComponentId, MemoryPort};
 use crate::components::*;
 use crate::components::component_states::*;
@@ -174,6 +175,19 @@ impl McSimulationBuilder {
     /// Build the complete simulation with all components and connections
     pub fn build(self) -> Result<(Simulation, McSimulationComponents), String> {
         let mut sim = Simulation::new();
+        
+        self.build_with_simulation(sim)
+    }
+    
+    /// Build the complete simulation with a preconfigured simulation
+    pub fn build_with_config(self, config: SimulationConfig) -> Result<(Simulation, McSimulationComponents), String> {
+        let mut sim = Simulation::with_config(config);
+        
+        self.build_with_simulation(sim)
+    }
+    
+    /// Build the complete simulation with all components and connections using provided simulation
+    fn build_with_simulation(self, mut sim: Simulation) -> Result<(Simulation, McSimulationComponents), String> {
         
         // =========================
         // 1. PRODUCTION COMPONENTS
