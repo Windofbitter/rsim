@@ -14,6 +14,7 @@ RSim enables building complex simulations through composable components with gua
 - **Component-Based**: Modular architecture with reusable processing and memory components
 - **Connection Validation**: Real-time validation prevents invalid port connections
 - **Macro System**: Dramatically reduces boilerplate code for component definitions
+- **Parallel Execution**: Stage-parallel processing with Rayon for improved performance on multi-core systems
 
 ## Quick Start
 
@@ -63,12 +64,49 @@ fn main() -> Result<(), String> {
 }
 ```
 
+### Parallel Execution Example
+
+```rust
+use rsim::*;
+
+fn main() -> Result<(), String> {
+    // Configure simulation for parallel execution
+    let config = SimulationConfig::new()
+        .with_concurrency(ConcurrencyMode::Rayon);
+    
+    let mut sim = Simulation::with_config(config);
+    // ... add components ...
+    
+    let mut engine = sim.build()?;
+    engine.build_execution_order()?;
+    
+    // Runs with stage-parallel execution
+    for _ in 0..100 {
+        engine.cycle()?;
+    }
+    
+    println!("Parallel simulation completed {} cycles", engine.current_cycle());
+    Ok(())
+}
+```
+
 ## Architecture
 
 ### Component Types
 
 - **Processing Components**: Stateless logic with input/output/memory ports
 - **Memory Components**: Stateful storage with exactly one input and one output port
+
+### Concurrency Features
+
+RSim supports two execution modes:
+
+- **Sequential Mode**: Traditional single-threaded execution (default)
+- **Parallel Mode**: Stage-parallel execution using Rayon thread pool
+
+Components are organized into dependency stages where all components within a stage can execute in parallel. Stage barriers ensure deterministic execution order while maximizing parallelism.
+
+**Thread Safety**: Per-component memory proxies eliminate contention, allowing safe parallel access to memory components without locks.
 
 ### Memory Model
 
@@ -96,7 +134,11 @@ The `examples/mc_simulation/` directory contains a comprehensive production line
 - **FIFO Buffers** managing production flow between stages
 
 ```bash
+# Run with default sequential execution
 cargo run --bin mcdonald_main
+
+# Run with parallel execution (larger simulations)
+cargo run --bin mcdonald_main --features parallel
 ```
 
 This demonstrates:
@@ -104,10 +146,36 @@ This demonstrates:
 - Structured state memory (`BakerState`, `FryerState`, etc.)
 - FIFO buffer operations with proper type handling
 - Multi-stage production pipeline coordination
+- **Parallel execution** support for improved performance
+
+## Performance
+
+### When to Use Parallel Execution
+
+- **Large simulations**: 20+ components with complex dependency graphs
+- **CPU-intensive components**: Heavy computational workloads per component
+- **Multi-core systems**: Parallel execution scales with available CPU cores
+
+### Sequential vs Parallel Mode
+
+- **Sequential** (`ConcurrencyMode::Sequential`): Lower overhead, better for small simulations
+- **Parallel** (`ConcurrencyMode::Rayon`): Higher throughput for large simulations, automatic CPU core utilization
+
+```rust
+// For small simulations (< 20 components)
+let config = SimulationConfig::new(); // Sequential by default
+
+// For large simulations (20+ components)
+let config = SimulationConfig::new()
+    .with_concurrency(ConcurrencyMode::Rayon);
+```
+
+**Note**: Both modes produce identical deterministic results due to stage-barrier execution.
 
 ## Documentation
 
 - **[Core API Reference](rsim_core_api.md)** - Complete technical documentation
+- **[Concurrency Implementation](concurrency_doc.md)** - Detailed concurrency design and implementation
 - **[Examples](examples/)** - Working simulation examples
 - **[McDonald's Design](MCDONALD_SIMULATION_DESIGN.md)** - Production line architecture
 
