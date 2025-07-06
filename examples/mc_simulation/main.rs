@@ -170,10 +170,8 @@ fn main() -> Result<(), String> {
     }
     
     // Connect Assembler Buffers to Assemblers (1:1 for ingredient pairs)
-    // Each assembler reads from the same buffer for both bread and meat (ingredient pairs)
     for i in 0..10 {
-        sim.connect_memory_port(assemblers[i].memory_port("bread_buffer"), assembler_buffers[i].clone())?;
-        sim.connect_memory_port(assemblers[i].memory_port("meat_buffer"), assembler_buffers[i].clone())?;
+        sim.connect_memory_port(assemblers[i].memory_port("ingredient_buffer"), assembler_buffers[i].clone())?;
     }
     
     // Connect Assemblers to Burger Buffer (10:1)

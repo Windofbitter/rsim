@@ -2,8 +2,8 @@ use rsim::*;
 use rand::{Rng, RngCore, SeedableRng};
 use rand::rngs::StdRng;
 
-/// Assembler component that combines bread and meat into burgers
-/// Connects to three memory ports: bread buffer, meat buffer, and burger buffer
+/// Assembler component that combines ingredient pairs into burgers
+/// Connects to three memory ports: ingredient buffer, burger buffer, and assembler state
 /// Stores internal state (timer, counters, RNG seed) in memory
 #[derive(Debug)]
 pub struct Assembler {
@@ -33,7 +33,7 @@ impl Assembler {
 impl_component!(Assembler, "Assembler", {
     inputs: [],
     outputs: [],
-    memory: [bread_buffer, meat_buffer, burger_buffer, assembler_state],
+    memory: [ingredient_buffer, burger_buffer, assembler_state],
     react: |ctx, _outputs| {
         use crate::components::component_states::AssemblerState;
         use crate::components::fifo_memory::FIFOMemory;
@@ -50,15 +50,8 @@ impl_component!(Assembler, "Assembler", {
         let min_delay = 1i64;
         let max_delay = 3i64;
         
-        // Read bread buffer status
-        let mut bread_buffer = if let Ok(Some(buffer)) = ctx.memory.read::<FIFOMemory>("bread_buffer", "buffer") {
-            buffer
-        } else {
-            FIFOMemory::new(5) // Default capacity
-        };
-        
-        // Read meat buffer status
-        let mut meat_buffer = if let Ok(Some(buffer)) = ctx.memory.read::<FIFOMemory>("meat_buffer", "buffer") {
+        // Read ingredient buffer status (contains ingredient pairs)
+        let mut ingredient_buffer = if let Ok(Some(buffer)) = ctx.memory.read::<FIFOMemory>("ingredient_buffer", "buffer") {
             buffer
         } else {
             FIFOMemory::new(5) // Default capacity
@@ -75,10 +68,9 @@ impl_component!(Assembler, "Assembler", {
         if state.remaining_cycles > 0 {
             // Still assembling, decrement timer
             state.remaining_cycles -= 1;
-        } else if bread_buffer.data_count > 0 && meat_buffer.data_count > 0 && !burger_buffer.is_full() {
-            // Timer expired and can assemble, consume ingredients and produce burger
-            bread_buffer.to_subtract += 1;
-            meat_buffer.to_subtract += 1;
+        } else if ingredient_buffer.data_count > 0 && !burger_buffer.is_full() {
+            // Timer expired and can assemble, consume ingredient pair and produce burger
+            ingredient_buffer.to_subtract += 1;
             burger_buffer.to_add += 1;
             
             state.total_assembled += 1;
@@ -91,8 +83,7 @@ impl_component!(Assembler, "Assembler", {
         }
         
         // Write updated buffer states back
-        memory_write!(ctx, "bread_buffer", "buffer", bread_buffer);
-        memory_write!(ctx, "meat_buffer", "buffer", meat_buffer);
+        memory_write!(ctx, "ingredient_buffer", "buffer", ingredient_buffer);
         memory_write!(ctx, "burger_buffer", "buffer", burger_buffer);
         // If ingredients not available or buffer full, just wait
         

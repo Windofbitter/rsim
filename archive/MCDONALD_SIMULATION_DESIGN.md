@@ -36,9 +36,11 @@ A multi-worker fast food production line simulation using RSim's component-based
 - **Logic**: Collect ingredients → distribute to available assemblers
 
 #### 4. **Assembler Components** (Processing Components)
-- **Assemblers** (10 instances): Combine bread + meat → burger
-- **Ports**: 1 memory port (read from dedicated assembler buffer) + 1 memory port (write burger)
+- **Assemblers** (10 instances): Combine ingredient pairs → burger
+- **Ports**: 3 memory ports (ingredient_buffer, burger_buffer, assembler_state)
 - **Logic**: Read ingredient pairs from buffer → random assembly time → produce burger
+- **Architecture**: Single ingredient buffer eliminates dual bread/meat port complexity
+- **Implementation Note**: Originally implemented with separate bread_buffer and meat_buffer ports connecting to the same buffer, corrected to use single ingredient_buffer port for cleaner architecture
 
 #### 5. **Assembler Buffer Components** (Memory Components)
 - **AssemblerBuffer1-10**: One per assembler (stores bread+meat pairs)
@@ -138,24 +140,31 @@ struct ComponentTimer {
 - **Fryers**: 10 processing components
 - **Assemblers**: 10 processing components
 - **Consumers**: 10 processing components
+- **Managers**: 3 processing components (bread + meat + assembler managers)
 - **Individual Buffers**: 20 memory components (10 bread + 10 meat)
 - **Assembler Buffers**: 10 memory components (ingredient pairs)
-- **Shared Buffers**: 1 memory component (burger buffer)
-- **Managers**: 3 processing components (bread + meat + assembler managers)
-- **Total**: 43 processing components + 31 memory components
+- **Shared Buffers**: 3 memory components (burger buffer + 2 inventory buffers)
+- **State Memory**: 40 memory components (10 per component type)
+- **Total**: 43 processing components + 73 memory components
 
 ## Connection Pattern
-- **Memory Connections**: 74 total (1-to-1 dedicated channels)
+- **Memory Connections**: 124 total (1-to-1 dedicated channels)
   - Baker→BreadBuffer: 10 connections
+  - Baker→BakerState: 10 connections
   - BreadBuffer→BreadManager: 10 connections  
   - Fryer→MeatBuffer: 10 connections
+  - Fryer→FryerState: 10 connections
   - MeatBuffer→MeatManager: 10 connections
-  - BreadManager→AssemblerManager: 1 connection
-  - MeatManager→AssemblerManager: 1 connection
+  - BreadManager→BreadInventory: 1 connection
+  - MeatManager→MeatInventory: 1 connection
+  - AssemblerManager→BreadInventory: 1 connection
+  - AssemblerManager→MeatInventory: 1 connection
   - AssemblerManager→AssemblerBuffer: 10 connections
   - AssemblerBuffer→Assembler: 10 connections
   - Assembler→BurgerBuffer: 10 connections
+  - Assembler→AssemblerState: 10 connections
   - BurgerBuffer→Consumer: 10 connections
+  - Consumer→CustomerState: 10 connections
 - **No Direct Component Connections**: All data flows through memory
 - **Acyclic Graph**: Ensures deterministic execution order
 
