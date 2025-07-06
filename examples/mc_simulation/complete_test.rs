@@ -1,227 +1,82 @@
-use rsim::core::builder::simulation_builder::Simulation;
-
 mod components;
-use components::*;
-use components::fifo_memory::FIFOMemory;
+mod simulation_builder;
+
 use components::component_states::*;
+use components::fifo_memory::FIFOMemory;
+use simulation_builder::*;
 
 fn main() -> Result<(), String> {
-    println!("🍔 Starting McDonald's Complete Simulation Test 🍔");
+    println!("🍔 McDonald's Complete Simulation Test with Helper 🍔");
     
-    // Create simulation
-    let mut sim = Simulation::new();
+    // Build a large-scale simulation using helper method
+    let (mut sim, components) = build_large_mc_simulation()?;
     
-    // =========================
-    // 1. PRODUCTION COMPONENTS
-    // =========================
+    println!("✅ Built large simulation with:");
+    println!("  - {} bakers", components.bakers.len());
+    println!("  - {} fryers", components.fryers.len());
+    println!("  - {} assemblers", components.assemblers.len());
+    println!("  - {} customers", components.customers.len());
     
-    // Create 10 Bakers with different seeds
-    let mut bakers = Vec::new();
-    for i in 0..10 {
-        let baker = sim.add_component(Baker::new(2, 5, 1000 + i));
-        bakers.push(baker);
-    }
-    
-    // Create state memory components for each baker
-    let mut baker_states = Vec::new();
-    for _ in 0..10 {
-        let state = sim.add_memory_component(BakerState::new());
-        baker_states.push(state);
-    }
-    
-    // Create 10 Fryers with different seeds  
-    let mut fryers = Vec::new();
-    for i in 0..10 {
-        let fryer = sim.add_component(Fryer::new(3, 7, 2000 + i));
-        fryers.push(fryer);
-    }
-    
-    // Create state memory components for each fryer
-    let mut fryer_states = Vec::new();
-    for _ in 0..10 {
-        let state = sim.add_memory_component(FryerState::new());
-        fryer_states.push(state);
-    }
-    
-    // =========================
-    // 2. INDIVIDUAL BUFFERS
-    // =========================
-    
-    // Create 10 Bread Buffers (capacity 10 each)
-    let mut bread_buffers = Vec::new();
-    for _ in 0..10 {
-        let buffer = sim.add_memory_component(FIFOMemory::new(10));
-        bread_buffers.push(buffer);
-    }
-    
-    // Create 10 Meat Buffers (capacity 10 each)
-    let mut meat_buffers = Vec::new();
-    for _ in 0..10 {
-        let buffer = sim.add_memory_component(FIFOMemory::new(10));
-        meat_buffers.push(buffer);
-    }
-    
-    // =========================
-    // 3. MANAGER COMPONENTS
-    // =========================
-    
-    let bread_manager = sim.add_component(BreadManager::new());
-    let meat_manager = sim.add_component(MeatManager::new());
-    
-    // Create intermediate memory buffers for manager coordination
-    let bread_manager_buffer = sim.add_memory_component(FIFOMemory::new(100)); // Large capacity for aggregated bread
-    let meat_manager_buffer = sim.add_memory_component(FIFOMemory::new(100)); // Large capacity for aggregated meat
-    
-    let assembler_manager = sim.add_component(AssemblerManager::new());
-    
-    // =========================
-    // 4. ASSEMBLY COMPONENTS
-    // =========================
-    
-    // Create 10 Assembler Buffers (capacity 5 each for ingredient pairs)
-    let mut assembler_buffers = Vec::new();
-    for _ in 0..10 {
-        let buffer = sim.add_memory_component(FIFOMemory::new(5));
-        assembler_buffers.push(buffer);
-    }
-    
-    // Create 10 Assemblers with different seeds
-    let mut assemblers = Vec::new();
-    for i in 0..10 {
-        let assembler = sim.add_component(Assembler::new(1, 3, 3000 + i));
-        assemblers.push(assembler);
-    }
-    
-    // Create state memory components for each assembler
-    let mut assembler_states = Vec::new();
-    for _ in 0..10 {
-        let state = sim.add_memory_component(AssemblerState::new());
-        assembler_states.push(state);
-    }
-    
-    // =========================
-    // 5. CUSTOMER COMPONENTS
-    // =========================
-    
-    let customer_manager = sim.add_component(CustomerManager::new());
-    
-    // Create 10 Customer Buffers (capacity 8 each)
-    let mut customer_buffers = Vec::new();
-    for _ in 0..10 {
-        let buffer = sim.add_memory_component(FIFOMemory::new(8));
-        customer_buffers.push(buffer);
-    }
-    
-    // Create single shared burger buffer
-    let burger_buffer = sim.add_memory_component(FIFOMemory::new(50));
-    
-    // Create 10 Customers with different seeds
-    let mut customers = Vec::new();
-    for i in 0..10 {
-        let customer = sim.add_component(Customer::new(1, 5, 4000 + i));
-        customers.push(customer);
-    }
-    
-    // Create state memory components for each customer
-    let mut customer_states = Vec::new();
-    for _ in 0..10 {
-        let state = sim.add_memory_component(CustomerState::new());
-        customer_states.push(state);
-    }
-    
-    // =========================
-    // 6. MEMORY CONNECTIONS
-    // =========================
-    
-    println!("Connecting production pipeline...");
-    
-    // Connect Bakers to Bread Buffers (1:1)
-    for i in 0..10 {
-        sim.connect_memory_port(bakers[i].memory_port("bread_buffer"), bread_buffers[i].clone())?;
-    }
-    
-    // Connect Baker State Memory (1:1)
-    for i in 0..10 {
-        sim.connect_memory_port(bakers[i].memory_port("baker_state"), baker_states[i].clone())?;
-    }
-    
-    // Connect Fryers to Meat Buffers (1:1)
-    for i in 0..10 {
-        sim.connect_memory_port(fryers[i].memory_port("meat_buffer"), meat_buffers[i].clone())?;
-    }
-    
-    // Connect Fryer State Memory (1:1)
-    for i in 0..10 {
-        sim.connect_memory_port(fryers[i].memory_port("fryer_state"), fryer_states[i].clone())?;
-    }
-    
-    // Connect Bread Buffers to Bread Manager (10:1)
-    for i in 0..10 {
-        sim.connect_memory_port(bread_manager.memory_port(&format!("bread_buffer_{}", i + 1)), bread_buffers[i].clone())?;
-    }
-    
-    // Connect Meat Buffers to Meat Manager (10:1)
-    for i in 0..10 {
-        sim.connect_memory_port(meat_manager.memory_port(&format!("meat_buffer_{}", i + 1)), meat_buffers[i].clone())?;
-    }
-    
-    // Connect Managers to their inventory output buffers
-    sim.connect_memory_port(bread_manager.memory_port("bread_inventory_out"), bread_manager_buffer.clone())?;
-    sim.connect_memory_port(meat_manager.memory_port("meat_inventory_out"), meat_manager_buffer.clone())?;
-    
-    // Connect Assembler Manager to the inventory buffers  
-    sim.connect_memory_port(assembler_manager.memory_port("bread_inventory"), bread_manager_buffer.clone())?;
-    sim.connect_memory_port(assembler_manager.memory_port("meat_inventory"), meat_manager_buffer.clone())?;
-    
-    // Connect Assembler Manager to Assembler Buffers (1:10)
-    for i in 0..10 {
-        sim.connect_memory_port(assembler_manager.memory_port(&format!("assembler_buffer_{}", i + 1)), assembler_buffers[i].clone())?;
-    }
-    
-    // Connect Assembler Buffers to Assemblers (1:1)
-    for i in 0..10 {
-        sim.connect_memory_port(assemblers[i].memory_port("ingredient_buffer"), assembler_buffers[i].clone())?;
-    }
-    
-    // Connect Assemblers to Burger Buffer (10:1)
-    for i in 0..10 {
-        sim.connect_memory_port(assemblers[i].memory_port("burger_buffer"), burger_buffer.clone())?;
-    }
-    
-    // Connect Assembler State Memory (1:1)
-    for i in 0..10 {
-        sim.connect_memory_port(assemblers[i].memory_port("assembler_state"), assembler_states[i].clone())?;
-    }
-    
-    // Connect Burger Buffer to Customers (1:10)
-    for i in 0..10 {
-        sim.connect_memory_port(customers[i].memory_port("burger_buffer"), burger_buffer.clone())?;
-    }
-    
-    // Connect Customer State Memory (1:1)
-    for i in 0..10 {
-        sim.connect_memory_port(customers[i].memory_port("customer_state"), customer_states[i].clone())?;
-    }
-    
-    // =========================
-    // 7. BUILD AND RUN
-    // =========================
-    
-    println!("Building simulation engine...");
+    println!("\nBuilding simulation engine...");
     let mut engine = sim.build()?;
     
     println!("Building execution order...");
     engine.build_execution_order()?;
     
-    println!("🚀 Running McDonald's simulation for 50 cycles...\n");
+    println!("🚀 Running McDonald's simulation for 100 cycles...\n");
     
     // Run simulation and print periodic status
-    for cycle in 1..=50 {
+    for cycle in 1..=100 {
         engine.cycle()?;
         
-        if cycle % 10 == 0 {
+        if cycle % 20 == 0 {
             println!("📊 Cycle {}: Simulation running...", cycle);
         }
+    }
+    
+    // Query final results
+    println!("\n📊 FINAL SIMULATION RESULTS:");
+    println!("============================");
+    
+    // Query baker production
+    let mut total_bread_produced = 0;
+    for i in 0..components.bakers.len() {
+        if let Ok(Some(state)) = engine.query_memory_component_state::<BakerState>(&components.baker_states[i]) {
+            total_bread_produced += state.total_produced;
+        }
+    }
+    println!("🍞 Total bread produced: {}", total_bread_produced);
+    
+    // Query fryer production  
+    let mut total_meat_produced = 0;
+    for i in 0..components.fryers.len() {
+        if let Ok(Some(state)) = engine.query_memory_component_state::<FryerState>(&components.fryer_states[i]) {
+            total_meat_produced += state.total_produced;
+        }
+    }
+    println!("🥩 Total meat produced: {}", total_meat_produced);
+    
+    // Query assembler production
+    let mut total_burgers_assembled = 0;
+    for i in 0..components.assemblers.len() {
+        if let Ok(Some(state)) = engine.query_memory_component_state::<AssemblerState>(&components.assembler_states[i]) {
+            total_burgers_assembled += state.total_assembled;
+        }
+    }
+    println!("🍔 Total burgers assembled: {}", total_burgers_assembled);
+    
+    // Query customer consumption
+    let mut total_burgers_consumed = 0;
+    for i in 0..components.customers.len() {
+        if let Ok(Some(state)) = engine.query_memory_component_state::<CustomerState>(&components.customer_states[i]) {
+            total_burgers_consumed += state.total_consumed;
+        }
+    }
+    println!("😋 Total burgers consumed: {}", total_burgers_consumed);
+    
+    // Check final burger buffer
+    if let Ok(Some(burger_buffer_state)) = engine.query_memory_component_data::<FIFOMemory>(&components.burger_buffer, "buffer") {
+        println!("🍔 Remaining burgers in buffer: {}/{}", burger_buffer_state.data_count, burger_buffer_state.capacity);
     }
     
     println!("\n✅ McDonald's simulation completed successfully!");
