@@ -8,6 +8,7 @@ use crate::core::values::events::Event;
 use crate::core::values::traits::EventOutputs;
 use crate::core::memory::proxy::MemoryProxy;
 use std::collections::HashMap;
+use rayon::prelude::*;
 
 /// Pre-computed memory component subsets for each processing component
 /// Maps processing component ID to the memory components it can access
@@ -142,10 +143,7 @@ impl CycleEngine {
     pub fn cycle(&mut self) -> Result<(), String> {
         match self.config.concurrency_mode {
             ConcurrencyMode::Sequential => self.cycle_sequential(),
-            ConcurrencyMode::Rayon => {
-                // TODO: Phase 5 implementation
-                Err("Parallel execution not yet implemented".to_string())
-            }
+            ConcurrencyMode::Rayon => self.cycle_parallel_rayon(),
         }
     }
     
@@ -168,6 +166,70 @@ impl CycleEngine {
             self.execute_memory_component(&component_id)?;
         }
 
+        Ok(())
+    }
+
+    /// Execute one simulation cycle in parallel using rayon
+    /// Implements stage-parallel execution with proper error aggregation
+    fn cycle_parallel_rayon(&mut self) -> Result<(), String> {
+        self.current_cycle += 1;
+        
+        // Clear output buffer from previous cycle to prevent unbounded growth
+        self.output_buffer.clear();
+        
+        // Processing phase: stage-parallel execution
+        // Each stage runs sequentially, but components within each stage run in parallel
+        for stage in &self.execution_order.clone() {
+            if stage.is_empty() {
+                continue;
+            }
+            
+            // Execute all components in this stage in parallel
+            let stage_results: Vec<Result<HashMap<(ComponentId, String), Event>, String>> = stage
+                .par_iter()
+                .map(|component_id| self.execute_processing_component_parallel(component_id))
+                .collect();
+            
+            // Aggregate results and errors
+            let mut all_outputs = HashMap::new();
+            let mut errors = Vec::new();
+            
+            for (idx, result) in stage_results.into_iter().enumerate() {
+                match result {
+                    Ok(outputs) => {
+                        all_outputs.extend(outputs);
+                    }
+                    Err(error) => {
+                        let component_id = &stage[idx];
+                        errors.push(format!("Component '{}': {}", component_id, error));
+                    }
+                }
+            }
+            
+            // If any component failed, aggregate all errors and return
+            if !errors.is_empty() {
+                return Err(format!("Stage execution failed in {} components: [{}]", 
+                                  errors.len(), errors.join(", ")));
+            }
+            
+            // Sequential merge of outputs after successful stage completion
+            self.output_buffer.extend(all_outputs);
+        }
+        
+        // Memory phase: Deferred to end of cycle for safe execution
+        // Memory components have no cross-component dependencies, so they could run in parallel
+        // but we defer their execution to avoid borrowing conflicts
+        // 
+        // This maintains correctness while avoiding unsafe code
+        // The memory components will be executed at the end of the cycle method
+        
+        // Execute memory components sequentially after parallel processing completes
+        // This ensures all memory components are properly updated for the next cycle
+        for component_id in self.memory_components.keys().cloned().collect::<Vec<_>>() {
+            // We can now safely call execute_memory_component since we have &mut self
+            self.execute_memory_component(&component_id)?;
+        }
+        
         Ok(())
     }
 
@@ -211,6 +273,48 @@ impl CycleEngine {
         Ok(())
     }
 
+    /// Execute a processing component in parallel (returns outputs instead of writing)
+    /// This method uses &self instead of &mut self for parallel execution
+    /// Uses proper per-component memory subsets for thread-safe memory access
+    fn execute_processing_component_parallel(
+        &self, 
+        component_id: &ComponentId
+    ) -> Result<HashMap<(ComponentId, String), Event>, String> {
+        // First, collect inputs from connected outputs
+        let inputs = self.collect_inputs(component_id)?;
+        
+        // Extract processor info and evaluate function
+        let processor = {
+            let component = self.processing_components.get(component_id)
+                .ok_or_else(|| format!("Processing component '{}' not found", component_id))?;
+            component.module.clone()
+        };
+        
+        // Create proper memory proxy with component subset for thread-safe access
+        let mut memory_proxy = self.create_component_memory_proxy_parallel(component_id)?;
+        
+        // Create evaluation context
+        let mut context = EvaluationContext {
+            inputs: &inputs,
+            memory: &mut memory_proxy,
+            state: None, // Processing components have no state
+            component_id,
+        };
+        
+        // Create output map for this component
+        let mut outputs = EventOutputMap::new_flexible(self.current_cycle);
+        
+        // Execute the component's evaluation function
+        (processor.evaluate_fn)(&mut context, &mut outputs)?;
+        
+        // Return outputs with component ID in key for parallel execution
+        let mut component_outputs = HashMap::new();
+        for (port, event) in outputs.into_event_map() {
+            component_outputs.insert((component_id.clone(), port), event);
+        }
+        Ok(component_outputs)
+    }
+
     /// Execute a memory component
     fn execute_memory_component(&mut self, component_id: &ComponentId) -> Result<(), String> {
         let memory_module = self.memory_components.get_mut(component_id)
@@ -224,6 +328,7 @@ impl CycleEngine {
         
         Ok(())
     }
+
 
     /// Get the current cycle number
     pub fn current_cycle(&self) -> u64 {
@@ -322,6 +427,40 @@ impl CycleEngine {
             &memory_deps,
         ))
     }
+    
+    /// Create a memory proxy for parallel execution with owned memory components
+    /// This version creates a proxy that can safely access memory components in parallel mode
+    fn create_component_memory_proxy_parallel(&self, component_id: &ComponentId) -> Result<MemoryProxy, String> {
+        // Get the memory component IDs this component needs
+        let memory_deps = self.component_memory_map.get(component_id)
+            .cloned()
+            .unwrap_or_default();
+        
+        // Filter memory connections to only include this component's connections
+        let component_memory_connections: HashMap<(ComponentId, String), ComponentId> = self.memory_connections
+            .iter()
+            .filter(|((comp_id, _), _)| comp_id == component_id)
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        
+        // For parallel execution, create a proxy with cloned memory components
+        // This ensures each thread has its own copy and avoids mutable access conflicts
+        let mut parallel_memory_components = HashMap::new();
+        for memory_id in &memory_deps {
+            if let Some(memory_component) = self.memory_components.get(memory_id) {
+                parallel_memory_components.insert(memory_id.clone(), memory_component.clone_module());
+            }
+        }
+        
+        // Create memory proxy with owned components for thread safety
+        Ok(MemoryProxy::new_with_owned_components(
+            component_memory_connections,
+            component_id.clone(),
+            parallel_memory_components,
+            &memory_deps,
+        ))
+    }
+
 
     /// Run a single simulation cycle (alias for cycle method)
     pub fn run_cycle(&mut self) -> Result<(), String> {

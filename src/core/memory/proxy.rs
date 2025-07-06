@@ -13,7 +13,9 @@ pub struct MemoryProxy<'a> {
     /// Current component ID for context
     component_id: ComponentId,
     /// Registry of actual memory modules (integrated with snapshot system)
-    memory_modules: &'a mut HashMap<ComponentId, Box<dyn MemoryModuleTrait>>,
+    memory_modules: Option<&'a mut HashMap<ComponentId, Box<dyn MemoryModuleTrait>>>,
+    /// Owned memory modules for parallel execution
+    owned_memory_modules: Option<HashMap<ComponentId, Box<dyn MemoryModuleTrait>>>,
     /// Subset of memory component IDs for this specific component (parallel execution)
     memory_components_subset: Option<Vec<ComponentId>>,
 }
@@ -28,7 +30,8 @@ impl<'a> MemoryProxy<'a> {
         Self {
             memory_connections,
             component_id,
-            memory_modules,
+            memory_modules: Some(memory_modules),
+            owned_memory_modules: None,
             memory_components_subset: None,
         }
     }
@@ -44,7 +47,25 @@ impl<'a> MemoryProxy<'a> {
         Self {
             memory_connections,
             component_id,
-            memory_modules,
+            memory_modules: Some(memory_modules),
+            owned_memory_modules: None,
+            memory_components_subset: Some(memory_subset.to_vec()),
+        }
+    }
+    
+    /// Create a memory proxy with owned memory components for parallel execution
+    /// This version takes ownership of memory components to avoid borrowing issues
+    pub fn new_with_owned_components(
+        memory_connections: HashMap<(ComponentId, String), ComponentId>,
+        component_id: ComponentId,
+        owned_memory_modules: HashMap<ComponentId, Box<dyn MemoryModuleTrait>>,
+        memory_subset: &[ComponentId],
+    ) -> Self {
+        Self {
+            memory_connections,
+            component_id,
+            memory_modules: None,
+            owned_memory_modules: Some(owned_memory_modules),
             memory_components_subset: Some(memory_subset.to_vec()),
         }
     }
@@ -63,7 +84,15 @@ impl<'a> MemoryProxy<'a> {
             }
         }
 
-        if let Some(memory_module) = self.memory_modules.get(mem_id) {
+        let memory_module = if let Some(ref modules) = self.memory_modules {
+            modules.get(mem_id)
+        } else if let Some(ref modules) = self.owned_memory_modules {
+            modules.get(mem_id)
+        } else {
+            return Err("No memory modules available in proxy".to_string());
+        };
+        
+        if let Some(memory_module) = memory_module {
             if let Some(data_box) = memory_module.read_any(address) {
                 // Try to downcast to the requested type
                 if let Ok(typed_data) = data_box.downcast::<T>() {
@@ -93,7 +122,15 @@ impl<'a> MemoryProxy<'a> {
             }
         }
 
-        if let Some(memory_module) = self.memory_modules.get_mut(mem_id) {
+        let memory_module = if let Some(ref mut modules) = self.memory_modules {
+            modules.get_mut(mem_id)
+        } else if let Some(ref mut modules) = self.owned_memory_modules {
+            modules.get_mut(mem_id)
+        } else {
+            return Err("No memory modules available in proxy".to_string());
+        };
+        
+        if let Some(memory_module) = memory_module {
             let data_box: Box<dyn std::any::Any + Send> = Box::new(data);
             if memory_module.write_any(address, data_box) {
                 Ok(())
@@ -117,11 +154,21 @@ impl<'a> MemoryProxy<'a> {
 
     /// Add a memory module to the proxy registry
     pub fn register_memory_module(&mut self, memory_id: ComponentId, module: Box<dyn MemoryModuleTrait>) {
-        self.memory_modules.insert(memory_id, module);
+        if let Some(ref mut modules) = self.memory_modules {
+            modules.insert(memory_id, module);
+        } else if let Some(ref mut modules) = self.owned_memory_modules {
+            modules.insert(memory_id, module);
+        }
     }
 
     /// Check if a memory module is registered
     pub fn has_memory_module(&self, memory_id: &ComponentId) -> bool {
-        self.memory_modules.contains_key(memory_id)
+        if let Some(ref modules) = self.memory_modules {
+            modules.contains_key(memory_id)
+        } else if let Some(ref modules) = self.owned_memory_modules {
+            modules.contains_key(memory_id)
+        } else {
+            false
+        }
     }
 }

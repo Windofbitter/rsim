@@ -10,6 +10,9 @@ mod test_phase3;
 #[cfg(test)]
 mod test_phase4;
 
+#[cfg(test)]
+mod test_phase5;
+
 // Re-export commonly used types
 pub use crate::core::types::ComponentId;
 pub use crate::core::{Inputs, Outputs, React, Component, MemoryComponent, Cycle};

@@ -2,7 +2,7 @@ use crate::core::components::state::MemoryData;
 use std::collections::HashMap;
 
 /// Trait for memory modules that can store and retrieve typed data
-pub trait MemoryModuleTrait: Send {
+pub trait MemoryModuleTrait: Send + Sync {
     /// Get the memory ID for this module
     fn memory_id(&self) -> &str;
     

@@ -54,17 +54,20 @@ mod tests {
     }
 
     #[test]
-    fn test_parallel_execution_not_implemented() {
-        // Test that parallel execution returns appropriate error
+    fn test_parallel_execution_implemented() {
+        // Test that parallel execution now works
         let config = SimulationConfig::new()
             .with_concurrency(ConcurrencyMode::Rayon);
         
         let sim = Simulation::with_config(config);
         let mut engine = sim.build().expect("Should build successfully");
         
-        // Parallel execution should fail with appropriate error
+        // Build execution order first
+        let _ = engine.build_execution_order();
+        
+        // Parallel execution should now succeed
         let result = engine.cycle();
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Parallel execution not yet implemented"));
+        assert!(result.is_ok(), "Parallel execution should succeed, got error: {:?}", result);
+        assert_eq!(engine.current_cycle(), 1);
     }
 }
