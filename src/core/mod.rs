@@ -20,5 +20,5 @@ pub use components::{
 };
 pub use connections::{ConnectionManager, ConnectionValidator, PortValidator};
 pub use memory::{MemoryProxy, MemoryError};
-pub use execution::{CycleEngine, SimulationEngine};
+pub use execution::{CycleEngine, SimulationEngine, SimulationConfig, ConcurrencyMode};
 pub use builder::{Simulation, SimulationExt};

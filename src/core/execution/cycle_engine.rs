@@ -35,8 +35,8 @@ pub struct CycleEngine {
     connections: HashMap<(ComponentId, String), Vec<(ComponentId, String)>>,
     /// Current cycle number
     current_cycle: u64,
-    /// Execution order for processing components (topologically sorted)
-    execution_order: Vec<ComponentId>,
+    /// Execution order for processing components (topologically sorted into stages)
+    execution_order: Vec<Vec<ComponentId>>,
     /// Output buffer for current cycle
     output_buffer: HashMap<(ComponentId, String), Event>,
     /// Memory connections: (component_id, port) -> memory_id
@@ -128,9 +128,11 @@ impl CycleEngine {
         // Clear output buffer from previous cycle to prevent unbounded growth
         self.output_buffer.clear();
 
-        // Execute processing components in topological order
-        for component_id in &self.execution_order.clone() {
-            self.execute_processing_component(component_id)?;
+        // Execute processing components in topological order (staged execution)
+        for stage in &self.execution_order.clone() {
+            for component_id in stage {
+                self.execute_processing_component(component_id)?;
+            }
         }
 
         // Update memory components
@@ -219,8 +221,8 @@ impl CycleEngine {
         // Get all processing component IDs
         let processing_components: Vec<ComponentId> = self.processing_components.keys().cloned().collect();
         
-        // Build topologically sorted execution order
-        self.execution_order = ExecutionOrderBuilder::build_execution_order(
+        // Build topologically sorted execution order (staged)
+        self.execution_order = ExecutionOrderBuilder::build_execution_order_stages(
             &processing_components,
             &self.connections,
         )?;
