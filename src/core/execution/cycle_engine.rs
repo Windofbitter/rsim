@@ -1,6 +1,7 @@
 use crate::core::builder::simulation_builder::ComponentInstance;
 use crate::core::types::ComponentId;
 use crate::core::execution::execution_order::ExecutionOrderBuilder;
+use crate::core::execution::config::{SimulationConfig, ConcurrencyMode};
 use crate::core::components::module::{EvaluationContext, MemoryModuleTrait};
 use crate::core::values::implementations::{EventInputMap, EventOutputMap};
 use crate::core::values::events::Event;
@@ -43,11 +44,13 @@ pub struct CycleEngine {
     memory_connections: HashMap<(ComponentId, String), ComponentId>,
     /// Pre-computed input connections for O(1) lookup (hot path optimization)
     input_connections: HashMap<ComponentId, Vec<InputConnection>>,
+    /// Simulation configuration
+    config: SimulationConfig,
 }
 
 impl CycleEngine {
-    /// Create a new cycle engine
-    pub fn new() -> Self {
+    /// Create a new cycle engine with configuration
+    pub fn new(config: SimulationConfig) -> Self {
         Self {
             processing_components: HashMap::new(),
             memory_components: HashMap::new(),
@@ -57,7 +60,14 @@ impl CycleEngine {
             output_buffer: HashMap::new(),
             memory_connections: HashMap::new(),
             input_connections: HashMap::new(),
+            config,
         }
+    }
+    
+    /// Create a new cycle engine with default sequential configuration
+    /// This method maintains backward compatibility
+    pub fn new_sequential() -> Self {
+        Self::new(SimulationConfig::default())
     }
 
     /// Register a component instance
@@ -123,6 +133,17 @@ impl CycleEngine {
 
     /// Execute one simulation cycle
     pub fn cycle(&mut self) -> Result<(), String> {
+        match self.config.concurrency_mode {
+            ConcurrencyMode::Sequential => self.cycle_sequential(),
+            ConcurrencyMode::Rayon => {
+                // TODO: Phase 5 implementation
+                Err("Parallel execution not yet implemented".to_string())
+            }
+        }
+    }
+    
+    /// Execute one simulation cycle sequentially
+    fn cycle_sequential(&mut self) -> Result<(), String> {
         self.current_cycle += 1;
 
         // Clear output buffer from previous cycle to prevent unbounded growth

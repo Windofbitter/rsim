@@ -2,6 +2,7 @@ use crate::core::components::module::ComponentModule;
 use crate::core::components::state::MemoryData;
 use crate::core::components::traits::{Component, MemoryComponent};
 use crate::core::execution::cycle_engine::CycleEngine;
+use crate::core::execution::config::SimulationConfig;
 use crate::core::types::{ComponentId, OutputPort, InputPort, MemoryPort};
 use std::collections::HashMap;
 
@@ -24,6 +25,8 @@ pub struct Simulation {
     memory_connections: HashMap<(ComponentId, String), ComponentId>,
     /// Counter for automatic ID generation
     id_counter: std::sync::atomic::AtomicU64,
+    /// Simulation configuration
+    config: Option<SimulationConfig>,
 }
 
 impl Simulation {
@@ -34,6 +37,18 @@ impl Simulation {
             connections: HashMap::new(),
             memory_connections: HashMap::new(),
             id_counter: std::sync::atomic::AtomicU64::new(0),
+            config: None,
+        }
+    }
+    
+    /// Create a new simulation with configuration
+    pub fn with_config(config: SimulationConfig) -> Self {
+        Self {
+            components: HashMap::new(),
+            connections: HashMap::new(),
+            memory_connections: HashMap::new(),
+            id_counter: std::sync::atomic::AtomicU64::new(0),
+            config: Some(config),
         }
     }
 
@@ -231,8 +246,11 @@ impl Simulation {
         // Validate connections
         self.validate_connections()?;
         
+        // Get configuration (use default if not provided)
+        let config = self.config.unwrap_or_default();
+        
         // Create and configure cycle engine
-        let mut cycle_engine = CycleEngine::new();
+        let mut cycle_engine = CycleEngine::new(config);
         
         // Add all components to the cycle engine
         for (_, instance) in self.components {
