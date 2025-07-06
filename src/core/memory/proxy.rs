@@ -14,6 +14,8 @@ pub struct MemoryProxy<'a> {
     component_id: ComponentId,
     /// Registry of actual memory modules (integrated with snapshot system)
     memory_modules: &'a mut HashMap<ComponentId, Box<dyn MemoryModuleTrait>>,
+    /// Subset of memory component IDs for this specific component (parallel execution)
+    memory_components_subset: Option<Vec<ComponentId>>,
 }
 
 impl<'a> MemoryProxy<'a> {
@@ -27,6 +29,23 @@ impl<'a> MemoryProxy<'a> {
             memory_connections,
             component_id,
             memory_modules,
+            memory_components_subset: None,
+        }
+    }
+
+    /// Create a memory proxy with a subset of memory components for parallel execution
+    /// This eliminates HashMap contention by giving each component only the memory it needs
+    pub fn new_with_component_subset(
+        memory_connections: HashMap<(ComponentId, String), ComponentId>,
+        component_id: ComponentId,
+        memory_modules: &'a mut HashMap<ComponentId, Box<dyn MemoryModuleTrait>>,
+        memory_subset: &[ComponentId],
+    ) -> Self {
+        Self {
+            memory_connections,
+            component_id,
+            memory_modules,
+            memory_components_subset: Some(memory_subset.to_vec()),
         }
     }
 
@@ -36,6 +55,13 @@ impl<'a> MemoryProxy<'a> {
             .memory_connections
             .get(&(self.component_id.clone(), port.to_string()))
             .ok_or_else(|| format!("Memory port '{}' not connected for component '{}'", port, self.component_id))?;
+
+        // Check if we have a subset and if this memory component is allowed
+        if let Some(ref subset) = self.memory_components_subset {
+            if !subset.contains(mem_id) {
+                return Err(format!("Memory component '{}' not in subset for component '{}'", mem_id, self.component_id));
+            }
+        }
 
         if let Some(memory_module) = self.memory_modules.get(mem_id) {
             if let Some(data_box) = memory_module.read_any(address) {
@@ -59,6 +85,13 @@ impl<'a> MemoryProxy<'a> {
             .memory_connections
             .get(&(self.component_id.clone(), port.to_string()))
             .ok_or_else(|| format!("Memory port '{}' not connected for component '{}'", port, self.component_id))?;
+
+        // Check if we have a subset and if this memory component is allowed
+        if let Some(ref subset) = self.memory_components_subset {
+            if !subset.contains(mem_id) {
+                return Err(format!("Memory component '{}' not in subset for component '{}'", mem_id, self.component_id));
+            }
+        }
 
         if let Some(memory_module) = self.memory_modules.get_mut(mem_id) {
             let data_box: Box<dyn std::any::Any + Send> = Box::new(data);

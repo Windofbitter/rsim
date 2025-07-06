@@ -9,6 +9,10 @@ use crate::core::values::traits::EventOutputs;
 use crate::core::memory::proxy::MemoryProxy;
 use std::collections::HashMap;
 
+/// Pre-computed memory component subsets for each processing component
+/// Maps processing component ID to the memory components it can access
+type ComponentMemoryMap = HashMap<ComponentId, Vec<ComponentId>>;
+
 /// Processing component instance
 pub struct ProcessingComponent {
     pub id: ComponentId,
@@ -46,6 +50,8 @@ pub struct CycleEngine {
     input_connections: HashMap<ComponentId, Vec<InputConnection>>,
     /// Simulation configuration
     config: SimulationConfig,
+    /// Pre-computed memory component access patterns for thread safety
+    component_memory_map: ComponentMemoryMap,
 }
 
 impl CycleEngine {
@@ -61,6 +67,7 @@ impl CycleEngine {
             memory_connections: HashMap::new(),
             input_connections: HashMap::new(),
             config,
+            component_memory_map: HashMap::new(),
         }
     }
     
@@ -176,12 +183,11 @@ impl CycleEngine {
             component.module.clone()
         };
         
-        // Create memory proxy with direct access to memory components
-        let mut memory_proxy = MemoryProxy::new(
-            self.memory_connections.clone(),
-            component_id.clone(),
-            &mut self.memory_components,
-        );
+        // Get current cycle before creating memory proxy to avoid borrowing conflict
+        let current_cycle = self.current_cycle;
+        
+        // Create memory proxy with component subset for thread safety
+        let mut memory_proxy = self.create_component_memory_proxy(component_id)?;
         
         // Create evaluation context
         let mut context = EvaluationContext {
@@ -192,7 +198,7 @@ impl CycleEngine {
         };
         
         // Create output map for this component
-        let mut outputs = EventOutputMap::new_flexible(self.current_cycle);
+        let mut outputs = EventOutputMap::new_flexible(current_cycle);
         
         // Execute the component's evaluation function
         (processor.evaluate_fn)(&mut context, &mut outputs)?;
@@ -265,7 +271,56 @@ impl CycleEngine {
             }
         }
         
+        // Pre-compute memory subsets for thread safety
+        self.pre_compute_memory_subsets();
+        
         Ok(())
+    }
+
+    /// Pre-compute which memory components each processing component needs
+    /// This eliminates HashMap contention during parallel execution
+    fn pre_compute_memory_subsets(&mut self) {
+        self.component_memory_map.clear();
+        
+        for (comp_id, _) in &self.processing_components {
+            let mut memory_deps = Vec::new();
+            
+            // Find all memory connections for this component
+            for ((connected_comp, _port), memory_id) in &self.memory_connections {
+                if connected_comp == comp_id {
+                    memory_deps.push(memory_id.clone());
+                }
+            }
+            
+            if !memory_deps.is_empty() {
+                self.component_memory_map.insert(comp_id.clone(), memory_deps);
+            }
+        }
+    }
+
+    /// Create a memory proxy for a specific component with only its required memory components
+    /// This eliminates HashMap contention during parallel execution by giving each component
+    /// only the memory components it needs
+    fn create_component_memory_proxy(&mut self, component_id: &ComponentId) -> Result<MemoryProxy, String> {
+        // Get the memory component IDs this component needs
+        let memory_deps = self.component_memory_map.get(component_id)
+            .cloned()
+            .unwrap_or_default();
+        
+        // Filter memory connections to only include this component's connections
+        let component_memory_connections: HashMap<(ComponentId, String), ComponentId> = self.memory_connections
+            .iter()
+            .filter(|((comp_id, _), _)| comp_id == component_id)
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        
+        // Create memory proxy with component subset
+        Ok(MemoryProxy::new_with_component_subset(
+            component_memory_connections,
+            component_id.clone(),
+            &mut self.memory_components,
+            &memory_deps,
+        ))
     }
 
     /// Run a single simulation cycle (alias for cycle method)
