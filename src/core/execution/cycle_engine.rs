@@ -316,7 +316,6 @@ impl CycleEngine {
         for component_id in self.memory_components.keys().cloned().collect::<Vec<_>>() {
             self.execute_memory_component(&component_id)?;
         }
-        
         Ok(())
     }
 
@@ -467,6 +466,20 @@ impl CycleEngine {
         while let Ok(memory_write) = memory_write_receiver.recv() {
             memory_writes.push(memory_write);
         }
+        
+        // Sort memory writes deterministically to ensure consistent ordering
+        // This is critical for deterministic parallel execution
+        memory_writes.sort_by(|a, b| {
+            // First sort by memory component ID, then by address, then by writer component ID
+            match a.memory_id.cmp(&b.memory_id) {
+                std::cmp::Ordering::Equal => match a.address.cmp(&b.address) {
+                    std::cmp::Ordering::Equal => a.writer_id.cmp(&b.writer_id),
+                    other => other,
+                },
+                other => other,
+            }
+        });
+        
         
         // Apply memory writes sequentially
         for memory_write in memory_writes {
