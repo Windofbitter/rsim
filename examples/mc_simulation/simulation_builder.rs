@@ -138,7 +138,7 @@ pub struct McSimulationComponents {
     pub bread_manager: ComponentId,
     pub meat_manager: ComponentId,
     pub assembler_manager: ComponentId,
-    pub customer_manager: Option<ComponentId>,
+    pub customer_manager: ComponentId,
     
     // State memory component IDs
     pub baker_states: Vec<ComponentId>,
@@ -150,6 +150,7 @@ pub struct McSimulationComponents {
     pub bread_buffers: Vec<ComponentId>,
     pub meat_buffers: Vec<ComponentId>,
     pub assembler_buffers: Vec<ComponentId>,
+    pub assembler_output_buffers: Vec<ComponentId>,
     pub customer_buffers: Vec<ComponentId>,
     
     // Central buffer IDs
@@ -164,7 +165,6 @@ pub struct McSimulationComponents {
 /// Builder for McDonald's simulation that handles component creation and connections
 pub struct McSimulationBuilder {
     config: McSimulationConfig,
-    use_customer_manager: bool,
 }
 
 impl McSimulationBuilder {
@@ -172,7 +172,6 @@ impl McSimulationBuilder {
     pub fn new() -> Self {
         Self {
             config: McSimulationConfig::default(),
-            use_customer_manager: false,
         }
     }
     
@@ -180,7 +179,6 @@ impl McSimulationBuilder {
     pub fn with_config(config: McSimulationConfig) -> Self {
         Self {
             config,
-            use_customer_manager: false,
         }
     }
     
@@ -217,11 +215,6 @@ impl McSimulationBuilder {
         self
     }
     
-    /// Enable customer manager mode (customers get individual buffers instead of shared)
-    pub fn with_customer_manager(mut self, enabled: bool) -> Self {
-        self.use_customer_manager = enabled;
-        self
-    }
     
     /// Set delay mode for all components
     pub fn with_delay_mode(mut self, mode: DelayMode) -> Self {
@@ -368,26 +361,28 @@ impl McSimulationBuilder {
             assembler_states.push(state);
         }
         
-        // Create burger buffer
+        // Create individual assembler output buffers (always used)
+        let mut assembler_output_buffers = Vec::new();
+        for _ in 0..self.config.num_assemblers {
+            let buffer = sim.add_memory_component(FIFOMemory::new(self.config.burger_buffer_capacity));
+            assembler_output_buffers.push(buffer);
+        }
+        
+        // Create burger buffer (kept for legacy compatibility, but not used in customer manager mode)
         let burger_buffer = sim.add_memory_component(FIFOMemory::new(self.config.burger_buffer_capacity));
         
         // =========================
         // 5. CONSUMER COMPONENTS
         // =========================
         
-        let customer_manager = if self.use_customer_manager {
-            Some(sim.add_component(CustomerManager::new()))
-        } else {
-            None
-        };
+        // Always create customer manager
+        let customer_manager = sim.add_component(CustomerManager::new());
         
-        // Create customer buffers (only if using customer manager)
+        // Create customer buffers (always used)
         let mut customer_buffers = Vec::new();
-        if self.use_customer_manager {
-            for _ in 0..self.config.num_customers {
-                let buffer = sim.add_memory_component(FIFOMemory::new(self.config.customer_buffer_capacity));
-                customer_buffers.push(buffer);
-            }
+        for _ in 0..self.config.num_customers {
+            let buffer = sim.add_memory_component(FIFOMemory::new(self.config.customer_buffer_capacity));
+            customer_buffers.push(buffer);
         }
         
         // Create customers
@@ -447,31 +442,26 @@ impl McSimulationBuilder {
             sim.connect_memory_port(assembler_manager.memory_port(&format!("assembler_buffer_{}", i + 1)), assembler_buffers[i].clone())?;
         }
         
-        // Connect assemblers to their buffers and burger buffer
+        // Connect assemblers to their buffers and individual output buffers
         for i in 0..self.config.num_assemblers {
             sim.connect_memory_port(assemblers[i].memory_port("ingredient_buffer"), assembler_buffers[i].clone())?;
-            sim.connect_memory_port(assemblers[i].memory_port("burger_buffer"), burger_buffer.clone())?;
+            
+            // Always connect to individual output buffers (customer manager mode)
+            sim.connect_memory_port(assemblers[i].memory_port("burger_buffer"), assembler_output_buffers[i].clone())?;
+            
             sim.connect_memory_port(assemblers[i].memory_port("assembler_state"), assembler_states[i].clone())?;
         }
         
-        // Connect customers based on manager mode
-        if self.use_customer_manager {
-            // Use customer manager mode - customers have individual buffers
-            let cm = customer_manager.as_ref().unwrap();
-            
-            // Connect customer manager to assembler outputs and customer buffers
-            for i in 0..self.config.num_assemblers {
-                sim.connect_memory_port(cm.memory_port(&format!("assembler_output_{}", i + 1)), burger_buffer.clone())?;
-            }
-            for i in 0..self.config.num_customers {
-                sim.connect_memory_port(cm.memory_port(&format!("customer_buffer_{}", i + 1)), customer_buffers[i].clone())?;
-                sim.connect_memory_port(customers[i].memory_port("burger_buffer"), customer_buffers[i].clone())?;
-            }
-        } else {
-            // Direct mode - all customers share the burger buffer
-            for i in 0..self.config.num_customers {
-                sim.connect_memory_port(customers[i].memory_port("burger_buffer"), burger_buffer.clone())?;
-            }
+        // Connect customers using customer manager (always used)
+        // Connect customer manager to individual assembler output buffers
+        for i in 0..self.config.num_assemblers {
+            sim.connect_memory_port(customer_manager.memory_port(&format!("assembler_output_{}", i + 1)), assembler_output_buffers[i].clone())?;
+        }
+        
+        // Connect customer manager to customer buffers and customers to their buffers
+        for i in 0..self.config.num_customers {
+            sim.connect_memory_port(customer_manager.memory_port(&format!("customer_buffer_{}", i + 1)), customer_buffers[i].clone())?;
+            sim.connect_memory_port(customers[i].memory_port("burger_buffer"), customer_buffers[i].clone())?;
         }
         
         // Connect customer state memory
@@ -496,6 +486,7 @@ impl McSimulationBuilder {
             bread_buffers,
             meat_buffers,
             assembler_buffers,
+            assembler_output_buffers,
             customer_buffers,
             bread_inventory_buffer,
             meat_inventory_buffer,

@@ -105,11 +105,20 @@ fn run_simulation_test(
         }
     }
     
-    let remaining_burgers = if let Ok(Some(burger_buffer_state)) = engine.query_memory_component_data::<FIFOMemory>(&components.burger_buffer, "buffer") {
-        burger_buffer_state.data_count
-    } else {
-        0
-    };
+    // Check remaining burgers - using customer manager mode, check assembler output buffers and customer buffers
+    let mut remaining_burgers = 0;
+    // Check assembler output buffers
+    for assembler_output_buffer in &components.assembler_output_buffers {
+        if let Ok(Some(buffer_state)) = engine.query_memory_component_data::<FIFOMemory>(assembler_output_buffer, "buffer") {
+            remaining_burgers += buffer_state.data_count;
+        }
+    }
+    // Also check customer buffers
+    for customer_buffer in &components.customer_buffers {
+        if let Ok(Some(buffer_state)) = engine.query_memory_component_data::<FIFOMemory>(customer_buffer, "buffer") {
+            remaining_burgers += buffer_state.data_count;
+        }
+    }
     
     let mut results = TestResults::new(execution_mode);
     results.cycles = engine.current_cycle();

@@ -35,12 +35,14 @@ impl_component!(CustomerManager, "CustomerManager", {
         customer_buffer_6, customer_buffer_7, customer_buffer_8, customer_buffer_9, customer_buffer_10
     ],
     react: |ctx, _outputs| {
+        use crate::components::fifo_memory::FIFOMemory;
+        
         // Find all assembler outputs with available burgers
         let mut available_burger_sources = Vec::new();
         for i in 1..=10 {
             let source_name = format!("assembler_output_{}", i);
-            if let Ok(Some(count)) = ctx.memory.read::<i64>(&source_name, "data_count") {
-                if count > 0 {
+            if let Ok(Some(buffer)) = ctx.memory.read::<FIFOMemory>(&source_name, "buffer") {
+                if buffer.data_count > 0 {
                     available_burger_sources.push(i);
                 }
             }
@@ -50,9 +52,8 @@ impl_component!(CustomerManager, "CustomerManager", {
         let mut available_customer_buffers = Vec::new();
         for i in 1..=10 {
             let buffer_name = format!("customer_buffer_{}", i);
-            if let Ok(Some(count)) = ctx.memory.read::<i64>(&buffer_name, "data_count") {
-                memory_read!(ctx, &buffer_name, "capacity", capacity: i64 = 10);
-                if count < capacity {
+            if let Ok(Some(buffer)) = ctx.memory.read::<FIFOMemory>(&buffer_name, "buffer") {
+                if !buffer.is_full() {
                     available_customer_buffers.push(i);
                 }
             } else {
@@ -72,11 +73,23 @@ impl_component!(CustomerManager, "CustomerManager", {
             let source_name = format!("assembler_output_{}", source_id);
             let customer_buffer_name = format!("customer_buffer_{}", customer_buffer_id);
             
-            // Request to consume burger from assembler output
-            memory_write!(ctx, &source_name, "to_subtract", 1i64);
-            
-            // Request to add burger to customer buffer
-            memory_write!(ctx, &customer_buffer_name, "to_add", 1i64);
+            // Read and update assembler output buffer
+            if let Ok(Some(mut source_buffer)) = ctx.memory.read::<FIFOMemory>(&source_name, "buffer") {
+                if source_buffer.data_count > 0 {
+                    // Read and update customer buffer
+                    if let Ok(Some(mut customer_buffer)) = ctx.memory.read::<FIFOMemory>(&customer_buffer_name, "buffer") {
+                        if !customer_buffer.is_full() {
+                            // Transfer burger from assembler output to customer buffer
+                            source_buffer.to_subtract += 1;
+                            customer_buffer.to_add += 1;
+                            
+                            // Write updated buffers back
+                            memory_write!(ctx, &source_name, "buffer", source_buffer);
+                            memory_write!(ctx, &customer_buffer_name, "buffer", customer_buffer);
+                        }
+                    }
+                }
+            }
         }
         
         Ok(())
