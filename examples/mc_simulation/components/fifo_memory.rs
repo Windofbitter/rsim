@@ -43,12 +43,14 @@ impl FIFOMemory {
 
     /// Update the buffer state based on pending operations
     pub fn update(&mut self) {
+        
         // First subtract items (consume)
         self.data_count = self.data_count.saturating_sub(self.to_subtract);
         
         // Then add items (produce) up to capacity
         let can_add = std::cmp::min(self.to_add, self.available_space());
         self.data_count += can_add;
+        
         
         // Reset operation counters
         self.to_add = 0;

@@ -57,7 +57,7 @@ impl_component!(BreadManager, "BreadManager", {
         
         // Transfer bread from available input buffers to inventory
         let mut transferred = 0;
-        for buffer_idx in available_buffers {
+        for buffer_idx in &available_buffers {
             let input_buffer_name = format!("bread_buffer_{}", buffer_idx);
             
             // Read input buffer state
@@ -73,10 +73,6 @@ impl_component!(BreadManager, "BreadManager", {
                 }
             }
         }
-        // Debug: uncomment to see bread collection
-        // if transferred > 0 {
-        //     println!("[BreadManager] Collected {} bread", transferred);
-        // }
         
         // Write updated inventory buffer back
         memory_write!(ctx, "bread_inventory_out", "buffer", inventory_buffer);

@@ -64,9 +64,8 @@ impl_component!(Customer, "Customer", {
             // Use fixed delay for testing - this will be configurable later
             state.remaining_cycles = 3; // Fixed 3 cycles for debugging
         } else {
-            // Waiting for burger
+            // Waiting for burger - customer operates on 1-cycle delay in two-phase execution
         }
-        // If no burger available, just wait
         
         // Write updated burger buffer back
         memory_write!(ctx, "burger_buffer", "buffer", burger_buffer);

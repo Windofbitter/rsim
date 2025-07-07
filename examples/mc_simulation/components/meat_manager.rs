@@ -56,7 +56,7 @@ impl_component!(MeatManager, "MeatManager", {
         
         // Transfer meat from available input buffers to inventory
         let mut transferred = 0;
-        for buffer_idx in available_buffers {
+        for buffer_idx in &available_buffers {
             let input_buffer_name = format!("meat_buffer_{}", buffer_idx);
             
             // Read input buffer state
@@ -72,10 +72,6 @@ impl_component!(MeatManager, "MeatManager", {
                 }
             }
         }
-        // Debug: uncomment to see meat collection
-        // if transferred > 0 {
-        //     println!("[MeatManager] Collected {} meat", transferred);
-        // }
         
         // Write updated inventory buffer back
         memory_write!(ctx, "meat_inventory_out", "buffer", inventory_buffer);

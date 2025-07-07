@@ -52,6 +52,7 @@ impl_component!(AssemblerManager, "AssemblerManager", {
         };
         
         
+        
         // Only proceed if both bread and meat are available
         if bread_inventory.data_count > 0 && meat_inventory.data_count > 0 {
             // Find all assembler buffers with available space for ingredient pairs

@@ -60,6 +60,7 @@ impl_component!(Assembler, "Assembler", {
             FIFOMemory::new(50) // Default capacity
         };
         
+        
         // Process timer logic
         if state.remaining_cycles > 0 {
             // Still assembling, decrement timer

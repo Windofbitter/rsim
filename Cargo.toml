@@ -48,3 +48,11 @@ path = "examples/mc_simulation/ultra_massive_test.rs"
 name = "super_massive_test"
 path = "examples/mc_simulation/super_massive_test.rs"
 
+[[bin]]
+name = "debug_execution_order"
+path = "examples/mc_simulation/debug_execution_order.rs"
+
+[[bin]]
+name = "debug_test"
+path = "examples/mc_simulation/debug_test.rs"
+
