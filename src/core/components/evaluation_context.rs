@@ -34,3 +34,29 @@ pub trait TypeSafeMemoryProxy {
     /// Write typed data to memory
     fn write<T: MemoryData>(&mut self, port: &str, address: &str, data: T) -> Result<(), String>;
 }
+
+/// Evaluation context for parallel execution that uses owned memory proxy
+/// This avoids lifetime conflicts when extracting updated memory components
+pub struct OwnedEvaluationContext<'a> {
+    /// Event input values from connected components
+    pub inputs: &'a EventInputMap,
+    /// Owned memory proxy for parallel execution
+    pub memory: &'a mut crate::core::memory::proxy::OwnedMemoryProxy,
+    /// Component's current state (if any)
+    pub state: Option<&'a mut dyn ComponentState>,
+    /// Component ID for context
+    pub component_id: &'a ComponentId,
+}
+
+/// Generic evaluation context that can use any memory proxy implementing TypeSafeMemoryProxy
+/// This allows for different memory proxy types (channel-based, owned, etc.)
+pub struct GenericEvaluationContext<'a, M: TypeSafeMemoryProxy> {
+    /// Event input values from connected components
+    pub inputs: &'a EventInputMap,
+    /// Memory proxy for type-safe memory access
+    pub memory: &'a mut M,
+    /// Component's current state (if any)
+    pub state: Option<&'a mut dyn ComponentState>,
+    /// Component ID for context
+    pub component_id: &'a ComponentId,
+}

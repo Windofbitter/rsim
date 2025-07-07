@@ -46,10 +46,6 @@ impl_component!(Assembler, "Assembler", {
             AssemblerState::new()
         };
         
-        // Configuration values - could be stored in memory or use instance values
-        let min_delay = 1i64;
-        let max_delay = 3i64;
-        
         // Read ingredient buffer status (contains ingredient pairs)
         let mut ingredient_buffer = if let Ok(Some(buffer)) = ctx.memory.read::<FIFOMemory>("ingredient_buffer", "buffer") {
             buffer
@@ -74,10 +70,9 @@ impl_component!(Assembler, "Assembler", {
             burger_buffer.to_add += 1;
             
             state.total_assembled += 1;
-            // Start new assembly cycle with random delay
-            let mut rng = StdRng::seed_from_u64(state.rng_state as u64);
-            state.remaining_cycles = rng.gen_range(min_delay..=max_delay);
-            state.rng_state = rng.next_u64() as i64; // Update RNG state
+            
+            // Use fixed delay for testing - this will be configurable later
+            state.remaining_cycles = 2; // Fixed 2 cycles for debugging
         } else {
             // Waiting for ingredients or burger buffer space
         }
@@ -85,7 +80,6 @@ impl_component!(Assembler, "Assembler", {
         // Write updated buffer states back
         memory_write!(ctx, "ingredient_buffer", "buffer", ingredient_buffer);
         memory_write!(ctx, "burger_buffer", "buffer", burger_buffer);
-        // If ingredients not available or buffer full, just wait
         
         // Write updated state back to memory
         memory_write!(ctx, "assembler_state", "state", state);

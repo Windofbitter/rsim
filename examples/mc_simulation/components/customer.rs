@@ -45,10 +45,6 @@ impl_component!(Customer, "Customer", {
             CustomerState::new()
         };
         
-        // Configuration values - could be stored in memory or use instance values
-        let min_delay = 1i64;
-        let max_delay = 5i64;
-        
         // Read burger buffer status
         let mut burger_buffer = if let Ok(Some(buffer)) = ctx.memory.read::<FIFOMemory>("burger_buffer", "buffer") {
             buffer
@@ -64,10 +60,9 @@ impl_component!(Customer, "Customer", {
             // Timer expired and burger available, consume burger and start new timer
             burger_buffer.to_subtract += 1;
             state.total_consumed += 1;
-            // Start new consumption cycle with random delay
-            let mut rng = StdRng::seed_from_u64(state.rng_state as u64);
-            state.remaining_cycles = rng.gen_range(min_delay..=max_delay);
-            state.rng_state = rng.next_u64() as i64; // Update RNG state
+            
+            // Use fixed delay for testing - this will be configurable later
+            state.remaining_cycles = 3; // Fixed 3 cycles for debugging
         } else {
             // Waiting for burger
         }

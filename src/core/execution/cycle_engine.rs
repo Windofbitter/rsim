@@ -6,8 +6,10 @@ use crate::core::components::module::{EvaluationContext, MemoryModuleTrait};
 use crate::core::values::implementations::{EventInputMap, EventOutputMap};
 use crate::core::values::events::Event;
 use crate::core::values::traits::EventOutputs;
-use crate::core::memory::proxy::MemoryProxy;
+use crate::core::memory::proxy::{MemoryProxy, OwnedMemoryProxy};
+use crate::core::memory::MemoryWrite;
 use std::collections::HashMap;
+use std::sync::mpsc;
 use rayon::prelude::*;
 
 /// Pre-computed memory component subsets for each processing component
@@ -169,7 +171,7 @@ impl CycleEngine {
         Ok(())
     }
 
-    /// Execute one simulation cycle in parallel using rayon
+    /// Execute one simulation cycle in parallel using rayon with channel-based memory synchronization
     /// Implements stage-parallel execution with proper error aggregation
     fn cycle_parallel_rayon(&mut self) -> Result<(), String> {
         self.current_cycle += 1;
@@ -177,18 +179,27 @@ impl CycleEngine {
         // Clear output buffer from previous cycle to prevent unbounded growth
         self.output_buffer.clear();
         
-        // Processing phase: stage-parallel execution
+        // Processing phase: stage-parallel execution with channel-based memory synchronization
         // Each stage runs sequentially, but components within each stage run in parallel
         for stage in &self.execution_order.clone() {
             if stage.is_empty() {
                 continue;
             }
             
+            // Create channel for memory writes
+            let (memory_write_sender, memory_write_receiver) = mpsc::channel::<MemoryWrite>();
+            
             // Execute all components in this stage in parallel
             let stage_results: Vec<Result<HashMap<(ComponentId, String), Event>, String>> = stage
                 .par_iter()
-                .map(|component_id| self.execute_processing_component_parallel(component_id))
+                .map(|component_id| {
+                    let sender = memory_write_sender.clone();
+                    self.execute_processing_component_parallel(component_id, sender)
+                })
                 .collect();
+            
+            // Drop the original sender so the receiver can detect when all senders are done
+            drop(memory_write_sender);
             
             // Aggregate results and errors
             let mut all_outputs = HashMap::new();
@@ -214,19 +225,14 @@ impl CycleEngine {
             
             // Sequential merge of outputs after successful stage completion
             self.output_buffer.extend(all_outputs);
+            
+            // Apply memory writes sequentially in main thread
+            self.apply_memory_writes(memory_write_receiver)?;
         }
         
-        // Memory phase: Deferred to end of cycle for safe execution
-        // Memory components have no cross-component dependencies, so they could run in parallel
-        // but we defer their execution to avoid borrowing conflicts
-        // 
-        // This maintains correctness while avoiding unsafe code
-        // The memory components will be executed at the end of the cycle method
-        
-        // Execute memory components sequentially after parallel processing completes
+        // Memory phase: Execute memory components sequentially after parallel processing completes
         // This ensures all memory components are properly updated for the next cycle
         for component_id in self.memory_components.keys().cloned().collect::<Vec<_>>() {
-            // We can now safely call execute_memory_component since we have &mut self
             self.execute_memory_component(&component_id)?;
         }
         
@@ -273,12 +279,13 @@ impl CycleEngine {
         Ok(())
     }
 
-    /// Execute a processing component in parallel (returns outputs instead of writing)
+    /// Execute a processing component in parallel using channel-based memory synchronization
     /// This method uses &self instead of &mut self for parallel execution
-    /// Uses proper per-component memory subsets for thread-safe memory access
+    /// Memory writes are sent through channels to the main thread for sequential application
     fn execute_processing_component_parallel(
         &self, 
-        component_id: &ComponentId
+        component_id: &ComponentId,
+        memory_write_sender: mpsc::Sender<MemoryWrite>
     ) -> Result<HashMap<(ComponentId, String), Event>, String> {
         // First, collect inputs from connected outputs
         let inputs = self.collect_inputs(component_id)?;
@@ -290,28 +297,56 @@ impl CycleEngine {
             component.module.clone()
         };
         
-        // Create proper memory proxy with component subset for thread-safe access
-        let mut memory_proxy = self.create_component_memory_proxy_parallel(component_id)?;
+        // Get the memory component IDs this component needs
+        let memory_deps = self.component_memory_map.get(component_id)
+            .cloned()
+            .unwrap_or_default();
         
-        // Create evaluation context
-        let mut context = EvaluationContext {
-            inputs: &inputs,
-            memory: &mut memory_proxy,
-            state: None, // Processing components have no state
-            component_id,
-        };
+        // Clone the memory components for read access (snapshot at beginning of cycle)
+        let mut parallel_memory_components = HashMap::new();
+        for memory_id in &memory_deps {
+            if let Some(memory_component) = self.memory_components.get(memory_id) {
+                parallel_memory_components.insert(memory_id.clone(), memory_component.clone_module());
+            }
+        }
+        
+        // Filter memory connections to only include this component's connections
+        let component_memory_connections: HashMap<(ComponentId, String), ComponentId> = self.memory_connections
+            .iter()
+            .filter(|((comp_id, _), _)| comp_id == component_id)
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        
+        // Create channel-aware memory proxy
+        let mut memory_proxy = MemoryProxy::new_with_channel_synchronization(
+            component_memory_connections,
+            component_id.clone(),
+            parallel_memory_components,
+            &memory_deps,
+            memory_write_sender,
+        );
         
         // Create output map for this component
         let mut outputs = EventOutputMap::new_flexible(self.current_cycle);
         
         // Execute the component's evaluation function
-        (processor.evaluate_fn)(&mut context, &mut outputs)?;
+        {
+            let mut context = EvaluationContext {
+                inputs: &inputs,
+                memory: &mut memory_proxy,
+                state: None, // Processing components have no state
+                component_id,
+            };
+            
+            (processor.evaluate_fn)(&mut context, &mut outputs)?;
+        }
         
         // Return outputs with component ID in key for parallel execution
         let mut component_outputs = HashMap::new();
         for (port, event) in outputs.into_event_map() {
             component_outputs.insert((component_id.clone(), port), event);
         }
+        
         Ok(component_outputs)
     }
 
@@ -325,6 +360,45 @@ impl CycleEngine {
         
         // Update memory state: current → snapshot for next cycle
         memory_module.create_snapshot();
+        
+        Ok(())
+    }
+    
+    /// Merge updated memory components back to main memory after parallel execution
+    /// This function handles the critical memory synchronization issue in parallel execution
+    /// by merging the updated memory components from each thread back to the main memory system
+    fn merge_memory_components(&mut self, updated_memory_components: HashMap<ComponentId, Box<dyn MemoryModuleTrait>>) -> Result<(), String> {
+        // Merge each updated memory component back to main memory
+        for (memory_id, updated_component) in updated_memory_components {
+            // Replace the memory component in the main memory system
+            // This is safe because each memory component has exactly one writer (no conflicts)
+            self.memory_components.insert(memory_id, updated_component);
+        }
+        Ok(())
+    }
+
+    /// Apply memory writes sequentially in the main thread
+    /// This method receives memory writes from parallel threads and applies them sequentially
+    /// to ensure deterministic behavior and avoid race conditions
+    fn apply_memory_writes(&mut self, memory_write_receiver: mpsc::Receiver<MemoryWrite>) -> Result<(), String> {
+        // Collect all memory writes from the channel
+        let mut memory_writes = Vec::new();
+        while let Ok(memory_write) = memory_write_receiver.recv() {
+            memory_writes.push(memory_write);
+        }
+        
+        // Apply memory writes sequentially
+        for memory_write in memory_writes {
+            // Get the target memory component
+            let memory_component = self.memory_components.get_mut(&memory_write.memory_id)
+                .ok_or_else(|| format!("Memory component '{}' not found", memory_write.memory_id))?;
+            
+            // Apply the write to the memory component
+            if !memory_component.write_any(&memory_write.address, memory_write.data) {
+                return Err(format!("Failed to write to memory address '{}' in memory component '{}'", 
+                                  memory_write.address, memory_write.memory_id));
+            }
+        }
         
         Ok(())
     }
@@ -460,6 +534,75 @@ impl CycleEngine {
             &memory_deps,
         ))
     }
+
+    /// Create a memory proxy for parallel execution with delta tracking
+    /// This version creates a proxy that tracks memory writes for later application
+    fn create_component_memory_proxy_parallel_with_delta(&self, component_id: &ComponentId) -> Result<MemoryProxy, String> {
+        // Get the memory component IDs this component needs
+        let memory_deps = self.component_memory_map.get(component_id)
+            .cloned()
+            .unwrap_or_default();
+        
+        // Filter memory connections to only include this component's connections
+        let component_memory_connections: HashMap<(ComponentId, String), ComponentId> = self.memory_connections
+            .iter()
+            .filter(|((comp_id, _), _)| comp_id == component_id)
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        
+        // For parallel execution, create a proxy with cloned memory components
+        // This ensures each thread has its own copy and avoids mutable access conflicts
+        let mut parallel_memory_components = HashMap::new();
+        for memory_id in &memory_deps {
+            if let Some(memory_component) = self.memory_components.get(memory_id) {
+                parallel_memory_components.insert(memory_id.clone(), memory_component.clone_module());
+            }
+        }
+        
+        // Create memory proxy with delta tracking enabled
+        Ok(MemoryProxy::new_with_delta_tracking(
+            component_memory_connections,
+            component_id.clone(),
+            parallel_memory_components,
+            &memory_deps,
+        ))
+    }
+    
+    /// Create an owned memory proxy for parallel execution without lifetime constraints
+    /// This avoids the lifetime conflict when extracting updated memory components
+    fn create_owned_memory_proxy_parallel(&self, component_id: &ComponentId) -> Result<OwnedMemoryProxy, String> {
+        // Get the memory component IDs this component needs
+        let memory_deps = self.component_memory_map.get(component_id)
+            .cloned()
+            .unwrap_or_default();
+        
+        // Filter memory connections to only include this component's connections
+        let component_memory_connections: HashMap<(ComponentId, String), ComponentId> = self.memory_connections
+            .iter()
+            .filter(|((comp_id, _), _)| comp_id == component_id)
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        
+        // For parallel execution, create a proxy with cloned memory components
+        // This ensures each thread has its own copy and avoids mutable access conflicts
+        let mut parallel_memory_components = HashMap::new();
+        for memory_id in &memory_deps {
+            if let Some(memory_component) = self.memory_components.get(memory_id) {
+                parallel_memory_components.insert(memory_id.clone(), memory_component.clone_module());
+            }
+        }
+        
+        // Create owned memory proxy for thread safety
+        Ok(OwnedMemoryProxy::new(
+            component_memory_connections,
+            component_id.clone(),
+            parallel_memory_components,
+            memory_deps,
+        ))
+    }
+
+
+
 
 
     /// Run a single simulation cycle (alias for cycle method)

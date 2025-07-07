@@ -1,4 +1,5 @@
 use rsim::*;
+use crate::simulation_builder::{DelayMode, FixedDelayValues};
 
 /// Structured state memory for Baker components
 /// Stores all internal state data in a cohesive structure
@@ -160,6 +161,123 @@ impl Cycle for CustomerState {
 
 // Implement MemoryComponent trait for CustomerState using macro
 impl_memory_component!(CustomerState, {
+    input: input,
+    output: output
+});
+
+/// Delay configuration memory component
+/// Stores delay mode and fixed delay values for all components
+#[derive(Clone, Debug)]
+pub struct DelayConfig {
+    /// Delay mode for all components (random or fixed)
+    pub delay_mode: DelayMode,
+    /// Fixed delay values when using DelayMode::Fixed
+    pub fixed_delay_values: FixedDelayValues,
+    /// Baker timing parameters (min, max cycles) for random mode
+    pub baker_timing: (u32, u32),
+    /// Fryer timing parameters (min, max cycles) for random mode
+    pub fryer_timing: (u32, u32),
+    /// Assembler timing parameters (min, max cycles) for random mode
+    pub assembler_timing: (u32, u32),
+    /// Customer timing parameters (min, max cycles) for random mode
+    pub customer_timing: (u32, u32),
+}
+
+impl DelayConfig {
+    /// Create a new DelayConfig with specified values
+    pub fn new(
+        delay_mode: DelayMode,
+        fixed_delay_values: FixedDelayValues,
+        baker_timing: (u32, u32),
+        fryer_timing: (u32, u32),
+        assembler_timing: (u32, u32),
+        customer_timing: (u32, u32),
+    ) -> Self {
+        Self {
+            delay_mode,
+            fixed_delay_values,
+            baker_timing,
+            fryer_timing,
+            assembler_timing,
+            customer_timing,
+        }
+    }
+    
+    /// Get the delay for a baker component
+    pub fn get_baker_delay(&self, rng_state: &mut i64) -> i64 {
+        match self.delay_mode {
+            DelayMode::Random => {
+                use rand::{Rng, RngCore, SeedableRng};
+                use rand::rngs::StdRng;
+                let mut rng = StdRng::seed_from_u64(*rng_state as u64);
+                let delay = rng.gen_range(self.baker_timing.0 as i64..=self.baker_timing.1 as i64);
+                *rng_state = rng.next_u64() as i64;
+                delay
+            }
+            DelayMode::Fixed => self.fixed_delay_values.baker_delay as i64,
+        }
+    }
+    
+    /// Get the delay for a fryer component
+    pub fn get_fryer_delay(&self, rng_state: &mut i64) -> i64 {
+        match self.delay_mode {
+            DelayMode::Random => {
+                use rand::{Rng, RngCore, SeedableRng};
+                use rand::rngs::StdRng;
+                let mut rng = StdRng::seed_from_u64(*rng_state as u64);
+                let delay = rng.gen_range(self.fryer_timing.0 as i64..=self.fryer_timing.1 as i64);
+                *rng_state = rng.next_u64() as i64;
+                delay
+            }
+            DelayMode::Fixed => self.fixed_delay_values.fryer_delay as i64,
+        }
+    }
+    
+    /// Get the delay for an assembler component
+    pub fn get_assembler_delay(&self, rng_state: &mut i64) -> i64 {
+        match self.delay_mode {
+            DelayMode::Random => {
+                use rand::{Rng, RngCore, SeedableRng};
+                use rand::rngs::StdRng;
+                let mut rng = StdRng::seed_from_u64(*rng_state as u64);
+                let delay = rng.gen_range(self.assembler_timing.0 as i64..=self.assembler_timing.1 as i64);
+                *rng_state = rng.next_u64() as i64;
+                delay
+            }
+            DelayMode::Fixed => self.fixed_delay_values.assembler_delay as i64,
+        }
+    }
+    
+    /// Get the delay for a customer component
+    pub fn get_customer_delay(&self, rng_state: &mut i64) -> i64 {
+        match self.delay_mode {
+            DelayMode::Random => {
+                use rand::{Rng, RngCore, SeedableRng};
+                use rand::rngs::StdRng;
+                let mut rng = StdRng::seed_from_u64(*rng_state as u64);
+                let delay = rng.gen_range(self.customer_timing.0 as i64..=self.customer_timing.1 as i64);
+                *rng_state = rng.next_u64() as i64;
+                delay
+            }
+            DelayMode::Fixed => self.fixed_delay_values.customer_delay as i64,
+        }
+    }
+}
+
+// Implement MemoryData trait so DelayConfig can be stored in memory components
+impl rsim::core::components::state::MemoryData for DelayConfig {}
+
+impl Cycle for DelayConfig {
+    type Output = i64;
+    
+    fn cycle(&mut self) -> Option<Self::Output> {
+        // DelayConfig is static, return 0 as output
+        Some(0)
+    }
+}
+
+// Implement MemoryComponent trait for DelayConfig using macro
+impl_memory_component!(DelayConfig, {
     input: input,
     output: output
 });

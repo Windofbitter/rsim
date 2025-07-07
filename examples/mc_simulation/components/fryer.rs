@@ -46,10 +46,6 @@ impl_component!(Fryer, "Fryer", {
             FryerState::new()
         };
         
-        // Configuration values - could be stored in memory or use instance values
-        let min_delay = 3i64;
-        let max_delay = 7i64;
-        
         // Read current meat buffer state
         let mut buffer_state = if let Ok(Some(current_buffer)) = ctx.memory.read::<FIFOMemory>("meat_buffer", "buffer") {
             current_buffer
@@ -66,10 +62,9 @@ impl_component!(Fryer, "Fryer", {
             // Timer expired and buffer not full, request to produce meat
             buffer_state.to_add += 1;
             state.total_produced += 1;
-            // Start new production cycle with random delay
-            let mut rng = StdRng::seed_from_u64(state.rng_state as u64);
-            state.remaining_cycles = rng.gen_range(min_delay..=max_delay);
-            state.rng_state = rng.next_u64() as i64; // Update RNG state
+            
+            // Use fixed delay for testing - this will be configurable later
+            state.remaining_cycles = 4; // Fixed 4 cycles for debugging
         } else {
             // Buffer is full, wait
         }
@@ -77,7 +72,6 @@ impl_component!(Fryer, "Fryer", {
         
         // Write updated buffer state back
         memory_write!(ctx, "meat_buffer", "buffer", buffer_state);
-        // If buffer is full, just wait (don't start new timer)
         
         // Write updated state back to memory
         memory_write!(ctx, "fryer_state", "state", state);

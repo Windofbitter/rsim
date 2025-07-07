@@ -5,6 +5,21 @@ use crate::components::*;
 use crate::components::component_states::*;
 use crate::components::fifo_memory::FIFOMemory;
 
+/// Delay mode configuration for simulation components
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DelayMode {
+    /// Components use random delays between min and max values
+    Random,
+    /// Components use fixed delays with configured values
+    Fixed,
+}
+
+impl Default for DelayMode {
+    fn default() -> Self {
+        DelayMode::Random
+    }
+}
+
 /// Configuration structure for McDonald's simulation components
 #[derive(Debug, Clone)]
 pub struct McSimulationConfig {
@@ -39,6 +54,12 @@ pub struct McSimulationConfig {
     /// Customer timing parameters (min, max cycles)
     pub customer_timing: (u32, u32),
     
+    // Delay mode configuration
+    /// Delay mode for all components (random or fixed)
+    pub delay_mode: DelayMode,
+    /// Fixed delay values when using DelayMode::Fixed
+    pub fixed_delay_values: FixedDelayValues,
+    
     // RNG seed bases for deterministic behavior
     /// Base seed for bakers (each baker gets base + index)
     pub baker_seed_base: u64,
@@ -48,6 +69,30 @@ pub struct McSimulationConfig {
     pub assembler_seed_base: u64,
     /// Base seed for customers (each customer gets base + index)
     pub customer_seed_base: u64,
+}
+
+/// Fixed delay values for each component type when using DelayMode::Fixed
+#[derive(Debug, Clone)]
+pub struct FixedDelayValues {
+    /// Fixed delay for bakers (cycles)
+    pub baker_delay: u32,
+    /// Fixed delay for fryers (cycles)
+    pub fryer_delay: u32,
+    /// Fixed delay for assemblers (cycles)
+    pub assembler_delay: u32,
+    /// Fixed delay for customers (cycles)
+    pub customer_delay: u32,
+}
+
+impl Default for FixedDelayValues {
+    fn default() -> Self {
+        Self {
+            baker_delay: 3,     // Middle of default range (2-5)
+            fryer_delay: 5,     // Middle of default range (3-7)
+            assembler_delay: 2, // Middle of default range (1-3)
+            customer_delay: 3,  // Middle of default range (1-5)
+        }
+    }
 }
 
 impl Default for McSimulationConfig {
@@ -68,6 +113,9 @@ impl Default for McSimulationConfig {
             fryer_timing: (3, 7),
             assembler_timing: (1, 3),
             customer_timing: (1, 5),
+            
+            delay_mode: DelayMode::default(),
+            fixed_delay_values: FixedDelayValues::default(),
             
             baker_seed_base: 1000,
             fryer_seed_base: 2000,
@@ -108,6 +156,9 @@ pub struct McSimulationComponents {
     pub bread_inventory_buffer: ComponentId,
     pub meat_inventory_buffer: ComponentId,
     pub burger_buffer: ComponentId,
+    
+    // Shared delay configuration
+    pub delay_config: ComponentId,
 }
 
 /// Builder for McDonald's simulation that handles component creation and connections
@@ -172,6 +223,23 @@ impl McSimulationBuilder {
         self
     }
     
+    /// Set delay mode for all components
+    pub fn with_delay_mode(mut self, mode: DelayMode) -> Self {
+        self.config.delay_mode = mode;
+        self
+    }
+    
+    /// Set fixed delay values for when using DelayMode::Fixed
+    pub fn with_fixed_delays(mut self, baker: u32, fryer: u32, assembler: u32, customer: u32) -> Self {
+        self.config.fixed_delay_values = FixedDelayValues {
+            baker_delay: baker,
+            fryer_delay: fryer,
+            assembler_delay: assembler,
+            customer_delay: customer,
+        };
+        self
+    }
+    
     /// Build the complete simulation with all components and connections
     pub fn build(self) -> Result<(Simulation, McSimulationComponents), String> {
         let mut sim = Simulation::new();
@@ -196,9 +264,11 @@ impl McSimulationBuilder {
         // Create bakers
         let mut bakers = Vec::new();
         for i in 0..self.config.num_bakers {
-            let baker = sim.add_component(Baker::new(
+            let baker = sim.add_component(Baker::with_delay_config(
                 self.config.baker_timing.0,
                 self.config.baker_timing.1,
+                self.config.fixed_delay_values.baker_delay,
+                self.config.delay_mode,
                 self.config.baker_seed_base + i as u64
             ));
             bakers.push(baker);
@@ -258,6 +328,16 @@ impl McSimulationBuilder {
         // Create inventory buffers
         let bread_inventory_buffer = sim.add_memory_component(FIFOMemory::new(self.config.inventory_buffer_capacity));
         let meat_inventory_buffer = sim.add_memory_component(FIFOMemory::new(self.config.inventory_buffer_capacity));
+        
+        // Create shared delay configuration
+        let delay_config = sim.add_memory_component(DelayConfig::new(
+            self.config.delay_mode,
+            self.config.fixed_delay_values.clone(),
+            self.config.baker_timing,
+            self.config.fryer_timing,
+            self.config.assembler_timing,
+            self.config.customer_timing,
+        ));
         
         // =========================
         // 4. ASSEMBLY COMPONENTS
@@ -420,6 +500,7 @@ impl McSimulationBuilder {
             bread_inventory_buffer,
             meat_inventory_buffer,
             burger_buffer,
+            delay_config,
         };
         
         Ok((sim, components))

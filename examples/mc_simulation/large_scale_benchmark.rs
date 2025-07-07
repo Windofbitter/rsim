@@ -52,6 +52,9 @@ fn build_large_scale_simulation(concurrency_mode: ConcurrencyMode) -> Result<Cyc
         burger_buffer_capacity: 25,
         customer_buffer_capacity: 4,
         
+        delay_mode: simulation_builder::DelayMode::Random,
+        fixed_delay_values: simulation_builder::FixedDelayValues::default(),
+        
         // Faster timing to stress the system
         baker_timing: (1, 3),
         fryer_timing: (1, 3),

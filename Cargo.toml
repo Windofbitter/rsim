@@ -28,3 +28,15 @@ path = "examples/mc_simulation/large_scale_benchmark.rs"
 name = "massive_scale_benchmark"
 path = "examples/mc_simulation/massive_scale_benchmark.rs"
 
+[[bin]]
+name = "delay_config_demo"
+path = "examples/mc_simulation/delay_config_demo.rs"
+
+[[bin]]
+name = "delay_verification_test"
+path = "examples/mc_simulation/delay_verification_test.rs"
+
+[[bin]]
+name = "simple_parallel_test"
+path = "examples/mc_simulation/simple_parallel_test.rs"
+
