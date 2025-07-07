@@ -76,28 +76,54 @@ fn run_simulation_test(
     
     let execution_time = start_time.elapsed();
     
-    // Query results
-    let mut total_bread_produced = 0;
-    for i in 0..components.bakers.len() {
-        if let Ok(Some(state)) = engine.query_memory_component_state::<BakerState>(&components.baker_states[i]) {
-            total_bread_produced += state.total_produced;
+    // Query results by measuring actual buffer contents instead of component states
+    println!("   🔍 Measuring actual buffer contents...");
+    
+    // Count bread in all bread-related buffers
+    let mut total_bread_in_buffers = 0;
+    for bread_buffer in &components.bread_buffers {
+        if let Ok(Some(buffer_state)) = engine.query_memory_component_data::<FIFOMemory>(bread_buffer, "buffer") {
+            total_bread_in_buffers += buffer_state.data_count;
+        }
+    }
+    // Add bread inventory
+    if let Ok(Some(buffer_state)) = engine.query_memory_component_data::<FIFOMemory>(&components.bread_inventory_buffer, "buffer") {
+        total_bread_in_buffers += buffer_state.data_count;
+    }
+    
+    // Count meat in all meat-related buffers
+    let mut total_meat_in_buffers = 0;
+    for meat_buffer in &components.meat_buffers {
+        if let Ok(Some(buffer_state)) = engine.query_memory_component_data::<FIFOMemory>(meat_buffer, "buffer") {
+            total_meat_in_buffers += buffer_state.data_count;
+        }
+    }
+    // Add meat inventory
+    if let Ok(Some(buffer_state)) = engine.query_memory_component_data::<FIFOMemory>(&components.meat_inventory_buffer, "buffer") {
+        total_meat_in_buffers += buffer_state.data_count;
+    }
+    
+    // Count ingredient pairs in assembler buffers
+    let mut total_ingredient_pairs_in_buffers = 0;
+    for assembler_buffer in &components.assembler_buffers {
+        if let Ok(Some(buffer_state)) = engine.query_memory_component_data::<FIFOMemory>(assembler_buffer, "buffer") {
+            total_ingredient_pairs_in_buffers += buffer_state.data_count;
         }
     }
     
-    let mut total_meat_produced = 0;
-    for i in 0..components.fryers.len() {
-        if let Ok(Some(state)) = engine.query_memory_component_state::<FryerState>(&components.fryer_states[i]) {
-            total_meat_produced += state.total_produced;
+    // Count burgers in all burger-related buffers
+    let mut total_burgers_in_buffers = 0;
+    for assembler_output_buffer in &components.assembler_output_buffers {
+        if let Ok(Some(buffer_state)) = engine.query_memory_component_data::<FIFOMemory>(assembler_output_buffer, "buffer") {
+            total_burgers_in_buffers += buffer_state.data_count;
         }
     }
-    
-    let mut total_burgers_assembled = 0;
-    for i in 0..components.assemblers.len() {
-        if let Ok(Some(state)) = engine.query_memory_component_state::<AssemblerState>(&components.assembler_states[i]) {
-            total_burgers_assembled += state.total_assembled;
-        }
+    // Add burger buffer
+    if let Ok(Some(buffer_state)) = engine.query_memory_component_data::<FIFOMemory>(&components.burger_buffer, "buffer") {
+        total_burgers_in_buffers += buffer_state.data_count;
     }
     
+    // Count burgers consumed by customers (from their states)
     let mut total_burgers_consumed = 0;
     for i in 0..components.customers.len() {
         if let Ok(Some(state)) = engine.query_memory_component_state::<CustomerState>(&components.customer_states[i]) {
@@ -105,20 +131,30 @@ fn run_simulation_test(
         }
     }
     
-    // Check remaining burgers - using customer manager mode, check assembler output buffers and customer buffers
-    let mut remaining_burgers = 0;
-    // Check assembler output buffers
-    for assembler_output_buffer in &components.assembler_output_buffers {
-        if let Ok(Some(buffer_state)) = engine.query_memory_component_data::<FIFOMemory>(assembler_output_buffer, "buffer") {
-            remaining_burgers += buffer_state.data_count;
-        }
-    }
-    // Also check customer buffers
-    for customer_buffer in &components.customer_buffers {
-        if let Ok(Some(buffer_state)) = engine.query_memory_component_data::<FIFOMemory>(customer_buffer, "buffer") {
-            remaining_burgers += buffer_state.data_count;
-        }
-    }
+    // Calculate total burgers produced (in buffers + consumed)
+    let total_burgers_produced = total_burgers_in_buffers + total_burgers_consumed;
+    
+    // Print detailed buffer analysis
+    println!("   📊 Buffer Contents Analysis:");
+    println!("      Bread in buffers: {}", total_bread_in_buffers);
+    println!("      Meat in buffers: {}", total_meat_in_buffers);
+    println!("      Ingredient pairs in assembler buffers: {}", total_ingredient_pairs_in_buffers);
+    println!("      Burgers in buffers: {}", total_burgers_in_buffers);
+    println!("      Burgers consumed: {}", total_burgers_consumed);
+    println!("      Total burgers produced: {}", total_burgers_produced);
+    
+    // Resource conservation check
+    let max_possible_burgers = std::cmp::min(total_bread_in_buffers + total_ingredient_pairs_in_buffers + total_burgers_produced, 
+                                           total_meat_in_buffers + total_ingredient_pairs_in_buffers + total_burgers_produced);
+    println!("      Max possible burgers (resource constraint): {}", max_possible_burgers);
+    
+    // Use buffer-based measurements
+    let total_bread_produced = total_bread_in_buffers + total_ingredient_pairs_in_buffers + total_burgers_produced;
+    let total_meat_produced = total_meat_in_buffers + total_ingredient_pairs_in_buffers + total_burgers_produced;
+    let total_burgers_assembled = total_burgers_produced;
+    
+    // Remaining burgers are already calculated as total_burgers_in_buffers
+    let remaining_burgers = total_burgers_in_buffers;
     
     let mut results = TestResults::new(execution_mode);
     results.cycles = engine.current_cycle();
@@ -234,20 +270,20 @@ fn main() -> Result<(), String> {
             customer_delay: 3,  // Fixed 3 cycles for consumption
         },
         
-        // These are irrelevant in fixed mode but required for fallback
-        baker_timing: (2, 5),
-        fryer_timing: (3, 7),
-        assembler_timing: (1, 3),
-        customer_timing: (1, 5),
+        // Wide ranges for random mode to ensure different results
+        baker_timing: (1, 8),    // Much wider range around fixed=3
+        fryer_timing: (1, 10),   // Much wider range around fixed=4
+        assembler_timing: (1, 6), // Much wider range around fixed=2
+        customer_timing: (1, 8),  // Much wider range around fixed=3
         
-        // Deterministic seeds
+        // Different seeds for each component type to ensure variation
         baker_seed_base: 1000,
         fryer_seed_base: 2000,
         assembler_seed_base: 3000,
         customer_seed_base: 4000,
     };
     
-    let test_cycles = 100;
+    let test_cycles = 500;  // Increased cycles to amplify differences
     
     println!("🧪 Test Configuration:");
     println!("   Components: {} bakers, {} fryers, {} assemblers, {} customers",
@@ -303,6 +339,11 @@ fn main() -> Result<(), String> {
     
     let mut random_config = test_config.clone();
     random_config.delay_mode = DelayMode::Random;
+    // Use different seeds for random test to ensure different behavior
+    random_config.baker_seed_base = 5000;
+    random_config.fryer_seed_base = 6000;
+    random_config.assembler_seed_base = 7000;
+    random_config.customer_seed_base = 8000;
     
     let random_sequential_results = run_simulation_test(
         random_config.clone(),
@@ -315,6 +356,12 @@ fn main() -> Result<(), String> {
     println!("🔍 FIXED vs RANDOM DELAY COMPARISON:");
     println!("====================================");
     
+    // Always print both results for comparison
+    println!("Fixed delays results:  bread={}, meat={}, assembled={}, consumed={}", 
+        sequential_results.bread_produced, sequential_results.meat_produced, sequential_results.burgers_assembled, sequential_results.burgers_consumed);
+    println!("Random delays results: bread={}, meat={}, assembled={}, consumed={}", 
+        random_sequential_results.bread_produced, random_sequential_results.meat_produced, random_sequential_results.burgers_assembled, random_sequential_results.burgers_consumed);
+    
     // Compare fixed vs random - should be different due to different timing
     if sequential_results.bread_produced == random_sequential_results.bread_produced &&
        sequential_results.meat_produced == random_sequential_results.meat_produced &&
@@ -322,10 +369,6 @@ fn main() -> Result<(), String> {
         println!("⚠️  Fixed and random delays produced identical results - this might indicate delay configuration is not working");
     } else {
         println!("✅ Fixed and random delays produced different results - delay configuration is working correctly");
-        println!("   Fixed delays: bread={}, meat={}, assembled={}", 
-            sequential_results.bread_produced, sequential_results.meat_produced, sequential_results.burgers_assembled);
-        println!("   Random delays: bread={}, meat={}, assembled={}", 
-            random_sequential_results.bread_produced, random_sequential_results.meat_produced, random_sequential_results.burgers_assembled);
     }
     
     println!();

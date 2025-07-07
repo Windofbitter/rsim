@@ -72,15 +72,17 @@ impl_component!(AssemblerManager, "AssemblerManager", {
             }
             
             // Calculate max pairs based on actual available resources
+            // Use effective inventory counts (accounting for pending subtractions)
+            let effective_bread_count = bread_inventory.data_count - bread_inventory.to_subtract;
+            let effective_meat_count = meat_inventory.data_count - meat_inventory.to_subtract;
             let max_pairs = std::cmp::min(
-                std::cmp::min(bread_inventory.data_count, meat_inventory.data_count),
+                std::cmp::min(effective_bread_count, effective_meat_count),
                 available_assembler_buffers.len() as i64
             );
             
             // Only proceed if we can actually create at least one pair
             if max_pairs > 0 {
-                         
-                // Distribute ingredient pairs to available assembler buffers
+                // Distribute exactly max_pairs ingredient pairs to available assembler buffers
                 let mut distributed = 0;
                 for pair_idx in 0..(max_pairs as usize) {
                     let assembler_buffer_id = available_assembler_buffers[pair_idx];
@@ -88,7 +90,8 @@ impl_component!(AssemblerManager, "AssemblerManager", {
                     
                     // Read assembler buffer state
                     if let Ok(Some(mut assembler_buffer)) = ctx.memory.read::<FIFOMemory>(&buffer_name, "buffer") {
-                        if !assembler_buffer.is_full() && bread_inventory.data_count > 0 && meat_inventory.data_count > 0 {
+                        // We already verified max_pairs is safe, so just distribute
+                        if !assembler_buffer.is_full() {
                             // Consume ingredients from inventory
                             bread_inventory.to_subtract += 1;
                             meat_inventory.to_subtract += 1;
@@ -105,7 +108,7 @@ impl_component!(AssemblerManager, "AssemblerManager", {
                 
                 // Debug: uncomment to see distribution
                 // if distributed > 0 {
-                //     println!("[AssemblerManager] Distributed {} pairs", distributed);
+                //     println!("[AssemblerManager] Distributed {} pairs (max_pairs: {})", distributed, max_pairs);
                 // }
             }
         }

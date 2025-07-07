@@ -11,6 +11,21 @@ pub struct BakerState {
     pub total_produced: i64,
     /// RNG state for deterministic random timing
     pub rng_state: i64,
+    /// Delay configuration for this baker
+    pub delay_config: BakerDelayConfig,
+}
+
+/// Delay configuration for Baker components
+#[derive(Clone, Debug)]
+pub struct BakerDelayConfig {
+    /// Delay mode (random or fixed)
+    pub delay_mode: crate::simulation_builder::DelayMode,
+    /// Minimum delay cycles (for random mode)
+    pub min_delay: u32,
+    /// Maximum delay cycles (for random mode)
+    pub max_delay: u32,
+    /// Fixed delay cycles (for fixed mode)
+    pub fixed_delay: u32,
 }
 
 impl BakerState {
@@ -20,6 +35,22 @@ impl BakerState {
             remaining_cycles: 0,
             total_produced: 0,
             rng_state: 54321,
+            delay_config: BakerDelayConfig {
+                delay_mode: crate::simulation_builder::DelayMode::Fixed,
+                min_delay: 2,
+                max_delay: 5,
+                fixed_delay: 3,
+            },
+        }
+    }
+    
+    /// Create a new BakerState with specific delay configuration
+    pub fn with_delay_config(delay_config: BakerDelayConfig) -> Self {
+        Self {
+            remaining_cycles: 0,
+            total_produced: 0,
+            rng_state: 54321,
+            delay_config,
         }
     }
 }
@@ -42,6 +73,19 @@ impl_memory_component!(BakerState, {
     output: output
 });
 
+/// Delay configuration for Fryer components
+#[derive(Clone, Debug)]
+pub struct FryerDelayConfig {
+    /// Delay mode (random or fixed)
+    pub delay_mode: crate::simulation_builder::DelayMode,
+    /// Minimum delay cycles (for random mode)
+    pub min_delay: u32,
+    /// Maximum delay cycles (for random mode)
+    pub max_delay: u32,
+    /// Fixed delay cycles (for fixed mode)
+    pub fixed_delay: u32,
+}
+
 /// Structured state memory for Fryer components
 /// Stores all internal state data in a cohesive structure
 #[derive(Clone, Debug)]
@@ -52,6 +96,8 @@ pub struct FryerState {
     pub total_produced: i64,
     /// RNG state for deterministic random timing
     pub rng_state: i64,
+    /// Delay configuration for this fryer
+    pub delay_config: FryerDelayConfig,
 }
 
 impl FryerState {
@@ -61,6 +107,22 @@ impl FryerState {
             remaining_cycles: 0,
             total_produced: 0,
             rng_state: 12345,
+            delay_config: FryerDelayConfig {
+                delay_mode: crate::simulation_builder::DelayMode::Fixed,
+                min_delay: 3,
+                max_delay: 7,
+                fixed_delay: 5,
+            },
+        }
+    }
+    
+    /// Create a new FryerState with specific delay configuration
+    pub fn with_delay_config(delay_config: FryerDelayConfig) -> Self {
+        Self {
+            remaining_cycles: 0,
+            total_produced: 0,
+            rng_state: 12345,
+            delay_config,
         }
     }
 }
@@ -83,6 +145,19 @@ impl_memory_component!(FryerState, {
     output: output
 });
 
+/// Delay configuration for Assembler components
+#[derive(Clone, Debug)]
+pub struct AssemblerDelayConfig {
+    /// Delay mode (random or fixed)
+    pub delay_mode: crate::simulation_builder::DelayMode,
+    /// Minimum delay cycles (for random mode)
+    pub min_delay: u32,
+    /// Maximum delay cycles (for random mode)
+    pub max_delay: u32,
+    /// Fixed delay cycles (for fixed mode)
+    pub fixed_delay: u32,
+}
+
 /// Structured state memory for Assembler components
 /// Stores all internal state data in a cohesive structure
 #[derive(Clone, Debug)]
@@ -93,6 +168,8 @@ pub struct AssemblerState {
     pub total_assembled: i64,
     /// RNG state for deterministic random timing
     pub rng_state: i64,
+    /// Delay configuration for this assembler
+    pub delay_config: AssemblerDelayConfig,
 }
 
 impl AssemblerState {
@@ -102,6 +179,22 @@ impl AssemblerState {
             remaining_cycles: 0,
             total_assembled: 0,
             rng_state: 98765,
+            delay_config: AssemblerDelayConfig {
+                delay_mode: crate::simulation_builder::DelayMode::Fixed,
+                min_delay: 1,
+                max_delay: 3,
+                fixed_delay: 2,
+            },
+        }
+    }
+    
+    /// Create a new AssemblerState with specific delay configuration
+    pub fn with_delay_config(delay_config: AssemblerDelayConfig) -> Self {
+        Self {
+            remaining_cycles: 0,
+            total_assembled: 0,
+            rng_state: 98765,
+            delay_config,
         }
     }
 }
@@ -124,6 +217,19 @@ impl_memory_component!(AssemblerState, {
     output: output
 });
 
+/// Delay configuration for Customer components
+#[derive(Clone, Debug)]
+pub struct CustomerDelayConfig {
+    /// Delay mode (random or fixed)
+    pub delay_mode: crate::simulation_builder::DelayMode,
+    /// Minimum delay cycles (for random mode)
+    pub min_delay: u32,
+    /// Maximum delay cycles (for random mode)
+    pub max_delay: u32,
+    /// Fixed delay cycles (for fixed mode)
+    pub fixed_delay: u32,
+}
+
 /// Structured state memory for Customer components
 /// Stores all internal state data in a cohesive structure
 #[derive(Clone, Debug)]
@@ -134,6 +240,8 @@ pub struct CustomerState {
     pub total_consumed: i64,
     /// RNG state for deterministic random timing
     pub rng_state: i64,
+    /// Delay configuration for this customer
+    pub delay_config: CustomerDelayConfig,
 }
 
 impl CustomerState {
@@ -143,6 +251,22 @@ impl CustomerState {
             remaining_cycles: 0,
             total_consumed: 0,
             rng_state: 11111,
+            delay_config: CustomerDelayConfig {
+                delay_mode: crate::simulation_builder::DelayMode::Fixed,
+                min_delay: 1,
+                max_delay: 5,
+                fixed_delay: 3,
+            },
+        }
+    }
+    
+    /// Create a new CustomerState with specific delay configuration
+    pub fn with_delay_config(delay_config: CustomerDelayConfig) -> Self {
+        Self {
+            remaining_cycles: 0,
+            total_consumed: 0,
+            rng_state: 11111,
+            delay_config,
         }
     }
 }

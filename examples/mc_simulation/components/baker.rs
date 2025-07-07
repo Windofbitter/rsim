@@ -117,8 +117,16 @@ impl_component!(Baker, "Baker", {
             current_state
         } else {
             // Initialize with default state if no previous state exists
+            eprintln!("Baker: Using fallback BakerState::new() - this shouldn't happen!");
             BakerState::new()
         };
+        
+        // Debug: Print the delay config on first cycle
+        if state.total_produced == 0 {
+            eprintln!("Baker initial state: mode={:?}, min={}, max={}, fixed={}", 
+                state.delay_config.delay_mode, state.delay_config.min_delay, 
+                state.delay_config.max_delay, state.delay_config.fixed_delay);
+        }
         
         // Read current bread buffer state
         let mut buffer_state = if let Ok(Some(current_buffer)) = ctx.memory.read::<FIFOMemory>("bread_buffer", "buffer") {
@@ -137,8 +145,30 @@ impl_component!(Baker, "Baker", {
             buffer_state.to_add += 1;
             state.total_produced += 1;
             
-            // Use fixed delay for testing - this will be configurable later
-            state.remaining_cycles = 3; // Fixed 3 cycles for debugging
+            // Use delay configuration from state
+            state.remaining_cycles = match state.delay_config.delay_mode {
+                DelayMode::Random => {
+                    use rand::{Rng, RngCore, SeedableRng};
+                    use rand::rngs::StdRng;
+                    let mut rng = StdRng::seed_from_u64(state.rng_state as u64);
+                    let delay = rng.gen_range(state.delay_config.min_delay as i64..=state.delay_config.max_delay as i64);
+                    state.rng_state = rng.next_u64() as i64;
+                    // Debug: print every 10th delay to see if random is working
+                    if state.total_produced % 10 == 0 {
+                        eprintln!("Baker Random: produced={}, delay={}, range=({},{})", 
+                            state.total_produced, delay, state.delay_config.min_delay, state.delay_config.max_delay);
+                    }
+                    delay
+                }
+                DelayMode::Fixed => {
+                    // Debug: print every 10th delay
+                    if state.total_produced % 10 == 0 {
+                        eprintln!("Baker Fixed: produced={}, delay={}", 
+                            state.total_produced, state.delay_config.fixed_delay);
+                    }
+                    state.delay_config.fixed_delay as i64
+                },
+            };
         } else {
             // Buffer is full, wait
         }

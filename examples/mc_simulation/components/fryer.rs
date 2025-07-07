@@ -37,6 +37,7 @@ impl_component!(Fryer, "Fryer", {
     react: |ctx, _outputs| {
         use crate::components::component_states::FryerState;
         use crate::components::fifo_memory::FIFOMemory;
+        use crate::simulation_builder::DelayMode;
         
         // Read current state from memory (previous cycle)
         let mut state = if let Ok(Some(current_state)) = ctx.memory.read::<FryerState>("fryer_state", "state") {
@@ -63,8 +64,18 @@ impl_component!(Fryer, "Fryer", {
             buffer_state.to_add += 1;
             state.total_produced += 1;
             
-            // Use fixed delay for testing - this will be configurable later
-            state.remaining_cycles = 4; // Fixed 4 cycles for debugging
+            // Use delay configuration from state
+            state.remaining_cycles = match state.delay_config.delay_mode {
+                DelayMode::Random => {
+                    use rand::{Rng, RngCore, SeedableRng};
+                    use rand::rngs::StdRng;
+                    let mut rng = StdRng::seed_from_u64(state.rng_state as u64);
+                    let delay = rng.gen_range(state.delay_config.min_delay as i64..=state.delay_config.max_delay as i64);
+                    state.rng_state = rng.next_u64() as i64;
+                    delay
+                }
+                DelayMode::Fixed => state.delay_config.fixed_delay as i64,
+            };
         } else {
             // Buffer is full, wait
         }

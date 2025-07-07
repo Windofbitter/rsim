@@ -270,7 +270,16 @@ impl McSimulationBuilder {
         // Create baker state memory
         let mut baker_states = Vec::new();
         for _ in 0..self.config.num_bakers {
-            let state = sim.add_memory_component(BakerState::new());
+            let delay_config = crate::components::component_states::BakerDelayConfig {
+                delay_mode: self.config.delay_mode,
+                min_delay: self.config.baker_timing.0,
+                max_delay: self.config.baker_timing.1,
+                fixed_delay: self.config.fixed_delay_values.baker_delay,
+            };
+            // Debug: Print delay config being used
+            eprintln!("Creating BakerDelayConfig: mode={:?}, min={}, max={}, fixed={}", 
+                delay_config.delay_mode, delay_config.min_delay, delay_config.max_delay, delay_config.fixed_delay);
+            let state = sim.add_memory_component(BakerState::with_delay_config(delay_config));
             baker_states.push(state);
         }
         
@@ -288,7 +297,13 @@ impl McSimulationBuilder {
         // Create fryer state memory
         let mut fryer_states = Vec::new();
         for _ in 0..self.config.num_fryers {
-            let state = sim.add_memory_component(FryerState::new());
+            let delay_config = crate::components::component_states::FryerDelayConfig {
+                delay_mode: self.config.delay_mode,
+                min_delay: self.config.fryer_timing.0,
+                max_delay: self.config.fryer_timing.1,
+                fixed_delay: self.config.fixed_delay_values.fryer_delay,
+            };
+            let state = sim.add_memory_component(FryerState::with_delay_config(delay_config));
             fryer_states.push(state);
         }
         
@@ -322,15 +337,8 @@ impl McSimulationBuilder {
         let bread_inventory_buffer = sim.add_memory_component(FIFOMemory::new(self.config.inventory_buffer_capacity));
         let meat_inventory_buffer = sim.add_memory_component(FIFOMemory::new(self.config.inventory_buffer_capacity));
         
-        // Create shared delay configuration
-        let delay_config = sim.add_memory_component(DelayConfig::new(
-            self.config.delay_mode,
-            self.config.fixed_delay_values.clone(),
-            self.config.baker_timing,
-            self.config.fryer_timing,
-            self.config.assembler_timing,
-            self.config.customer_timing,
-        ));
+        // DelayConfig is now embedded in each component during creation
+        // No shared memory component needed
         
         // =========================
         // 4. ASSEMBLY COMPONENTS
@@ -357,7 +365,13 @@ impl McSimulationBuilder {
         // Create assembler state memory
         let mut assembler_states = Vec::new();
         for _ in 0..self.config.num_assemblers {
-            let state = sim.add_memory_component(AssemblerState::new());
+            let delay_config = crate::components::component_states::AssemblerDelayConfig {
+                delay_mode: self.config.delay_mode,
+                min_delay: self.config.assembler_timing.0,
+                max_delay: self.config.assembler_timing.1,
+                fixed_delay: self.config.fixed_delay_values.assembler_delay,
+            };
+            let state = sim.add_memory_component(AssemblerState::with_delay_config(delay_config));
             assembler_states.push(state);
         }
         
@@ -399,7 +413,13 @@ impl McSimulationBuilder {
         // Create customer state memory
         let mut customer_states = Vec::new();
         for _ in 0..self.config.num_customers {
-            let state = sim.add_memory_component(CustomerState::new());
+            let delay_config = crate::components::component_states::CustomerDelayConfig {
+                delay_mode: self.config.delay_mode,
+                min_delay: self.config.customer_timing.0,
+                max_delay: self.config.customer_timing.1,
+                fixed_delay: self.config.fixed_delay_values.customer_delay,
+            };
+            let state = sim.add_memory_component(CustomerState::with_delay_config(delay_config));
             customer_states.push(state);
         }
         
@@ -490,8 +510,8 @@ impl McSimulationBuilder {
             customer_buffers,
             bread_inventory_buffer,
             meat_inventory_buffer,
-            burger_buffer,
-            delay_config,
+            burger_buffer: burger_buffer.clone(),
+            delay_config: burger_buffer, // Dummy value since DelayConfig is no longer used
         };
         
         Ok((sim, components))
