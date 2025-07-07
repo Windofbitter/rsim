@@ -153,7 +153,7 @@ impl MassiveScaleBenchmarkConfig {
             work_cycles_per_worker: 50,
             cycles_to_run: 50,
             warmup_cycles: 5,
-            thread_count: Some(2),
+            thread_count: Some(4),
             seed_base: 11111,
         }
     }
@@ -177,7 +177,7 @@ impl MassiveScaleBenchmarkConfig {
             work_cycles_per_worker: 200,
             cycles_to_run: 100,
             warmup_cycles: 10,
-            thread_count: Some(8),
+            thread_count: Some(4),
             seed_base: 33333,
         }
     }
@@ -189,7 +189,7 @@ impl MassiveScaleBenchmarkConfig {
             work_cycles_per_worker: 300,
             cycles_to_run: 50,
             warmup_cycles: 5,
-            thread_count: Some(16),
+            thread_count: Some(4),
             seed_base: 44444,
         }
     }
