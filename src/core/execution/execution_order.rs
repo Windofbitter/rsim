@@ -1,10 +1,158 @@
 use crate::core::types::ComponentId;
 use std::collections::HashMap;
 
+/// Represents a sub-level within a stage, containing components that can execute in parallel
+#[derive(Debug, Clone)]
+pub struct SubLevel {
+    pub components: Vec<ComponentId>,
+}
+
+/// Represents a stage with sub-levels for more granular dependency management
+#[derive(Debug, Clone)]
+pub struct Stage {
+    pub sub_levels: Vec<SubLevel>,
+}
+
 /// Manages topological sorting and execution order calculation for processing components
 pub struct ExecutionOrderBuilder;
 
 impl ExecutionOrderBuilder {
+    /// Analyzes the graph of processing components to build a topologically sorted execution order
+    /// organized into stages with sub-levels for more granular dependency management.
+    /// This method subdivides each stage by exact dependency depth to ensure proper ordering.
+    pub fn build_execution_order_with_sub_levels(
+        component_ids: &[ComponentId],
+        connections: &HashMap<(ComponentId, String), Vec<(ComponentId, String)>>,
+    ) -> Result<Vec<Stage>, String> {
+        // First, get the regular stage-based execution order
+        let regular_stages = Self::build_execution_order_stages(component_ids, connections)?;
+        
+        // Now, for each stage, further subdivide into sub-levels based on detailed dependency analysis
+        let mut enhanced_stages = Vec::new();
+        
+        for stage_components in regular_stages {
+            if stage_components.is_empty() {
+                continue;
+            }
+            
+            // If stage has only one component, it becomes a single sub-level
+            if stage_components.len() == 1 {
+                let sub_level = SubLevel {
+                    components: stage_components,
+                };
+                let stage = Stage {
+                    sub_levels: vec![sub_level],
+                };
+                enhanced_stages.push(stage);
+                continue;
+            }
+            
+            // For stages with multiple components, analyze internal dependencies
+            let sub_levels = Self::subdivide_stage_into_sub_levels(&stage_components, connections)?;
+            let stage = Stage { sub_levels };
+            enhanced_stages.push(stage);
+        }
+        
+        Ok(enhanced_stages)
+    }
+    
+    /// Subdivides a stage into sub-levels based on internal dependencies
+    /// Components that have no dependencies within the stage can run in parallel
+    /// Components that depend on other components in the stage must run sequentially
+    fn subdivide_stage_into_sub_levels(
+        stage_components: &[ComponentId],
+        connections: &HashMap<(ComponentId, String), Vec<(ComponentId, String)>>,
+    ) -> Result<Vec<SubLevel>, String> {
+        // Build internal dependency graph for this stage
+        let mut internal_adj_list: HashMap<ComponentId, Vec<ComponentId>> = HashMap::new();
+        let mut internal_in_degree: HashMap<ComponentId, usize> = HashMap::new();
+        
+        // Initialize for all components in this stage
+        for comp_id in stage_components {
+            internal_adj_list.insert(comp_id.clone(), Vec::new());
+            internal_in_degree.insert(comp_id.clone(), 0);
+        }
+        
+        // Build internal adjacency list (only dependencies within this stage)
+        for ((source_id, _source_port), targets) in connections {
+            if !internal_adj_list.contains_key(source_id) {
+                continue;
+            }
+            
+            for (target_id, _target_port) in targets {
+                if !internal_adj_list.contains_key(target_id) {
+                    continue;
+                }
+                
+                // Add internal edge
+                internal_adj_list.get_mut(source_id).unwrap().push(target_id.clone());
+                *internal_in_degree.get_mut(target_id).unwrap() += 1;
+            }
+        }
+        
+        // Use modified Kahn's algorithm to create sub-levels
+        let mut sub_levels = Vec::new();
+        let mut remaining_components = stage_components.len();
+        
+        while remaining_components > 0 {
+            // Find all components with zero internal in-degree (can run in parallel)
+            let mut current_sub_level: Vec<ComponentId> = internal_in_degree
+                .iter()
+                .filter(|(_, &degree)| degree == 0)
+                .map(|(id, _)| id.clone())
+                .collect();
+            
+            if current_sub_level.is_empty() {
+                // This should not happen if the original topological sort was correct,
+                // but if it does, fall back to sequential execution
+                for comp_id in stage_components {
+                    if internal_in_degree.contains_key(comp_id) {
+                        current_sub_level.push(comp_id.clone());
+                        break;
+                    }
+                }
+            }
+            
+            if current_sub_level.is_empty() {
+                break;
+            }
+            
+            // Remove processed components and update in-degrees
+            for comp_id in &current_sub_level {
+                internal_in_degree.remove(comp_id);
+                remaining_components -= 1;
+                
+                // Decrease in-degree of all internal neighbors
+                if let Some(neighbors) = internal_adj_list.get(comp_id) {
+                    for neighbor in neighbors {
+                        if let Some(degree) = internal_in_degree.get_mut(neighbor) {
+                            *degree -= 1;
+                        }
+                    }
+                }
+            }
+            
+            // Sort for deterministic results
+            current_sub_level.sort();
+            
+            let sub_level = SubLevel {
+                components: current_sub_level,
+            };
+            sub_levels.push(sub_level);
+        }
+        
+        // If no sub-levels were created, fall back to single sub-level
+        if sub_levels.is_empty() {
+            let mut all_components = stage_components.to_vec();
+            all_components.sort();
+            sub_levels.push(SubLevel {
+                components: all_components,
+            });
+        }
+        
+        Ok(sub_levels)
+    }
+
     /// Analyzes the graph of processing components to build a topologically sorted execution order
     /// organized into stages for concurrent execution.
     /// Uses modified Kahn's algorithm to detect cycles and ensure deterministic execution.

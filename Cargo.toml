@@ -40,3 +40,11 @@ path = "examples/mc_simulation/delay_verification_test.rs"
 name = "simple_parallel_test"
 path = "examples/mc_simulation/simple_parallel_test.rs"
 
+[[bin]]
+name = "ultra_massive_test"
+path = "examples/mc_simulation/ultra_massive_test.rs"
+
+[[bin]]
+name = "super_massive_test"
+path = "examples/mc_simulation/super_massive_test.rs"
+

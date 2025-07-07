@@ -1,6 +1,6 @@
 use crate::core::builder::simulation_builder::ComponentInstance;
 use crate::core::types::ComponentId;
-use crate::core::execution::execution_order::ExecutionOrderBuilder;
+use crate::core::execution::execution_order::{ExecutionOrderBuilder, Stage};
 use crate::core::execution::config::{SimulationConfig, ConcurrencyMode};
 use crate::core::components::module::{EvaluationContext, MemoryModuleTrait};
 use crate::core::values::implementations::{EventInputMap, EventOutputMap};
@@ -45,6 +45,8 @@ pub struct CycleEngine {
     current_cycle: u64,
     /// Execution order for processing components (topologically sorted into stages)
     execution_order: Vec<Vec<ComponentId>>,
+    /// Sub-level execution order for more granular dependency management
+    sub_level_execution_order: Vec<Stage>,
     /// Output buffer for current cycle
     output_buffer: HashMap<(ComponentId, String), Event>,
     /// Memory connections: (component_id, port) -> memory_id
@@ -66,6 +68,7 @@ impl CycleEngine {
             connections: HashMap::new(),
             current_cycle: 0,
             execution_order: Vec::new(),
+            sub_level_execution_order: Vec::new(),
             output_buffer: HashMap::new(),
             memory_connections: HashMap::new(),
             input_connections: HashMap::new(),
@@ -145,7 +148,12 @@ impl CycleEngine {
     pub fn cycle(&mut self) -> Result<(), String> {
         match self.config.concurrency_mode {
             ConcurrencyMode::Sequential => self.cycle_sequential(),
-            ConcurrencyMode::Rayon => self.cycle_parallel_rayon(),
+            ConcurrencyMode::Rayon => {
+                // Activate sub-level parallel execution with enhanced topological sorting
+                // Uses channel-based memory synchronization to ensure deterministic results
+                // while enabling true parallel execution within sub-levels
+                self.cycle_parallel_rayon_with_sub_levels()
+            },
         }
     }
     
@@ -228,6 +236,79 @@ impl CycleEngine {
             
             // Apply memory writes sequentially in main thread
             self.apply_memory_writes(memory_write_receiver)?;
+        }
+        
+        // Memory phase: Execute memory components sequentially after parallel processing completes
+        // This ensures all memory components are properly updated for the next cycle
+        for component_id in self.memory_components.keys().cloned().collect::<Vec<_>>() {
+            self.execute_memory_component(&component_id)?;
+        }
+        
+        Ok(())
+    }
+
+    /// Execute one simulation cycle in parallel using rayon with sub-level granularity
+    /// This method implements the enhanced parallel execution with proper topological ordering
+    /// at sub-level granularity to fix memory synchronization issues
+    fn cycle_parallel_rayon_with_sub_levels(&mut self) -> Result<(), String> {
+        self.current_cycle += 1;
+        
+        // Clear output buffer from previous cycle to prevent unbounded growth
+        self.output_buffer.clear();
+        
+        // Processing phase: sub-level parallel execution with channel-based memory synchronization
+        // Each stage runs sequentially, but within each stage, sub-levels run sequentially
+        // while components within each sub-level run in parallel
+        for stage in &self.sub_level_execution_order.clone() {
+            // Execute each sub-level within the stage sequentially
+            for sub_level in &stage.sub_levels {
+                if sub_level.components.is_empty() {
+                    continue;
+                }
+                
+                // Create channel for memory writes
+                let (memory_write_sender, memory_write_receiver) = mpsc::channel::<MemoryWrite>();
+                
+                // Execute all components in this sub-level in parallel
+                let sub_level_results: Vec<Result<HashMap<(ComponentId, String), Event>, String>> = sub_level.components
+                    .par_iter()
+                    .map(|component_id| {
+                        let sender = memory_write_sender.clone();
+                        self.execute_processing_component_parallel(component_id, sender)
+                    })
+                    .collect();
+                
+                // Drop the original sender so the receiver can detect when all senders are done
+                drop(memory_write_sender);
+                
+                // Aggregate results and errors
+                let mut all_outputs = HashMap::new();
+                let mut errors = Vec::new();
+                
+                for (idx, result) in sub_level_results.into_iter().enumerate() {
+                    match result {
+                        Ok(outputs) => {
+                            all_outputs.extend(outputs);
+                        }
+                        Err(error) => {
+                            let component_id = &sub_level.components[idx];
+                            errors.push(format!("Component '{}': {}", component_id, error));
+                        }
+                    }
+                }
+                
+                // If any component failed, aggregate all errors and return
+                if !errors.is_empty() {
+                    return Err(format!("Sub-level execution failed in {} components: [{}]", 
+                                      errors.len(), errors.join(", ")));
+                }
+                
+                // Sequential merge of outputs after successful sub-level completion
+                self.output_buffer.extend(all_outputs);
+                
+                // Apply memory writes sequentially in main thread after each sub-level completes
+                self.apply_memory_writes(memory_write_receiver)?;
+            }
         }
         
         // Memory phase: Execute memory components sequentially after parallel processing completes
@@ -429,6 +510,12 @@ impl CycleEngine {
         
         // Build topologically sorted execution order (staged)
         self.execution_order = ExecutionOrderBuilder::build_execution_order_stages(
+            &processing_components,
+            &self.connections,
+        )?;
+        
+        // Build sub-level execution order for enhanced parallel processing
+        self.sub_level_execution_order = ExecutionOrderBuilder::build_execution_order_with_sub_levels(
             &processing_components,
             &self.connections,
         )?;
