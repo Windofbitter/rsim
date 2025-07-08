@@ -1,6 +1,7 @@
 use crate::core::components::module::ComponentModule;
 use crate::core::components::state::MemoryData;
 use crate::core::components::traits::{Component, MemoryComponent};
+use crate::core::components::memory_module::MemoryModuleTrait;
 use crate::core::execution::cycle_engine::CycleEngine;
 use crate::core::execution::config::SimulationConfig;
 use crate::core::types::{ComponentId, OutputPort, InputPort, MemoryPort};
@@ -80,6 +81,33 @@ impl Simulation {
         
         let module = T::into_memory_module();
         let component_id = ComponentId::new(id, type_name.to_string());
+        
+        let instance = ComponentInstance {
+            id: component_id.clone(),
+            module: ComponentModule::Memory(Box::new(module)),
+        };
+        
+        self.components.insert(component_id.clone(), instance);
+        component_id
+    }
+
+    /// Add a memory component with initial state configured
+    pub fn add_memory_component_with_initial_state<T: MemoryComponent + MemoryData + Clone>(&mut self, component: T) -> ComponentId {
+        let counter = self.id_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let type_name = std::any::type_name::<T>();
+        let clean_type_name = type_name.split("::").last().unwrap_or(type_name);
+        let id = format!("{}{}", clean_type_name, counter);
+        
+        let mut module = T::into_memory_module();
+        let component_id = ComponentId::new(id, type_name.to_string());
+        
+        // Initialize the memory module with the configured state
+        // Use write_any to set the initial state at address "state"
+        let boxed_component: Box<dyn std::any::Any + Send> = Box::new(component);
+        module.write_any("state", boxed_component);
+        
+        // Create snapshot so the state is available for reading
+        module.create_snapshot();
         
         let instance = ComponentInstance {
             id: component_id.clone(),

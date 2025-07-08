@@ -1,6 +1,4 @@
 use rsim::*;
-use rand::{Rng, RngCore, SeedableRng};
-use rand::rngs::StdRng;
 
 /// Fryer component that produces meat with random timing delays
 /// Connects to a dedicated FIFO buffer for meat storage

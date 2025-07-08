@@ -1,6 +1,4 @@
 use rsim::*;
-use rand::{Rng, RngCore, SeedableRng};
-use rand::rngs::StdRng;
 
 /// Customer component that consumes burgers with random timing delays
 /// Connects to burger buffer memory port for consuming finished burgers

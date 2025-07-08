@@ -1,6 +1,4 @@
 use rsim::*;
-use rand::{Rng, RngCore, SeedableRng};
-use rand::rngs::StdRng;
 
 /// Assembler component that combines ingredient pairs into burgers
 /// Connects to three memory ports: ingredient buffer, burger buffer, and assembler state

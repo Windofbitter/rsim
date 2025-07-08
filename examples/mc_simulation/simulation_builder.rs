@@ -1,6 +1,6 @@
 use rsim::core::builder::simulation_builder::Simulation;
 use rsim::core::execution::config::SimulationConfig;
-use rsim::core::types::{ComponentId, MemoryPort};
+use rsim::core::types::ComponentId;
 use crate::components::*;
 use crate::components::component_states::*;
 use crate::components::fifo_memory::FIFOMemory;
@@ -257,11 +257,9 @@ impl McSimulationBuilder {
         // Create bakers
         let mut bakers = Vec::new();
         for i in 0..self.config.num_bakers {
-            let baker = sim.add_component(Baker::with_delay_config(
+            let baker = sim.add_component(Baker::new(
                 self.config.baker_timing.0,
                 self.config.baker_timing.1,
-                self.config.fixed_delay_values.baker_delay,
-                self.config.delay_mode,
                 self.config.baker_seed_base + i as u64
             ));
             bakers.push(baker);
@@ -276,10 +274,7 @@ impl McSimulationBuilder {
                 max_delay: self.config.baker_timing.1,
                 fixed_delay: self.config.fixed_delay_values.baker_delay,
             };
-            // Debug: Print delay config being used
-            eprintln!("Creating BakerDelayConfig: mode={:?}, min={}, max={}, fixed={}", 
-                delay_config.delay_mode, delay_config.min_delay, delay_config.max_delay, delay_config.fixed_delay);
-            let state = sim.add_memory_component(BakerState::with_delay_config(delay_config));
+            let state = sim.add_memory_component_with_initial_state(BakerState::with_delay_config(delay_config));
             baker_states.push(state);
         }
         
@@ -303,7 +298,7 @@ impl McSimulationBuilder {
                 max_delay: self.config.fryer_timing.1,
                 fixed_delay: self.config.fixed_delay_values.fryer_delay,
             };
-            let state = sim.add_memory_component(FryerState::with_delay_config(delay_config));
+            let state = sim.add_memory_component_with_initial_state(FryerState::with_delay_config(delay_config));
             fryer_states.push(state);
         }
         
@@ -371,7 +366,7 @@ impl McSimulationBuilder {
                 max_delay: self.config.assembler_timing.1,
                 fixed_delay: self.config.fixed_delay_values.assembler_delay,
             };
-            let state = sim.add_memory_component(AssemblerState::with_delay_config(delay_config));
+            let state = sim.add_memory_component_with_initial_state(AssemblerState::with_delay_config(delay_config));
             assembler_states.push(state);
         }
         
@@ -419,7 +414,7 @@ impl McSimulationBuilder {
                 max_delay: self.config.customer_timing.1,
                 fixed_delay: self.config.fixed_delay_values.customer_delay,
             };
-            let state = sim.add_memory_component(CustomerState::with_delay_config(delay_config));
+            let state = sim.add_memory_component_with_initial_state(CustomerState::with_delay_config(delay_config));
             customer_states.push(state);
         }
         
@@ -577,5 +572,139 @@ mod tests {
         assert_eq!(components.fryers.len(), 3);
         assert_eq!(components.assemblers.len(), 3);
         assert_eq!(components.customers.len(), 3);
+    }
+    
+    #[test]
+    fn test_delay_configuration_fixed_mode() {
+        use crate::components::component_states::*;
+        
+        // Test with fixed delay mode
+        let config = McSimulationConfig {
+            num_bakers: 2,
+            num_fryers: 2,
+            num_assemblers: 2,
+            num_customers: 2,
+            delay_mode: DelayMode::Fixed,
+            fixed_delay_values: FixedDelayValues {
+                baker_delay: 10,
+                fryer_delay: 15,
+                assembler_delay: 5,
+                customer_delay: 8,
+            },
+            ..Default::default()
+        };
+        
+        let result = McSimulationBuilder::with_config(config).build();
+        assert!(result.is_ok());
+        let (mut sim, components) = result.unwrap();
+        
+        // Build and run engine for a few cycles
+        let mut engine = sim.build().unwrap();
+        engine.build_execution_order().unwrap();
+        
+        // Run for a few cycles to initialize states
+        for _ in 0..20 {
+            engine.cycle().unwrap();
+        }
+        
+        // Check that baker states have the correct delay configuration
+        for i in 0..components.baker_states.len() {
+            if let Ok(Some(state)) = engine.query_memory_component_state::<BakerState>(&components.baker_states[i]) {
+                assert_eq!(state.delay_config.delay_mode, DelayMode::Fixed);
+                assert_eq!(state.delay_config.fixed_delay, 10);
+                println!("✅ Baker {} has correct Fixed delay config: {}", i, state.delay_config.fixed_delay);
+            } else {
+                panic!("Failed to query baker state {}", i);
+            }
+        }
+        
+        // Check fryer states
+        for i in 0..components.fryer_states.len() {
+            if let Ok(Some(state)) = engine.query_memory_component_state::<FryerState>(&components.fryer_states[i]) {
+                assert_eq!(state.delay_config.delay_mode, DelayMode::Fixed);
+                assert_eq!(state.delay_config.fixed_delay, 15);
+                println!("✅ Fryer {} has correct Fixed delay config: {}", i, state.delay_config.fixed_delay);
+            } else {
+                panic!("Failed to query fryer state {}", i);
+            }
+        }
+        
+        // Check assembler states
+        for i in 0..components.assembler_states.len() {
+            if let Ok(Some(state)) = engine.query_memory_component_state::<AssemblerState>(&components.assembler_states[i]) {
+                assert_eq!(state.delay_config.delay_mode, DelayMode::Fixed);
+                assert_eq!(state.delay_config.fixed_delay, 5);
+                println!("✅ Assembler {} has correct Fixed delay config: {}", i, state.delay_config.fixed_delay);
+            } else {
+                panic!("Failed to query assembler state {}", i);
+            }
+        }
+        
+        // Check customer states
+        for i in 0..components.customer_states.len() {
+            if let Ok(Some(state)) = engine.query_memory_component_state::<CustomerState>(&components.customer_states[i]) {
+                assert_eq!(state.delay_config.delay_mode, DelayMode::Fixed);
+                assert_eq!(state.delay_config.fixed_delay, 8);
+                println!("✅ Customer {} has correct Fixed delay config: {}", i, state.delay_config.fixed_delay);
+            } else {
+                panic!("Failed to query customer state {}", i);
+            }
+        }
+    }
+    
+    #[test]
+    fn test_delay_configuration_random_mode() {
+        use crate::components::component_states::*;
+        
+        // Test with random delay mode
+        let config = McSimulationConfig {
+            num_bakers: 2,
+            num_fryers: 2,
+            num_assemblers: 2,
+            num_customers: 2,
+            delay_mode: DelayMode::Random,
+            baker_timing: (1, 3),
+            fryer_timing: (2, 4),
+            assembler_timing: (1, 2),
+            customer_timing: (1, 4),
+            ..Default::default()
+        };
+        
+        let result = McSimulationBuilder::with_config(config).build();
+        assert!(result.is_ok());
+        let (mut sim, components) = result.unwrap();
+        
+        // Build and run engine for a few cycles
+        let mut engine = sim.build().unwrap();
+        engine.build_execution_order().unwrap();
+        
+        // Run for a few cycles to initialize states
+        for _ in 0..20 {
+            engine.cycle().unwrap();
+        }
+        
+        // Check that baker states have the correct delay configuration
+        for i in 0..components.baker_states.len() {
+            if let Ok(Some(state)) = engine.query_memory_component_state::<BakerState>(&components.baker_states[i]) {
+                assert_eq!(state.delay_config.delay_mode, DelayMode::Random);
+                assert_eq!(state.delay_config.min_delay, 1);
+                assert_eq!(state.delay_config.max_delay, 3);
+                println!("✅ Baker {} has correct Random delay config: ({}, {})", i, state.delay_config.min_delay, state.delay_config.max_delay);
+            } else {
+                panic!("Failed to query baker state {}", i);
+            }
+        }
+        
+        // Check fryer states
+        for i in 0..components.fryer_states.len() {
+            if let Ok(Some(state)) = engine.query_memory_component_state::<FryerState>(&components.fryer_states[i]) {
+                assert_eq!(state.delay_config.delay_mode, DelayMode::Random);
+                assert_eq!(state.delay_config.min_delay, 2);
+                assert_eq!(state.delay_config.max_delay, 4);
+                println!("✅ Fryer {} has correct Random delay config: ({}, {})", i, state.delay_config.min_delay, state.delay_config.max_delay);
+            } else {
+                panic!("Failed to query fryer state {}", i);
+            }
+        }
     }
 }
